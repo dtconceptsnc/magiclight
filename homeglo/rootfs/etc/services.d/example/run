@@ -15,19 +15,30 @@ CONFIG_USE_SSL=$(bashio::config 'use_ssl')
 if [ "${CONFIG_HOST}" != "null" ] && [ -n "${CONFIG_HOST}" ]; then
     export HA_HOST="${CONFIG_HOST}"
 else
-    export HA_HOST="${HA_HOST:-localhost}"
+    # When running as addon, use local websocket endpoint
+    if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+        export HA_HOST="homeassistant.local.hass.io"
+    else
+        export HA_HOST="${HA_HOST:-localhost}"
+    fi
 fi
 
 if [ "${CONFIG_PORT}" != "null" ] && [ -n "${CONFIG_PORT}" ]; then
     export HA_PORT="${CONFIG_PORT}"
 else
+    # Keep default port for websocket
     export HA_PORT="${HA_PORT:-8123}"
 fi
 
 if [ "${CONFIG_TOKEN}" != "null" ] && [ -n "${CONFIG_TOKEN}" ]; then
     export HA_TOKEN="${CONFIG_TOKEN}"
 else
-    export HA_TOKEN="${HA_TOKEN:-}"
+    # Use supervisor token if available
+    if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+        export HA_TOKEN="${SUPERVISOR_TOKEN}"
+    else
+        export HA_TOKEN="${HA_TOKEN:-}"
+    fi
 fi
 
 if [ "${CONFIG_USE_SSL}" != "null" ] && [ -n "${CONFIG_USE_SSL}" ]; then
