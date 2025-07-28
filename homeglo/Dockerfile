@@ -9,11 +9,11 @@ RUN \
     "https://github.com/home-assistant/tempio/releases/download/${TEMPIO_VERSION}/tempio_${BUILD_ARCH}"
 
 # Install Python and dependencies
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache python3 py3-pip tzdata
 
 # Copy Python app
 WORKDIR /app
-COPY main.py brain.py requirements.txt ./
+COPY main.py brain.py switch.py requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy root filesystem

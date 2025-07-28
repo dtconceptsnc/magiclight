@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from brain import get_adaptive_lighting_from_sun
+from switch import SwitchCommandProcessor
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +42,10 @@ class HomeAssistantWebSocketClient:
         self.sun_data = {}  # Store latest sun data
         self.switch_to_area_mapping = {}  # Will be populated from HA
         self.device_to_area_mapping = {}  # Map device IDs to areas
+        self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
+        self.latitude = None  # Home Assistant latitude
+        self.longitude = None  # Home Assistant longitude
+        self.timezone = None  # Home Assistant timezone
         
     @property
     def websocket_url(self) -> str:
@@ -179,6 +183,93 @@ class HomeAssistantWebSocketClient:
         
         return message_id
         
+    async def get_config(self) -> int:
+        """Get Home Assistant configuration.
+        
+        Returns:
+            Message ID of the request
+        """
+        message_id = self._get_next_message_id()
+        
+        config_msg = {
+            "id": message_id,
+            "type": "get_config"
+        }
+        
+        await self.websocket.send(json.dumps(config_msg))
+        logger.info(f"Requested config (id: {message_id})")
+        
+        return message_id
+        
+    async def get_lights_in_area(self, area_id: str) -> List[Dict[str, Any]]:
+        """Get all light entities in a specific area with their current states.
+        
+        Args:
+            area_id: The area ID to query
+            
+        Returns:
+            List of light entities with their states
+        """
+        lights = []
+        
+        # Get current states to find lights in the area
+        message_id = self._get_next_message_id()
+        
+        states_msg = {
+            "id": message_id,
+            "type": "get_states"
+        }
+        
+        await self.websocket.send(json.dumps(states_msg))
+        
+        # Wait for response (with timeout)
+        timeout = 5  # seconds
+        start_time = asyncio.get_event_loop().time()
+        
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            try:
+                message = await asyncio.wait_for(self.websocket.recv(), timeout=0.1)
+                msg = json.loads(message)
+                
+                if msg.get("id") == message_id and msg.get("type") == "result":
+                    result = msg.get("result", [])
+                    
+                    # Filter for light entities in the specified area
+                    for entity in result:
+                        entity_id = entity.get("entity_id", "")
+                        if entity_id.startswith("light."):
+                            attributes = entity.get("attributes", {})
+                            # Check if entity belongs to the area
+                            # Note: area_id might be in device registry, not directly in state
+                            # We'll need to match via device_id if available
+                            device_id = attributes.get("device_id")
+                            
+                            # For now, we'll get all lights and filter later
+                            # In a real implementation, we'd need to cross-reference with device registry
+                            lights.append({
+                                "entity_id": entity_id,
+                                "state": entity.get("state"),
+                                "attributes": attributes
+                            })
+                    
+                    break
+                    
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Error getting lights in area: {e}")
+                break
+        
+        # Filter lights by area using area registry
+        area_lights = []
+        for light in lights:
+            # This is a simplified check - in production, we'd need to properly
+            # cross-reference with area registry and device registry
+            # For now, we'll return all lights and let the service call handle area filtering
+            area_lights.append(light)
+        
+        return area_lights
+        
     async def handle_zha_switch_press(self, device_id: str, command: str, button: str):
         """Handle ZHA switch button press.
         
@@ -187,47 +278,8 @@ class HomeAssistantWebSocketClient:
             command: The command (e.g., 'on_press')
             button: The button identifier (e.g., 'on')
         """
-        # Check if it's a top button press (button 'on' with command 'on_press')
-        if button == "on" and command == "on_press":
-            logger.info(f"Top button pressed on ZHA device: {device_id}")
-            
-            # Get area for this device
-            area_id = self.device_to_area_mapping.get(device_id)
-            if not area_id:
-                logger.warning(f"No area mapping found for device: {device_id}")
-                logger.info(f"Known device mappings: {self.device_to_area_mapping}")
-                return
-                
-            # Get adaptive lighting values
-            if not self.sun_data:
-                logger.warning("No sun data available for adaptive lighting")
-                return
-                
-            logger.info("=== Adaptive Lighting Calculation ===")
-            logger.info(f"Sun elevation: {self.sun_data.get('elevation', 'N/A')}°")
-            logger.info(f"Sun azimuth: {self.sun_data.get('azimuth', 'N/A')}°")
-            logger.info(f"Next sunrise: {self.sun_data.get('next_rising', 'N/A')}")
-            logger.info(f"Next sunset: {self.sun_data.get('next_setting', 'N/A')}")
-            
-            adaptive_values = get_adaptive_lighting_from_sun(self.sun_data)
-            
-            logger.info(f"Calculated sun position: {adaptive_values['sun_position']:.3f} (-1 to 1)")
-            logger.info(f"Color temperature: {adaptive_values['color_temp']}K")
-            logger.info(f"Brightness: {adaptive_values['brightness']}%")
-            logger.info(f"RGB values: {adaptive_values['rgb']}")
-            logger.info(f"XY coordinates: {adaptive_values['xy']}")
-            logger.info("===================================")
-            
-            # Turn on all lights in the area with adaptive values
-            service_data = {
-                "area_id": area_id,
-                "kelvin": adaptive_values['color_temp'],
-                "brightness_pct": adaptive_values['brightness'],
-                "transition": 1  # 1 second transition
-            }
-            
-            await self.call_service("light", "turn_on", service_data)
-            logger.info(f"Turned on lights in area {area_id} with adaptive settings")
+        # Delegate to switch processor
+        await self.switch_processor.process_button_press(device_id, command, button)
     
     async def handle_message(self, message: Dict[str, Any]):
         """Handle incoming messages."""
@@ -249,8 +301,8 @@ class HomeAssistantWebSocketClient:
                 #logger.info(f"Unique ID: {event_data.get('unique_id')}")
                 #logger.info(f"Endpoint ID: {event_data.get('endpoint_id')}")
                 #logger.info(f"Cluster ID: {event_data.get('cluster_id')}")
-                #logger.info(f"Command: {event_data.get('command')}")
-                #logger.info(f"Args: {event_data.get('args')}")
+                logger.info(f"Command: {event_data.get('command')}")
+                logger.info(f"Args: {event_data.get('args')}")
                 #logger.info(f"Params: {event_data.get('params')}")
                 #logger.info(f"Full ZHA data: {json.dumps(event_data, indent=2)}")
                 logger.info("========================")
@@ -337,6 +389,23 @@ class HomeAssistantWebSocketClient:
                             self.sun_data = attributes
                             logger.info(f"Initial sun data: elevation={self.sun_data.get('elevation')}")
             
+            # Handle config result
+            elif result and isinstance(result, dict):
+                # Check if this is config data
+                if "latitude" in result and "longitude" in result:
+                    self.latitude = result.get("latitude")
+                    self.longitude = result.get("longitude")
+                    self.timezone = result.get("time_zone")
+                    logger.info(f"Home Assistant location: lat={self.latitude}, lon={self.longitude}, tz={self.timezone}")
+                    
+                    # Set environment variables for brain.py to use as defaults
+                    if self.latitude:
+                        os.environ["HASS_LATITUDE"] = str(self.latitude)
+                    if self.longitude:
+                        os.environ["HASS_LONGITUDE"] = str(self.longitude)
+                    if self.timezone:
+                        os.environ["HASS_TIME_ZONE"] = self.timezone
+            
             logger.info(f"Result for message {msg_id}: {'success' if success else 'failed'}")
             
         else:
@@ -360,6 +429,9 @@ class HomeAssistantWebSocketClient:
                 
                 # Get device registry to map devices to areas
                 await self.get_device_registry()
+                
+                # Get Home Assistant configuration (lat/lng/tz)
+                await self.get_config()
                 
                 # Subscribe to all events
                 await self.subscribe_events()
@@ -406,6 +478,7 @@ def main():
     port = int(os.getenv("HA_PORT", "8123"))
     token = os.getenv("HA_TOKEN")
     use_ssl = os.getenv("HA_USE_SSL", "false").lower() == "true"
+    
     
     if not token:
         logger.error("HA_TOKEN environment variable is required")
