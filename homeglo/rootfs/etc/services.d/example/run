@@ -1,0 +1,52 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start the Home Assistant WebSocket listener
+# s6-overlay docs: https://github.com/just-containers/s6-overlay
+# ==============================================================================
+
+# Try to get config from bashio first (addon mode)
+# If that fails or returns null, use environment variables (standalone mode)
+CONFIG_HOST=$(bashio::config 'host')
+CONFIG_PORT=$(bashio::config 'port')
+CONFIG_TOKEN=$(bashio::config 'token')
+CONFIG_USE_SSL=$(bashio::config 'use_ssl')
+
+# Set up environment variables, using config values if available and not null
+if [ "${CONFIG_HOST}" != "null" ] && [ -n "${CONFIG_HOST}" ]; then
+    export HA_HOST="${CONFIG_HOST}"
+else
+    export HA_HOST="${HA_HOST:-localhost}"
+fi
+
+if [ "${CONFIG_PORT}" != "null" ] && [ -n "${CONFIG_PORT}" ]; then
+    export HA_PORT="${CONFIG_PORT}"
+else
+    export HA_PORT="${HA_PORT:-8123}"
+fi
+
+if [ "${CONFIG_TOKEN}" != "null" ] && [ -n "${CONFIG_TOKEN}" ]; then
+    export HA_TOKEN="${CONFIG_TOKEN}"
+else
+    export HA_TOKEN="${HA_TOKEN:-}"
+fi
+
+if [ "${CONFIG_USE_SSL}" != "null" ] && [ -n "${CONFIG_USE_SSL}" ]; then
+    export HA_USE_SSL="${CONFIG_USE_SSL}"
+else
+    export HA_USE_SSL="${HA_USE_SSL:-false}"
+fi
+
+# Check if token is set
+if [ -z "${HA_TOKEN}" ]; then
+    bashio::log.error "No Home Assistant token provided!"
+    bashio::log.info "Set token in addon configuration or HA_TOKEN environment variable"
+    exit 1
+fi
+
+# Log startup
+bashio::log.info "Starting Home Assistant WebSocket listener..."
+bashio::log.info "Connecting to ${HA_HOST}:${HA_PORT}"
+
+# Run the Python app
+cd /app
+exec python3 main.py
