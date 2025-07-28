@@ -1,9 +1,9 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
-name: HomeGlo WebSocket Listener
-version: "1.0.0"
-slug: homeglo_websocket
-description: Connects to Home Assistant WebSocket API and listens for events
-url: "https://github.com/yourusername/homeglo"
+name: HomeGlo
+version: "1.0.1"
+slug: homeglo
+description: Connects to Home Assistant WebSocket API and listens for switch events
+url: "https://github.com/homeglo/homeglo-ha"
 arch:
   - armhf
   - armv7
@@ -14,7 +14,7 @@ init: false
 map:
   - share:rw
 options:
-  host: "localhost"
+  host: "homeassistant.local"
   port: 8123
   token: ""
   use_ssl: false
@@ -23,4 +23,4 @@ schema:
   port: "int"
   token: "str"
   use_ssl: "bool"
-image: "ghcr.io/yourusername/{arch}-addon-homeglo"
+panel_icon: mdi:lightbulb
