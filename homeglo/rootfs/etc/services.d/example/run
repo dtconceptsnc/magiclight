@@ -15,9 +15,9 @@ CONFIG_USE_SSL=$(bashio::config 'use_ssl')
 if [ "${CONFIG_HOST}" != "null" ] && [ -n "${CONFIG_HOST}" ]; then
     export HA_HOST="${CONFIG_HOST}"
 else
-    # When running as addon, use local websocket endpoint
+    # When running as addon, use hassio api endpoint
     if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-        export HA_HOST="homeassistant.local.hass.io"
+        export HA_HOST="supervisor"
     else
         export HA_HOST="${HA_HOST:-localhost}"
     fi
@@ -47,8 +47,8 @@ else
     export HA_USE_SSL="${HA_USE_SSL:-false}"
 fi
 
-# Check if token is set
-if [ -z "${HA_TOKEN}" ]; then
+# Check if token is set (not needed when using supervisor token with proper API access)
+if [ -z "${HA_TOKEN}" ] && [ -z "${SUPERVISOR_TOKEN:-}" ]; then
     bashio::log.error "No Home Assistant token provided!"
     bashio::log.info "Set token in addon configuration or HA_TOKEN environment variable"
     exit 1
