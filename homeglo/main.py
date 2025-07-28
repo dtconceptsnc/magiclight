@@ -46,6 +46,12 @@ class HomeAssistantWebSocketClient:
     @property
     def websocket_url(self) -> str:
         """Get the WebSocket URL."""
+        # Check if a full URL is provided via environment variable
+        url_from_env = os.getenv("HA_WEBSOCKET_URL")
+        if url_from_env:
+            return url_from_env
+        
+        # Otherwise construct from host/port
         protocol = "wss" if self.use_ssl else "ws"
         return f"{protocol}://{self.host}:{self.port}/api/websocket"
         

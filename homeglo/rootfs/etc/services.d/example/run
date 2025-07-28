@@ -4,51 +4,72 @@
 # s6-overlay docs: https://github.com/just-containers/s6-overlay
 # ==============================================================================
 
-# Try to get config from bashio first (addon mode)
-# If that fails or returns null, use environment variables (standalone mode)
-CONFIG_HOST=$(bashio::config 'host')
-CONFIG_PORT=$(bashio::config 'port')
-CONFIG_TOKEN=$(bashio::config 'token')
-CONFIG_USE_SSL=$(bashio::config 'use_ssl')
-
-# Set up environment variables, using config values if available and not null
-if [ "${CONFIG_HOST}" != "null" ] && [ -n "${CONFIG_HOST}" ]; then
-    export HA_HOST="${CONFIG_HOST}"
+# ---------------------------------------------------------------
+# 1. Detect mode
+#    - If SUPERVISOR_TOKEN is present → ADDON
+#    - Else → STANDALONE
+# ---------------------------------------------------------------
+if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+    MODE="ADDON"
+    bashio::log.info "Running in addon mode (SUPERVISOR_TOKEN present)"
+    
+    # In addon mode, use supervisor proxy URLs
+    export HA_WEBSOCKET_URL="ws://supervisor/core/api/websocket"
+    export HA_REST_URL="http://supervisor/core/api"
+    export HA_TOKEN="${SUPERVISOR_TOKEN}"
+    
+    # These are not used in URL mode but kept for compatibility
+    export HA_HOST="supervisor"
+    export HA_PORT="80"
+    export HA_USE_SSL="false"
 else
-    # When running as addon, use hassio api endpoint
-    if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-        export HA_HOST="supervisor"
+    MODE="STANDALONE"
+    bashio::log.info "Running in standalone mode (no supervisor token)"
+    
+    # Try to get config from bashio first, then fall back to env vars
+    CONFIG_HOST=$(bashio::config 'host')
+    CONFIG_PORT=$(bashio::config 'port')
+    CONFIG_TOKEN=$(bashio::config 'token')
+    CONFIG_USE_SSL=$(bashio::config 'use_ssl')
+    
+    # Set host
+    if [ "${CONFIG_HOST}" != "null" ] && [ -n "${CONFIG_HOST}" ]; then
+        export HA_HOST="${CONFIG_HOST}"
     else
         export HA_HOST="${HA_HOST:-localhost}"
     fi
-fi
-
-if [ "${CONFIG_PORT}" != "null" ] && [ -n "${CONFIG_PORT}" ]; then
-    export HA_PORT="${CONFIG_PORT}"
-else
-    # Keep default port for websocket
-    export HA_PORT="${HA_PORT:-8123}"
-fi
-
-if [ "${CONFIG_TOKEN}" != "null" ] && [ -n "${CONFIG_TOKEN}" ]; then
-    export HA_TOKEN="${CONFIG_TOKEN}"
-else
-    # Use supervisor token if available
-    if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
-        export HA_TOKEN="${SUPERVISOR_TOKEN}"
+    
+    # Set port
+    if [ "${CONFIG_PORT}" != "null" ] && [ -n "${CONFIG_PORT}" ]; then
+        export HA_PORT="${CONFIG_PORT}"
+    else
+        export HA_PORT="${HA_PORT:-8123}"
+    fi
+    
+    # Set token
+    if [ "${CONFIG_TOKEN}" != "null" ] && [ -n "${CONFIG_TOKEN}" ]; then
+        export HA_TOKEN="${CONFIG_TOKEN}"
     else
         export HA_TOKEN="${HA_TOKEN:-}"
     fi
+    
+    # Set SSL
+    if [ "${CONFIG_USE_SSL}" != "null" ] && [ -n "${CONFIG_USE_SSL}" ]; then
+        export HA_USE_SSL="${CONFIG_USE_SSL}"
+    else
+        export HA_USE_SSL="${HA_USE_SSL:-false}"
+    fi
+    
+    # Build WebSocket URL
+    if [ "${HA_USE_SSL}" = "true" ]; then
+        export HA_WEBSOCKET_URL="wss://${HA_HOST}:${HA_PORT}/api/websocket"
+    else
+        export HA_WEBSOCKET_URL="ws://${HA_HOST}:${HA_PORT}/api/websocket"
+    fi
 fi
 
-if [ "${CONFIG_USE_SSL}" != "null" ] && [ -n "${CONFIG_USE_SSL}" ]; then
-    export HA_USE_SSL="${CONFIG_USE_SSL}"
-else
-    export HA_USE_SSL="${HA_USE_SSL:-false}"
-fi
-
-# Check if token is set (not needed when using supervisor token with proper API access)
-if [ -z "${HA_TOKEN}" ] && [ -z "${SUPERVISOR_TOKEN:-}" ]; then
+# Check if token is set
+if [ -z "${HA_TOKEN}" ]; then
     bashio::log.error "No Home Assistant token provided!"
     bashio::log.info "Set token in addon configuration or HA_TOKEN environment variable"
     exit 1
@@ -56,7 +77,8 @@ fi
 
 # Log startup
 bashio::log.info "Starting Home Assistant WebSocket listener..."
-bashio::log.info "Connecting to ${HA_HOST}:${HA_PORT}"
+bashio::log.info "Mode: ${MODE}"
+bashio::log.info "WebSocket URL: ${HA_WEBSOCKET_URL}"
 
 # Run the Python app
 cd /app
