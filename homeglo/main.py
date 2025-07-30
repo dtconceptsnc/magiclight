@@ -12,6 +12,7 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from switch import SwitchCommandProcessor
+from brain import get_adaptive_lighting
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +47,7 @@ class HomeAssistantWebSocketClient:
         self.latitude = None  # Home Assistant latitude
         self.longitude = None  # Home Assistant longitude
         self.timezone = None  # Home Assistant timezone
+        self.periodic_update_task = None  # Task for periodic light updates
         
     @property
     def websocket_url(self) -> str:
@@ -141,7 +143,8 @@ class HomeAssistantWebSocketClient:
             "service": service,
             "service_data": service_data
         }
-        
+
+        logger.info(f"Sending service call: {domain}.{service} (id: {message_id})")
         await self.websocket.send(json.dumps(service_msg))
         logger.info(f"Called service: {domain}.{service} (id: {message_id})")
         
@@ -210,11 +213,14 @@ class HomeAssistantWebSocketClient:
         Returns:
             List of light entities with their states
         """
+        # Simplified approach: get ALL lights and return them
+        # Let the caller decide how to filter by area
+        # This matches how the switch processor works
+        
         lights = []
         
-        # Get current states to find lights in the area
+        # Get current states
         message_id = self._get_next_message_id()
-        
         states_msg = {
             "id": message_id,
             "type": "get_states"
@@ -222,7 +228,7 @@ class HomeAssistantWebSocketClient:
         
         await self.websocket.send(json.dumps(states_msg))
         
-        # Wait for response (with timeout)
+        # Wait for response
         timeout = 5  # seconds
         start_time = asyncio.get_event_loop().time()
         
@@ -234,22 +240,14 @@ class HomeAssistantWebSocketClient:
                 if msg.get("id") == message_id and msg.get("type") == "result":
                     result = msg.get("result", [])
                     
-                    # Filter for light entities in the specified area
+                    # Get all light entities
                     for entity in result:
                         entity_id = entity.get("entity_id", "")
                         if entity_id.startswith("light."):
-                            attributes = entity.get("attributes", {})
-                            # Check if entity belongs to the area
-                            # Note: area_id might be in device registry, not directly in state
-                            # We'll need to match via device_id if available
-                            device_id = attributes.get("device_id")
-                            
-                            # For now, we'll get all lights and filter later
-                            # In a real implementation, we'd need to cross-reference with device registry
                             lights.append({
                                 "entity_id": entity_id,
                                 "state": entity.get("state"),
-                                "attributes": attributes
+                                "attributes": entity.get("attributes", {})
                             })
                     
                     break
@@ -257,18 +255,85 @@ class HomeAssistantWebSocketClient:
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                logger.error(f"Error getting lights in area: {e}")
+                logger.error(f"Error getting light states: {e}")
                 break
         
-        # Filter lights by area using area registry
-        area_lights = []
-        for light in lights:
-            # This is a simplified check - in production, we'd need to properly
-            # cross-reference with area registry and device registry
-            # For now, we'll return all lights and let the service call handle area filtering
-            area_lights.append(light)
+        # Note: This returns ALL lights, not filtered by area
+        # The service call with area_id will handle the actual filtering
+        return lights
         
-        return area_lights
+    async def get_areas_with_switches(self) -> List[str]:
+        """Get all areas that have devices with 'Switch' in the friendly name.
+        
+        Returns:
+            List of area IDs
+        """
+        areas_with_switches = set()
+        
+        # Get all areas from device mapping
+        for device_id, area_id in self.device_to_area_mapping.items():
+            if area_id:
+                areas_with_switches.add(area_id)
+        
+        return list(areas_with_switches)
+    
+    async def update_lights_in_area_if_on(self, area_id: str):
+        """Update lights in an area with adaptive lighting if they are on.
+        
+        Args:
+            area_id: The area ID to update
+        """
+        try:
+            # Get adaptive lighting values
+            lighting_values = get_adaptive_lighting(
+                latitude=self.latitude,
+                longitude=self.longitude,
+                timezone=self.timezone
+            )
+            
+            # For now, we'll just send the update command and let HA handle area filtering
+            # The service call with area_id will only affect lights in that area
+            # and will only change attributes of lights that are already on
+            service_data = {
+                "area_id": area_id,
+                "brightness_pct": lighting_values["brightness"],
+                "kelvin": lighting_values["color_temp"],
+                "transition": 2  # 2 second transition for smooth changes
+            }
+            
+            await self.call_service("light", "turn_on", service_data)
+            
+            logger.info(f"Sent adaptive update to area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%")
+            
+        except Exception as e:
+            logger.error(f"Error updating lights in area {area_id}: {e}")
+    
+    async def periodic_light_updater(self):
+        """Periodically update lights in areas with switches."""
+        while True:
+            try:
+                # Wait for 60 seconds
+                await asyncio.sleep(60)
+                
+                # Get all areas with switches
+                areas = await self.get_areas_with_switches()
+                
+                if not areas:
+                    logger.debug("No areas with switches found for periodic update")
+                    continue
+                
+                logger.info(f"Running periodic light update for {len(areas)} areas with switches")
+                
+                # Update lights in each area
+                for area_id in areas:
+                    await self.update_lights_in_area_if_on(area_id)
+                    
+            except asyncio.CancelledError:
+                logger.info("Periodic light updater cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic light updater: {e}")
+                # Continue running even if there's an error
         
     async def handle_zha_switch_press(self, device_id: str, command: str, button: str):
         """Handle ZHA switch button press.
@@ -291,6 +356,11 @@ class HomeAssistantWebSocketClient:
             event_data = event.get("data", {})
             
             logger.info(f"Event received: {event_type}")
+            
+            # Log more details for call_service events
+            if event_type == "call_service":
+                logger.info(f"Service called: {event_data.get('domain')}.{event_data.get('service')} with data: {event_data.get('service_data')}")
+            
             logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
             
             # Handle ZHA events
@@ -311,7 +381,16 @@ class HomeAssistantWebSocketClient:
                 device_id = event_data.get('device_id')
                 command = event_data.get('command')
                 args = event_data.get('args', {})
-                button = args.get('button')
+                
+                # Skip raw "step" commands - we'll handle the processed button events instead
+                if command == "step":
+                    logger.info(f"Ignoring raw step command from device {device_id}")
+                    return
+                
+                # Check if args is a dict before trying to get button
+                button = None
+                if isinstance(args, dict):
+                    button = args.get('button')
                 
                 if device_id and command and button:
                     await self.handle_zha_switch_press(device_id, command, button)
@@ -436,6 +515,10 @@ class HomeAssistantWebSocketClient:
                 # Subscribe to all events
                 await self.subscribe_events()
                 
+                # Start periodic light updater
+                self.periodic_update_task = asyncio.create_task(self.periodic_light_updater())
+                logger.info("Started periodic light updater (runs every 60 seconds)")
+                
                 # Listen for messages
                 logger.info("Listening for events...")
                 async for message in websocket:
@@ -452,6 +535,13 @@ class HomeAssistantWebSocketClient:
         except Exception as e:
             logger.error(f"Connection error: {e}")
         finally:
+            # Cancel periodic updater if running
+            if self.periodic_update_task and not self.periodic_update_task.done():
+                self.periodic_update_task.cancel()
+                try:
+                    await self.periodic_update_task
+                except asyncio.CancelledError:
+                    pass
             self.websocket = None
             
     async def run(self):

@@ -248,7 +248,7 @@ class SwitchCommandProcessor:
             service_data = {
                 "area_id": area_id,
                 "brightness_pct": increment_pct,
-                "transition": 1
+                "transition": 0.5
             }
         else:
             # Increase brightness of lights that are on
@@ -306,7 +306,7 @@ class SwitchCommandProcessor:
             service_data = {
                 "area_id": area_id,
                 "brightness_step_pct": -decrement_pct,  # Negative value to decrease
-                "transition": 1
+                "transition": 0.5
             }
             
             await self.client.call_service("light", "turn_on", service_data)
