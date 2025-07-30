@@ -1,5 +1,10 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.1
+
+- Fix magic mode not being disabled when using ON button to toggle lights off
+- Ensure magic mode is only active when lights are on
+
 ## 1.2.0
 
 - Add "Magic Mode" feature for automatic adaptive lighting updates

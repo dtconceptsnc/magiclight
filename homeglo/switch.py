@@ -93,8 +93,9 @@ class SwitchCommandProcessor:
                 break
         
         if any_light_on:
-            # Turn off all lights in the area
+            # Turn off all lights in the area and disable magic mode
             await self._turn_off_lights(area_id)
+            self.client.disable_magic_mode(area_id)
         else:
             # Turn on all lights with adaptive lighting and enable magic mode
             await self._turn_on_lights_adaptive(area_id)
