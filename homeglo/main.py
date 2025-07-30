@@ -277,13 +277,26 @@ class HomeAssistantWebSocketClient:
         
         return list(areas_with_switches)
     
-    async def update_lights_in_area_if_on(self, area_id: str):
-        """Update lights in an area with adaptive lighting if they are on.
+    async def update_lights_in_area_if_all_on(self, area_id: str):
+        """Update lights in an area with adaptive lighting only if all lights are on.
         
         Args:
             area_id: The area ID to update
         """
         try:
+            # First, get all lights to check their states
+            lights = await self.get_lights_in_area(area_id)
+            
+            # Check if any lights are off
+            # Note: get_lights_in_area returns ALL lights, not filtered by area
+            # But we need to check before sending the area-based command
+            lights_off = [light for light in lights if light.get("state") == "off"]
+            
+            if lights_off:
+                # If any lights are off, skip the update
+                logger.info(f"Skipping adaptive update for area {area_id} - {len(lights_off)} lights are off")
+                return
+            
             # Get adaptive lighting values
             lighting_values = get_adaptive_lighting(
                 latitude=self.latitude,
@@ -291,9 +304,8 @@ class HomeAssistantWebSocketClient:
                 timezone=self.timezone
             )
             
-            # For now, we'll just send the update command and let HA handle area filtering
-            # The service call with area_id will only affect lights in that area
-            # and will only change attributes of lights that are already on
+            # Send the update command with area_id
+            # This will affect all lights in the area
             service_data = {
                 "area_id": area_id,
                 "brightness_pct": lighting_values["brightness"],
@@ -326,7 +338,7 @@ class HomeAssistantWebSocketClient:
                 
                 # Update lights in each area
                 for area_id in areas:
-                    await self.update_lights_in_area_if_on(area_id)
+                    await self.update_lights_in_area_if_all_on(area_id)
                     
             except asyncio.CancelledError:
                 logger.info("Periodic light updater cancelled")
