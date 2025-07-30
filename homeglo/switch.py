@@ -36,6 +36,8 @@ class SwitchCommandProcessor:
         # Handle different button/command combinations
         if button == "on" and command == "on_press":
             await self._handle_on_button_press(device_id)
+        elif button == "off" and command == "off_press":
+            await self._handle_off_button_press(device_id)
         elif button == "off" and command == "off_hold":
             await self._handle_off_button_hold(device_id)
         elif button == "off" and command == "off_release":
@@ -46,6 +48,24 @@ class SwitchCommandProcessor:
             await self._handle_down_button_press(device_id)
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
+    
+    async def _handle_off_button_press(self, device_id: str):
+        """Handle the OFF button press - turn off lights and disable magic mode.
+        
+        Args:
+            device_id: The device ID that triggered the event
+        """
+        logger.info(f"Off button pressed on ZHA device: {device_id}")
+        
+        # Get area for this device
+        area_id = self.client.device_to_area_mapping.get(device_id)
+        if not area_id:
+            logger.warning(f"No area mapping found for device: {device_id}")
+            return
+        
+        # Turn off lights and disable magic mode
+        await self._turn_off_lights(area_id)
+        self.client.disable_magic_mode(area_id)
             
     async def _handle_on_button_press(self, device_id: str):
         """Handle the ON button press with toggle functionality.
@@ -76,8 +96,9 @@ class SwitchCommandProcessor:
             # Turn off all lights in the area
             await self._turn_off_lights(area_id)
         else:
-            # Turn on all lights with adaptive lighting
+            # Turn on all lights with adaptive lighting and enable magic mode
             await self._turn_on_lights_adaptive(area_id)
+            self.client.enable_magic_mode(area_id)
             
     async def _handle_off_button_hold(self, device_id: str):
         """Handle the OFF button hold - simulate time moving forward by 1 hour.

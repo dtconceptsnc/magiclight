@@ -48,6 +48,7 @@ class HomeAssistantWebSocketClient:
         self.longitude = None  # Home Assistant longitude
         self.timezone = None  # Home Assistant timezone
         self.periodic_update_task = None  # Task for periodic light updates
+        self.magic_mode_areas = set()  # Track which areas are in magic mode
         
     @property
     def websocket_url(self) -> str:
@@ -277,24 +278,34 @@ class HomeAssistantWebSocketClient:
         
         return list(areas_with_switches)
     
-    async def update_lights_in_area_if_all_on(self, area_id: str):
-        """Update lights in an area with adaptive lighting only if all lights are on.
+    def enable_magic_mode(self, area_id: str):
+        """Enable magic mode for an area.
+        
+        Args:
+            area_id: The area ID to enable magic mode for
+        """
+        self.magic_mode_areas.add(area_id)
+        logger.info(f"Magic mode enabled for area {area_id}")
+    
+    def disable_magic_mode(self, area_id: str):
+        """Disable magic mode for an area.
+        
+        Args:
+            area_id: The area ID to disable magic mode for
+        """
+        self.magic_mode_areas.discard(area_id)
+        logger.info(f"Magic mode disabled for area {area_id}")
+    
+    async def update_lights_in_magic_mode(self, area_id: str):
+        """Update lights in an area with adaptive lighting if in magic mode.
         
         Args:
             area_id: The area ID to update
         """
         try:
-            # First, get all lights to check their states
-            lights = await self.get_lights_in_area(area_id)
-            
-            # Check if any lights are off
-            # Note: get_lights_in_area returns ALL lights, not filtered by area
-            # But we need to check before sending the area-based command
-            lights_off = [light for light in lights if light.get("state") == "off"]
-            
-            if lights_off:
-                # If any lights are off, skip the update
-                logger.info(f"Skipping adaptive update for area {area_id} - {len(lights_off)} lights are off")
+            # Only update if area is in magic mode
+            if area_id not in self.magic_mode_areas:
+                logger.debug(f"Area {area_id} not in magic mode, skipping update")
                 return
             
             # Get adaptive lighting values
@@ -315,7 +326,7 @@ class HomeAssistantWebSocketClient:
             
             await self.call_service("light", "turn_on", service_data)
             
-            logger.info(f"Sent adaptive update to area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%")
+            logger.info(f"Magic mode update for area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%")
             
         except Exception as e:
             logger.error(f"Error updating lights in area {area_id}: {e}")
@@ -336,9 +347,10 @@ class HomeAssistantWebSocketClient:
                 
                 logger.info(f"Running periodic light update for {len(areas)} areas with switches")
                 
-                # Update lights in each area
+                # Update lights only in areas that are in magic mode
                 for area_id in areas:
-                    await self.update_lights_in_area_if_all_on(area_id)
+                    if area_id in self.magic_mode_areas:
+                        await self.update_lights_in_magic_mode(area_id)
                     
             except asyncio.CancelledError:
                 logger.info("Periodic light updater cancelled")
