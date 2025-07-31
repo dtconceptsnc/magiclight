@@ -38,26 +38,20 @@ class AdaptiveLighting:
         self,
         *,
         min_color_temp: int = 2000,
-        max_color_temp: int = 5500,
-        sleep_color_temp: int = 1000,
-        min_brightness: int = 10,
+        max_color_temp: int = 6500,
+        min_brightness: int = 1,
         max_brightness: int = 100,
         sunrise_time: Optional[datetime] = None,
         sunset_time: Optional[datetime] = None,
         solar_noon: Optional[datetime] = None,
-        adapt_until_sleep: bool = True,
-        sleep_time: Optional[datetime] = None,
     ) -> None:
         self.min_color_temp = min_color_temp
         self.max_color_temp = max_color_temp
-        self.sleep_color_temp = sleep_color_temp
         self.min_brightness = min_brightness
         self.max_brightness = max_brightness
         self.sunrise_time = sunrise_time
         self.sunset_time = sunset_time
         self.solar_noon = solar_noon
-        self.adapt_until_sleep = adapt_until_sleep
-        self.sleep_time = sleep_time
 
     # position helpers -------------------------------------------------
     def _parabolic_position(self, now: datetime) -> float:
@@ -66,10 +60,6 @@ class AdaptiveLighting:
         if now < self.sunrise_time:
             return -1.0
         if now > self.sunset_time:
-            if self.adapt_until_sleep and self.sleep_time and now < self.sleep_time:
-                span = (self.sleep_time - self.sunset_time).total_seconds()
-                elap = (now - self.sunset_time).total_seconds()
-                return -1.0 * (elap / span)
             return -1.0
         h = self.solar_noon.timestamp()
         x = (
@@ -90,12 +80,11 @@ class AdaptiveLighting:
 
     # colour / brightness ------------------------------------------------
     def calculate_color_temperature(self, pos: float) -> int:
-        if pos > 0:
-            val = (self.max_color_temp - self.min_color_temp) * pos + self.min_color_temp
-        elif self.adapt_until_sleep:
-            val = abs(self.min_color_temp - self.sleep_color_temp) * abs(1 + pos) + self.sleep_color_temp
-        else:
-            val = self.min_color_temp
+        # Linear interpolation across the full range
+        # pos = 1: max_color_temp (6500K)
+        # pos = 0: middle point (4250K)
+        # pos = -1: min_color_temp (2000K)
+        val = (self.max_color_temp - self.min_color_temp) * (pos + 1) / 2 + self.min_color_temp
         return int(val)
 
     def calculate_brightness(self, pos: float) -> int:
@@ -198,10 +187,8 @@ def get_adaptive_lighting(
     defaults = {
         "min_color_temp": 2000,
         "max_color_temp": 5500,
-        "sleep_color_temp": 1000,
         "min_brightness": 10,
         "max_brightness": 100,
-        "adapt_until_sleep": True,
     }
     if config:
         defaults.update(config)

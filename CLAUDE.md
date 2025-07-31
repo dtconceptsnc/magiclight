@@ -81,3 +81,6 @@ The add-on uses Home Assistant's auth_api and homeassistant_api for automatic au
 - The add-on can be tested locally using Docker or directly with Python
 - Use `--test` flag with build_addon.sh for test mode builds
 - Monitor logs for device discovery, event handling, and adaptive lighting calculations
+
+## GIT
+- When asked to create a commit always: bump version in config.yaml, and add to changelog

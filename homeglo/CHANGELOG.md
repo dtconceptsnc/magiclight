@@ -1,5 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.2
+
+- Remove sleep mode functionality from adaptive lighting
+- Fix color temperature to continue fading through negative sun positions
+- Simplify lighting formula for smoother transitions throughout day/night cycle
+
 ## 1.2.1
 
 - Fix magic mode not being disabled when using ON button to toggle lights off
