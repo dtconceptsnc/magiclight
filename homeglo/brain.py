@@ -44,14 +44,11 @@ DEFAULT_MIN_LUX = 10.0      # Very dark (night)
 DEFAULT_MAX_LUX = 6000.0    # Bright indoor/cloudy day
 
 # Lux normalization
-LUX_GAMMA = 0.6            # Perceptual curve gamma correction
+LUX_GAMMA = 0.3            # Perceptual curve gamma correction
 
-# Lux brightness adjustment parameters
-LUX_BRIGHTNESS_K = 7       # Logistic curve steepness (higher = steeper drop)
-LUX_BRIGHTNESS_M = 0.4     # Midpoint where brightness is 50% (0-1)
-
-# Lux color adjustment
-DEFAULT_LUX_COLOR_WEIGHT = 0.1  # How much lux affects color temp (0-1)
+# Lux adjustment parameters
+LUX_BRIGHTNESS_GAMMA = 2.0  # Brightness inverse-gamma curve (1 = linear, >1 = softer)
+LUX_CCT_GAMMA = 0.3         # CCT gamma (currently unused, using smoothstep instead)
 
 # TWILIGHT
 CIVIL_TWILIGHT = -6.0   # deg, sun elevation at civil-dusk/dawn
@@ -79,7 +76,6 @@ class AdaptiveLighting:
         solar_noon: Optional[datetime] = None,
         min_lux: float = DEFAULT_MIN_LUX,
         max_lux: float = DEFAULT_MAX_LUX,
-        lux_color_weight: float = DEFAULT_LUX_COLOR_WEIGHT,
     ) -> None:
         self.min_color_temp = min_color_temp
         self.max_color_temp = max_color_temp
@@ -90,7 +86,6 @@ class AdaptiveLighting:
         self.solar_noon = solar_noon
         self.min_lux = min_lux
         self.max_lux = max_lux
-        self.lux_color_weight = lux_color_weight
 
     def calculate_sun_position(self, now: datetime, elev_deg: float) -> float:
         if self.sunrise_time and self.sunset_time and self.solar_noon:
@@ -124,33 +119,48 @@ class AdaptiveLighting:
         return log_norm ** gamma
     
     def apply_lux_adjustments(
-        self,
-        color_temp: int,
-        brightness: int,
-        lux: Optional[float],
-    ) -> Tuple[int, int]:
+    self,
+    base_cct: int,
+    base_bri: int,
+    lux: Optional[float],
+) -> Tuple[int, int]:
+        """
+        Scale `base_bri` and remap `base_cct` using ambient lux.
+
+        Normalised lux (`ln`) is clamped 0…1, where
+            0 → self.min_lux  (darkest room you care about)
+            1 → self.max_lux  (brightest room you expect)
+
+        The curves are purely algebraic—no magic k or m hiding
+        the shape—so you can dial them in with real-world tests.
+        """
         if lux is None:
-            return color_temp, brightness
+            return base_cct, base_bri
 
+        # --- Normalise & clamp ---------------------------------------------------
         ln = self._lux_to_norm(lux, self.min_lux, self.max_lux)
-        logger.info(f"Applying lux adjustments: {lux:.0f} lux (normalized: {ln:.2f})")
+        ln = max(0.0, min(1.0, ln))          # safety
 
-        # ---------- BRIGHTNESS ----------
-        # logistic: k controls slope, m the mid-point
-        k = LUX_BRIGHTNESS_K
-        m = LUX_BRIGHTNESS_M
-        b_factor = 1 / (1 + math.exp(k * (ln - m)))
-        bri = int(brightness * b_factor)
-        bri = max(self.min_brightness, min(self.max_brightness, bri))
+        logger.info(f"Lux adjustment: {lux:.0f} lux → normalized {ln:.3f}")
 
-        # ---------- COLOUR TEMPERATURE ----------
-        # shift proportionally within CCT span
-        cct_span = self.max_color_temp - self.min_color_temp
-        # ln=0 → no shift; ln=1 → full daylight
-        cct = int(color_temp + (cct_span * (ln - 0.5) * self.lux_color_weight))
-        cct = max(self.min_color_temp, min(self.max_color_temp, cct))
+        # --- Brightness: inverse-gamma curve ------------------------------------
+        γ = getattr(self, "lux_brightness_gamma", LUX_BRIGHTNESS_GAMMA)
+        bri_factor = 1.0 - pow(ln, γ)                    # 1→0 as lux rises
+        bri = int(self.min_brightness +
+                bri_factor * (base_bri - self.min_brightness))
+        
+        logger.info(f"Brightness adjustment: base {base_bri}% → {bri}% (factor: {bri_factor:.3f}, gamma: {γ})")
 
-        return cct, bri    
+        # --- CCT: gamma curve from warm→cool ------------------------------------
+        #   ln   0 …… 0.5 …… 1
+        #   CCT  min …… mid …… max
+        γ_cct = getattr(self, "lux_cct_gamma", LUX_CCT_GAMMA)
+        cct = int(self.min_color_temp + 
+                (ln ** γ_cct) * (self.max_color_temp - self.min_color_temp))
+        
+        logger.info(f"CCT adjustment: base {base_cct}K → {cct}K (gamma: {γ_cct})")
+
+        return cct, bri 
 
     # colour / brightness ------------------------------------------------
     def calculate_color_temperature(self, pos: float, *, gamma: float = 1) -> int:
@@ -246,7 +256,6 @@ def get_adaptive_lighting(
     longitude: Optional[float] = None,
     timezone: Optional[str] = None,
     current_time: Optional[datetime] = None,
-    config: Optional[Dict[str, Any]] = None,
     lux: Optional[float] = None,
     lux_adjustment: bool = False,
 ) -> Dict[str, Any]:
@@ -298,6 +307,9 @@ def get_adaptive_lighting(
         log_msg += f", lux {lux:.0f}"
     log_msg += f" | base: {base_cct}K/{base_bri}% → adjusted: {cct}K/{bri}%"
     logger.info(log_msg)
+    
+    # Log color information
+    logger.info(f"Color values: RGB({rgb[0]}, {rgb[1]}, {rgb[2]}), XY({xy[0]:.4f}, {xy[1]:.4f})")
 
     return {
         "color_temp": cct,
