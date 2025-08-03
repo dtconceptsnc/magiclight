@@ -5,7 +5,6 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import time
-from brain import get_adaptive_lighting
 from zoneinfo import ZoneInfo
 
 
@@ -219,30 +218,8 @@ class SwitchCommandProcessor:
                 "transition": 1
             }
         else:
-            logger.info("=== Adaptive Lighting Calculation ===")
-            logger.info(f"Sun elevation: {self.client.sun_data.get('elevation', 'N/A')}°")
-            logger.info(f"Sun azimuth: {self.client.sun_data.get('azimuth', 'N/A')}°")
-            logger.info(f"Next sunrise: {self.client.sun_data.get('next_rising', 'N/A')}")
-            logger.info(f"Next sunset: {self.client.sun_data.get('next_setting', 'N/A')}")
-            
-            # Get lux sensor value
-            lux = await self.client.get_lux_sensor_value(area_id) if hasattr(self.client, 'get_lux_sensor_value') else None
-            if lux is not None:
-                logger.info(f"Lux sensor reading: {lux:.0f} lux")
-            
-            adaptive_values = get_adaptive_lighting(
-                latitude=self.client.latitude,
-                longitude=self.client.longitude,
-                timezone=self.client.timezone,
-                lux=lux
-            )
-            
-            logger.info(f"Calculated sun position: {adaptive_values['sun_position']:.3f} (-1 to 1)")
-            logger.info(f"Color temperature: {adaptive_values['color_temp']}K")
-            logger.info(f"Brightness: {adaptive_values['brightness']}%")
-            logger.info(f"RGB values: {adaptive_values['rgb']}")
-            logger.info(f"XY coordinates: {adaptive_values['xy']}")
-            logger.info("===================================")
+            # Use centralized method to get adaptive lighting values
+            adaptive_values = await self.client.get_adaptive_lighting_for_area(area_id)
             
             # Turn on all lights in the area with adaptive values
             service_data = {
@@ -363,21 +340,11 @@ class SwitchCommandProcessor:
 
         # 3. ask the brain for colour/brightness -----------------------------
         try:
-            # Get lux sensor value
-            lux = await self.client.get_lux_sensor_value(area_id) if hasattr(self.client, 'get_lux_sensor_value') else None
-            
-            adaptive = get_adaptive_lighting(
-                current_time=simulated_time,
-                lux=lux
-            )
+            # Use centralized method with simulated time
+            adaptive = await self.client.get_adaptive_lighting_for_area(area_id, current_time=simulated_time)
         except Exception:
             logger.exception("Adaptive-lighting calculation FAILED")
             return
-
-        logger.info("Sun pos %.2f  |  %d K  |  %d %%",
-                    adaptive["sun_position"],
-                    adaptive["color_temp"],
-                    adaptive["brightness"])
 
         # 4. hammer the lights – no fade -------------------------------------
         await self.client.call_service(

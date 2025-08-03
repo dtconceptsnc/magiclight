@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 import websockets
@@ -358,6 +359,39 @@ class HomeAssistantWebSocketClient:
         self.magic_mode_areas.discard(area_id)
         logger.info(f"Magic mode disabled for area {area_id}")
     
+    async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None) -> Dict[str, Any]:
+        """Get adaptive lighting values for a specific area.
+        
+        This is the centralized method that should be used for all adaptive lighting calculations.
+        
+        Args:
+            area_id: The area ID to get lighting values for
+            current_time: Optional datetime to use for calculations (for time simulation)
+            
+        Returns:
+            Dict containing adaptive lighting values
+        """
+        # Get lux sensor value for this area
+        lux = await self.get_lux_sensor_value(area_id)
+        
+        # Get adaptive lighting values with all settings
+        lighting_values = get_adaptive_lighting(
+            latitude=self.latitude,
+            longitude=self.longitude,
+            timezone=self.timezone,
+            current_time=current_time,
+            lux=lux,
+            lux_adjustment=self.lux_adjustment
+        )
+        
+        # Log the calculation
+        log_msg = f"Adaptive lighting for area {area_id}: {lighting_values['color_temp']}K, {lighting_values['brightness']}%"
+        if lux is not None:
+            log_msg += f", lux: {lux:.0f}"
+        logger.info(log_msg)
+        
+        return lighting_values
+    
     async def update_lights_in_magic_mode(self, area_id: str):
         """Update lights in an area with adaptive lighting if in magic mode.
         
@@ -370,17 +404,8 @@ class HomeAssistantWebSocketClient:
                 logger.debug(f"Area {area_id} not in magic mode, skipping update")
                 return
             
-            # Get lux sensor value for this area
-            lux = await self.get_lux_sensor_value(area_id)
-            
-            # Get adaptive lighting values
-            lighting_values = get_adaptive_lighting(
-                latitude=self.latitude,
-                longitude=self.longitude,
-                timezone=self.timezone,
-                lux=lux,
-                lux_adjustment=self.lux_adjustment
-            )
+            # Get adaptive lighting values using centralized method
+            lighting_values = await self.get_adaptive_lighting_for_area(area_id)
             
             # Send the update command with area_id
             # This will affect all lights in the area
@@ -392,11 +417,6 @@ class HomeAssistantWebSocketClient:
             }
             
             await self.call_service("light", "turn_on", service_data)
-            
-            log_msg = f"Magic mode update for area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%"
-            if lux is not None:
-                log_msg += f", lux: {lux:.0f}"
-            logger.info(log_msg)
             
         except Exception as e:
             logger.error(f"Error updating lights in area {area_id}: {e}")
