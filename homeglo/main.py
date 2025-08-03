@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -49,6 +49,8 @@ class HomeAssistantWebSocketClient:
         self.timezone = None  # Home Assistant timezone
         self.periodic_update_task = None  # Task for periodic light updates
         self.magic_mode_areas = set()  # Track which areas are in magic mode
+        self.cached_states = {}  # Cache of entity states
+        self.last_states_update = None  # Timestamp of last states update
         
     @property
     def websocket_url(self) -> str:
@@ -263,6 +265,65 @@ class HomeAssistantWebSocketClient:
         # The service call with area_id will handle the actual filtering
         return lights
         
+    async def get_lux_sensor_value(self, area_id: Optional[str] = None) -> Optional[float]:
+        """Get lux sensor value from cached states.
+        
+        Args:
+            area_id: Optional area ID to prefer sensors from
+            
+        Returns:
+            Lux value if found, None otherwise
+        """
+        logger.debug(f"Getting lux sensor value for area: {area_id}")
+        
+        try:
+            area_lux_sensors = []
+            general_lux_sensors = []
+            
+            # Search through cached states
+            for entity_id, entity_data in self.cached_states.items():
+                if not isinstance(entity_data, dict):
+                    continue
+                    
+                attributes = entity_data.get("attributes", {})
+                state = entity_data.get("state")
+                
+                # Check if it's a lux sensor
+                if (entity_id.startswith("sensor.") and 
+                    ("lux" in entity_id.lower() or 
+                     attributes.get("unit_of_measurement") == "lx") and
+                    state not in ["unavailable", "unknown", None]):
+                    
+                    try:
+                        lux_value = float(state)
+                        
+                        # Check if sensor belongs to the specific area
+                        device_id = attributes.get("device_id")
+                        if area_id and device_id and self.device_to_area_mapping.get(device_id) == area_id:
+                            area_lux_sensors.append((entity_id, lux_value))
+                        else:
+                            general_lux_sensors.append((entity_id, lux_value))
+                            
+                    except ValueError:
+                        logger.warning(f"Invalid lux value for {entity_id}: {state}")
+            
+            # Prefer area-specific sensor if available
+            if area_lux_sensors:
+                entity_id, lux_value = area_lux_sensors[0]
+                logger.info(f"Using area-specific lux sensor {entity_id} for area {area_id}: {lux_value} lux")
+                return lux_value
+            elif general_lux_sensors:
+                entity_id, lux_value = general_lux_sensors[0]
+                logger.info(f"Using general lux sensor {entity_id}: {lux_value} lux")
+                return lux_value
+            else:
+                logger.debug("No lux sensors found in cached states")
+                
+        except Exception as e:
+            logger.error(f"Error retrieving lux sensor value: {e}")
+        
+        return None
+        
     async def get_areas_with_switches(self) -> List[str]:
         """Get all areas that have devices with 'Switch' in the friendly name.
         
@@ -308,11 +369,15 @@ class HomeAssistantWebSocketClient:
                 logger.debug(f"Area {area_id} not in magic mode, skipping update")
                 return
             
+            # Get lux sensor value for this area
+            lux = await self.get_lux_sensor_value(area_id)
+            
             # Get adaptive lighting values
             lighting_values = get_adaptive_lighting(
                 latitude=self.latitude,
                 longitude=self.longitude,
-                timezone=self.timezone
+                timezone=self.timezone,
+                lux=lux
             )
             
             # Send the update command with area_id
@@ -326,7 +391,10 @@ class HomeAssistantWebSocketClient:
             
             await self.call_service("light", "turn_on", service_data)
             
-            logger.info(f"Magic mode update for area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%")
+            log_msg = f"Magic mode update for area {area_id} - temp: {lighting_values['color_temp']}K, brightness: {lighting_values['brightness']}%"
+            if lux is not None:
+                log_msg += f", lux: {lux:.0f}"
+            logger.info(log_msg)
             
         except Exception as e:
             logger.error(f"Error updating lights in area {area_id}: {e}")
@@ -425,6 +493,10 @@ class HomeAssistantWebSocketClient:
                 new_state = event_data.get("new_state", {})
                 old_state = event_data.get("old_state", {})
                 
+                # Update cached state
+                if entity_id and isinstance(new_state, dict):
+                    self.cached_states[entity_id] = new_state
+                
                 # Update sun data if it's the sun entity
                 if entity_id == "sun.sun" and isinstance(new_state, dict):
                     self.sun_data = new_state.get("attributes", {})
@@ -482,15 +554,21 @@ class HomeAssistantWebSocketClient:
                 
                 # Check if this is states data
                 elif isinstance(first_item, dict) and "entity_id" in first_item:
-                    # This is states data
+                    # This is states data - update our cache
+                    self.cached_states.clear()
                     for state in result:
                         entity_id = state.get("entity_id", "")
+                        self.cached_states[entity_id] = state
+                        
                         attributes = state.get("attributes", {})
                         
                         # Store initial sun data
                         if entity_id == "sun.sun":
                             self.sun_data = attributes
                             logger.info(f"Initial sun data: elevation={self.sun_data.get('elevation')}")
+                    
+                    self.last_states_update = asyncio.get_event_loop().time()
+                    logger.info(f"Cached {len(self.cached_states)} entity states")
             
             # Handle config result
             elif result and isinstance(result, dict):

@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.3
+
+- Add lux sensor support for adaptive lighting
+  - Automatically detects and uses lux sensors (area-specific or general)
+  - Lux adjustments applied as post-processing stage for better modularity
+  - Bright environments shift toward cooler colors and reduced brightness
+  - Dark environments maintain warmer colors and appropriate brightness
+  - Configurable lux boundaries and adjustment weights
+
 ## 1.2.2
 
 - Remove sleep mode functionality from adaptive lighting

@@ -225,7 +225,17 @@ class SwitchCommandProcessor:
             logger.info(f"Next sunrise: {self.client.sun_data.get('next_rising', 'N/A')}")
             logger.info(f"Next sunset: {self.client.sun_data.get('next_setting', 'N/A')}")
             
-            adaptive_values = get_adaptive_lighting()
+            # Get lux sensor value
+            lux = await self.client.get_lux_sensor_value(area_id) if hasattr(self.client, 'get_lux_sensor_value') else None
+            if lux is not None:
+                logger.info(f"Lux sensor reading: {lux:.0f} lux")
+            
+            adaptive_values = get_adaptive_lighting(
+                latitude=self.client.latitude,
+                longitude=self.client.longitude,
+                timezone=self.client.timezone,
+                lux=lux
+            )
             
             logger.info(f"Calculated sun position: {adaptive_values['sun_position']:.3f} (-1 to 1)")
             logger.info(f"Color temperature: {adaptive_values['color_temp']}K")
@@ -353,8 +363,12 @@ class SwitchCommandProcessor:
 
         # 3. ask the brain for colour/brightness -----------------------------
         try:
+            # Get lux sensor value
+            lux = await self.client.get_lux_sensor_value(area_id) if hasattr(self.client, 'get_lux_sensor_value') else None
+            
             adaptive = get_adaptive_lighting(
-                current_time=simulated_time
+                current_time=simulated_time,
+                lux=lux
             )
         except Exception:
             logger.exception("Adaptive-lighting calculation FAILED")
