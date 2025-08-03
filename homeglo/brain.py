@@ -248,6 +248,7 @@ def get_adaptive_lighting(
     current_time: Optional[datetime] = None,
     config: Optional[Dict[str, Any]] = None,
     lux: Optional[float] = None,
+    lux_adjustment: bool = False,
 ) -> Dict[str, Any]:
     """Compute adaptive-lighting values.
 
@@ -285,8 +286,9 @@ def get_adaptive_lighting(
     cct = base_cct = al.calculate_color_temperature(sun_pos)
     bri = base_bri = al.calculate_brightness(sun_pos)
     
-    # Apply lux adjustments as a post-processing stage
-    # cct, bri = al.apply_lux_adjustments(base_cct, base_bri, lux)
+    # Apply lux adjustments as a post-processing stage if enabled
+    if lux_adjustment and lux is not None:
+        cct, bri = al.apply_lux_adjustments(base_cct, base_bri, lux)
     
     rgb = al.color_temperature_to_rgb(cct)
     xy = al.rgb_to_xy(rgb)

@@ -51,6 +51,7 @@ class HomeAssistantWebSocketClient:
         self.magic_mode_areas = set()  # Track which areas are in magic mode
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
+        self.lux_adjustment = os.getenv("LUX_ADJUSTMENT", "false").lower() == "true"  # Lux adjustment setting
         
     @property
     def websocket_url(self) -> str:
@@ -377,7 +378,8 @@ class HomeAssistantWebSocketClient:
                 latitude=self.latitude,
                 longitude=self.longitude,
                 timezone=self.timezone,
-                lux=lux
+                lux=lux,
+                lux_adjustment=self.lux_adjustment
             )
             
             # Send the update command with area_id

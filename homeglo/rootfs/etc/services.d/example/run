@@ -80,6 +80,16 @@ bashio::log.info "Starting Home Assistant WebSocket listener..."
 bashio::log.info "Mode: ${MODE}"
 bashio::log.info "WebSocket URL: ${HA_WEBSOCKET_URL}"
 
+# Get lux_adjustment configuration
+LUX_ADJUSTMENT=$(bashio::config 'lux_adjustment')
+if [ "${LUX_ADJUSTMENT}" != "null" ] && [ -n "${LUX_ADJUSTMENT}" ]; then
+    export LUX_ADJUSTMENT="${LUX_ADJUSTMENT}"
+else
+    export LUX_ADJUSTMENT="false"
+fi
+
+bashio::log.info "Lux adjustment: ${LUX_ADJUSTMENT}"
+
 # Run the Python app
 cd /app
 exec python3 main.py

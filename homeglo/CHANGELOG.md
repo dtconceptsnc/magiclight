@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.4
+
+- Add configuration toggle for lux adjustment
+  - New "Lux adjustment" checkbox in Home Assistant configuration tab
+  - When enabled, applies lux-based brightness and color temperature adjustments
+  - Disabled by default for backward compatibility
+  - Lux adjustment remains optional and only applies when lux sensors are available
+
 ## 1.2.3
 
 - Add lux sensor support for adaptive lighting
