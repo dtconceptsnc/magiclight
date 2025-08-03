@@ -163,7 +163,7 @@ class AdaptiveLighting:
         return cct, bri 
 
     # colour / brightness ------------------------------------------------
-    def calculate_color_temperature(self, pos: float, *, gamma: float = 1) -> int:
+    def calculate_color_temperature(self, pos: float, *, gamma: float = 2) -> int:
         """
         Map sun-position (-1 … 1) to colour temperature using a cubic smooth-step.
         `gamma` < 1 warms the day (slower rise); > 1 cools it faster.
