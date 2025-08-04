@@ -49,7 +49,7 @@ class SwitchCommandProcessor:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
     
     async def _handle_off_button_press(self, device_id: str):
-        """Handle the OFF button press - turn off lights and disable magic mode.
+        """Handle the OFF button press - only disable magic mode (lights stay on).
         
         Args:
             device_id: The device ID that triggered the event
@@ -62,9 +62,8 @@ class SwitchCommandProcessor:
             logger.warning(f"No area mapping found for device: {device_id}")
             return
         
-        # Turn off lights and disable magic mode
-        await self._turn_off_lights(area_id)
-        self.client.disable_magic_mode(area_id)
+        # Only disable magic mode (with flash indication)
+        await self.client.disable_magic_mode(area_id)
             
     async def _handle_on_button_press(self, device_id: str):
         """Handle the ON button press with toggle functionality.
@@ -92,9 +91,9 @@ class SwitchCommandProcessor:
                 break
         
         if any_light_on:
-            # Turn off all lights in the area and disable magic mode
+            # Turn off all lights in the area and disable magic mode (no flash when turning off)
             await self._turn_off_lights(area_id)
-            self.client.disable_magic_mode(area_id)
+            await self.client.disable_magic_mode(area_id, flash=False)
         else:
             # Turn on all lights with adaptive lighting and enable magic mode
             await self._turn_on_lights_adaptive(area_id)

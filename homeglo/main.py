@@ -350,14 +350,48 @@ class HomeAssistantWebSocketClient:
         self.magic_mode_areas.add(area_id)
         logger.info(f"Magic mode enabled for area {area_id}")
     
-    def disable_magic_mode(self, area_id: str):
-        """Disable magic mode for an area.
+    async def disable_magic_mode(self, area_id: str, flash: bool = True):
+        """Disable magic mode for an area and optionally flash lights to indicate.
         
         Args:
             area_id: The area ID to disable magic mode for
+            flash: Whether to flash lights to indicate magic mode is disabled
         """
+        # Check if magic mode was actually enabled
+        was_enabled = area_id in self.magic_mode_areas
+        
         self.magic_mode_areas.discard(area_id)
+        
+        if not was_enabled:
+            logger.info(f"Magic mode already disabled for area {area_id}")
+            return
+            
         logger.info(f"Magic mode disabled for area {area_id}")
+        
+        # Flash lights to indicate magic mode is off (if requested)
+        if flash:
+            lights_in_area = await self.get_lights_in_area(area_id)
+            any_light_on = any(light.get("state") == "on" for light in lights_in_area)
+            
+            if any_light_on:
+                logger.info(f"Flashing lights to indicate magic mode disabled for area {area_id}")
+                
+                # Quick dim to 30%
+                await self.call_service("light", "turn_on", {
+                    "area_id": area_id,
+                    "brightness_pct": 30,
+                    "transition": 0.2
+                })
+                
+                # Brief pause
+                await asyncio.sleep(0.3)
+                
+                # Back to full brightness
+                await self.call_service("light", "turn_on", {
+                    "area_id": area_id,
+                    "brightness_pct": 100,
+                    "transition": 0.2
+                })
     
     async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None) -> Dict[str, Any]:
         """Get adaptive lighting values for a specific area.
@@ -571,6 +605,12 @@ class HomeAssistantWebSocketClient:
                         for dev_id, area in self.device_to_area_mapping.items():
                             logger.info(f"  - Device ID: {dev_id} -> Area: {area}")
                         logger.info("=========================")
+                        
+                        # Initialize magic mode for all areas with switches
+                        areas_with_switches = set(self.device_to_area_mapping.values())
+                        for area_id in areas_with_switches:
+                            self.enable_magic_mode(area_id)
+                        logger.info(f"Initialized magic mode for {len(areas_with_switches)} areas with switches")
                     else:
                         logger.warning("No switches found in device registry")
                 

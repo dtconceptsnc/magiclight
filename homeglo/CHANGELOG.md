@@ -1,5 +1,18 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.6
+
+- Implement global magic mode management
+  - Magic mode is now enabled by default on startup for all areas with switches
+  - Top button press toggles lights and enables/disables magic mode
+  - Bottom button press disengages magic mode without turning lights off
+  - Visual flash indication when magic mode is disabled
+  - Centralized magic mode disable function with consistent behavior
+
+## 1.2.5
+
+- Version skipped
+
 ## 1.2.4
 
 - Add configuration toggle for lux adjustment
