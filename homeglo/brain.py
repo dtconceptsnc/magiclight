@@ -48,7 +48,11 @@ LUX_GAMMA = 0.3            # Perceptual curve gamma correction
 
 # Lux adjustment parameters
 LUX_BRIGHTNESS_GAMMA = 2.0  # Brightness inverse-gamma curve (1 = linear, >1 = softer)
-LUX_CCT_GAMMA = 0.3         # CCT gamma (currently unused, using smoothstep instead)
+LUX_CCT_GAMMA = 0.3         # CCT gamma for lux-based adjustments
+
+# Sun position to color/brightness mapping
+SUN_CCT_GAMMA = 2.0         # Color temperature gamma (>1 = cooler during day)
+SUN_BRIGHTNESS_GAMMA = 1.5  # Brightness gamma (1 = cubic smooth-step)
 
 # TWILIGHT
 CIVIL_TWILIGHT = -6.0   # deg, sun elevation at civil-dusk/dawn
@@ -163,7 +167,7 @@ class AdaptiveLighting:
         return cct, bri 
 
     # colour / brightness ------------------------------------------------
-    def calculate_color_temperature(self, pos: float, *, gamma: float = 2) -> int:
+    def calculate_color_temperature(self, pos: float, *, gamma: float = SUN_CCT_GAMMA) -> int:
         """
         Map sun-position (-1 … 1) to colour temperature using a cubic smooth-step.
         `gamma` < 1 warms the day (slower rise); > 1 cools it faster.
@@ -186,10 +190,23 @@ class AdaptiveLighting:
         val = self.min_color_temp + s * (self.max_color_temp - self.min_color_temp)
         return int(val)
 
-    def calculate_brightness(self, pos: float) -> int:
-        # Map -1…1 -> 0…1 then use cubic easing so it’s gentler near max/min
+    def calculate_brightness(self, pos: float, *, gamma: float = SUN_BRIGHTNESS_GAMMA) -> int:
+        """Calculate brightness based on sun position with optional gamma adjustment.
+        
+        Args:
+            pos: Sun position (-1 to 1)
+            gamma: Gamma value for brightness curve (1 = cubic smooth-step, <1 = dimmer, >1 = brighter)
+        """
+        # Map -1…1 -> 0…1
         t = (pos + 1) * 0.5          # 0 at night, 1 at noon
-        s = t*t*(3 - 2*t)            # smooth-step
+        
+        # Apply gamma if specified
+        if gamma != 1.0:
+            t = t ** gamma
+        
+        # Cubic smooth-step easing
+        s = t * t * (3.0 - 2.0 * t)
+        
         return int(self.min_brightness +
                 s * (self.max_brightness - self.min_brightness))
 
