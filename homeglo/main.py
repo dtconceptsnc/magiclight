@@ -50,6 +50,7 @@ class HomeAssistantWebSocketClient:
         self.timezone = None  # Home Assistant timezone
         self.periodic_update_task = None  # Task for periodic light updates
         self.magic_mode_areas = set()  # Track which areas are in magic mode
+        self.magic_mode_time_offsets = {}  # Track time offsets for dimming along curve
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         self.lux_adjustment = os.getenv("LUX_ADJUSTMENT", "false").lower() == "true"  # Lux adjustment setting
@@ -348,6 +349,7 @@ class HomeAssistantWebSocketClient:
             area_id: The area ID to enable magic mode for
         """
         self.magic_mode_areas.add(area_id)
+        self.magic_mode_time_offsets[area_id] = 0  # Reset time offset
         logger.info(f"Magic mode enabled for area {area_id}")
     
     async def disable_magic_mode(self, area_id: str, flash: bool = True):
@@ -361,6 +363,7 @@ class HomeAssistantWebSocketClient:
         was_enabled = area_id in self.magic_mode_areas
         
         self.magic_mode_areas.discard(area_id)
+        self.magic_mode_time_offsets.pop(area_id, None)  # Remove time offset
         
         if not was_enabled:
             logger.info(f"Magic mode already disabled for area {area_id}")
@@ -393,7 +396,7 @@ class HomeAssistantWebSocketClient:
                     "transition": 0.2
                 })
     
-    async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None) -> Dict[str, Any]:
+    async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None, apply_time_offset: bool = True) -> Dict[str, Any]:
         """Get adaptive lighting values for a specific area.
         
         This is the centralized method that should be used for all adaptive lighting calculations.
@@ -401,10 +404,27 @@ class HomeAssistantWebSocketClient:
         Args:
             area_id: The area ID to get lighting values for
             current_time: Optional datetime to use for calculations (for time simulation)
+            apply_time_offset: Whether to apply the magic mode time offset
             
         Returns:
             Dict containing adaptive lighting values
         """
+        # Apply magic mode time offset if applicable
+        if apply_time_offset and area_id in self.magic_mode_time_offsets:
+            offset_minutes = self.magic_mode_time_offsets[area_id]
+            if offset_minutes != 0:
+                from datetime import timedelta
+                from zoneinfo import ZoneInfo
+                
+                # Get current time or use provided time
+                if current_time is None:
+                    tzinfo = ZoneInfo(self.timezone) if self.timezone else None
+                    current_time = datetime.now(tzinfo)
+                
+                # Apply the offset
+                current_time = current_time + timedelta(minutes=offset_minutes)
+                logger.info(f"Applying time offset of {offset_minutes} minutes for area {area_id}")
+        
         # Get lux sensor value for this area
         lux = await self.get_lux_sensor_value(area_id)
         

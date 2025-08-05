@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.7
+
+- Enhanced magic mode dimming behavior
+  - Dim up/down buttons now move along the adaptive lighting curve when in magic mode
+  - Before solar noon: dim up moves forward in time (brighter), dim down moves backward (dimmer)
+  - After solar noon: dim up moves backward in time (brighter), dim down moves forward (dimmer)
+  - Bottom button now toggles magic mode: turns it off with flash if on, or enables it with adaptive lighting if lights are on
+  - Brightness adjustments never turn lights off, maintaining minimum 1% brightness
+
 ## 1.2.6
 
 - Implement global magic mode management

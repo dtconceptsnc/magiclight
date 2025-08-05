@@ -49,7 +49,7 @@ class SwitchCommandProcessor:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
     
     async def _handle_off_button_press(self, device_id: str):
-        """Handle the OFF button press - only disable magic mode (lights stay on).
+        """Handle the OFF button press - toggle magic mode when lights are on.
         
         Args:
             device_id: The device ID that triggered the event
@@ -62,8 +62,31 @@ class SwitchCommandProcessor:
             logger.warning(f"No area mapping found for device: {device_id}")
             return
         
-        # Only disable magic mode (with flash indication)
-        await self.client.disable_magic_mode(area_id)
+        # Check if magic mode is enabled
+        if area_id in self.client.magic_mode_areas:
+            # Magic mode is ON - disable it (with flash indication)
+            await self.client.disable_magic_mode(area_id)
+        else:
+            # Magic mode is OFF - check if lights are on
+            lights_in_area = await self.client.get_lights_in_area(area_id)
+            any_light_on = any(light.get("state") == "on" for light in lights_in_area)
+            
+            if any_light_on:
+                # Lights are ON but magic mode is OFF - enable magic mode and apply adaptive lighting
+                logger.info(f"Enabling magic mode and applying adaptive lighting for area {area_id}")
+                self.client.enable_magic_mode(area_id)
+                
+                # Get and apply adaptive lighting values
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                service_data = {
+                    "area_id": area_id,
+                    "kelvin": lighting_values["color_temp"],
+                    "brightness_pct": lighting_values["brightness"],
+                    "transition": 1
+                }
+                await self.client.call_service("light", "turn_on", service_data)
+            else:
+                logger.info(f"No lights are on in area {area_id}, nothing to do")
             
     async def _handle_on_button_press(self, device_id: str):
         """Handle the ON button press with toggle functionality.
@@ -97,7 +120,7 @@ class SwitchCommandProcessor:
         else:
             # Turn on all lights with adaptive lighting and enable magic mode
             await self._turn_on_lights_adaptive(area_id)
-            self.client.enable_magic_mode(area_id)
+            self.client.enable_magic_mode(area_id)  # This will reset time offset to 0
             
     async def _handle_off_button_hold(self, device_id: str):
         """Handle the OFF button hold - simulate time moving forward by 1 hour.
@@ -232,93 +255,181 @@ class SwitchCommandProcessor:
         logger.info(f"Turned on lights in area {area_id} with adaptive settings")
         
     async def dim_up(self, area_id: str, increment_pct: int = 17):
-        """Increase brightness of all lights in an area by a percentage.
+        """Increase brightness - in magic mode, move along the adaptive curve.
         
         Args:
             area_id: The area ID to control
-            increment_pct: Percentage to increase brightness (default 17%)
+            increment_pct: Percentage to increase brightness (default 17%) - used only when not in magic mode
         """
-        logger.info(f"Increasing brightness by {increment_pct}% in area {area_id}")
-        
-        # Get current light states in the area
-        lights_in_area = await self.client.get_lights_in_area(area_id)
-        
-        # Check if any lights are on
-        any_light_on = False
-        for light in lights_in_area:
-            if light.get("state") == "on":
-                any_light_on = True
-                break
-        
-        if not any_light_on:
-            logger.info(f"No lights are on in area {area_id}, turning on with default brightness")
-            # Turn on lights at a low brightness if none are on
+        # Check if area is in magic mode
+        if area_id in self.client.magic_mode_areas:
+            logger.info(f"Dimming up along magic mode curve for area {area_id}")
+            
+            # Get current sun position
+            sun_position = self.client.sun_data.get('elevation', 0)
+            
+            # Determine time offset direction based on sun position
+            # Before solar noon (morning): dim up = move forward in time
+            # After solar noon (afternoon): dim up = move backward in time
+            # Solar noon is when sun elevation is at its peak (around 0° azimuth)
+            azimuth = self.client.sun_data.get('azimuth', 180)
+            is_morning = azimuth < 180  # Sun in eastern sky
+            
+            # Adjust time offset
+            current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
+            if is_morning:
+                # Morning: move forward in time (toward noon)
+                new_offset = current_offset + 30
+            else:
+                # Afternoon/evening: move backward in time (toward noon)
+                new_offset = current_offset - 30
+            
+            # Limit offset to reasonable bounds (-12 hours to +12 hours)
+            new_offset = max(-720, min(720, new_offset))
+            self.client.magic_mode_time_offsets[area_id] = new_offset
+            
+            logger.info(f"Time offset for area {area_id}: {current_offset} -> {new_offset} minutes")
+            
+            # Get adaptive lighting values with the new offset
+            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+            
+            # Apply the lighting values
             service_data = {
                 "area_id": area_id,
-                "brightness_pct": increment_pct,
-                "transition": 0.5
-            }
-        else:
-            # Increase brightness of lights that are on
-            # Note: Home Assistant will handle the brightness increase for all lights in the area
-            service_data = {
-                "area_id": area_id,
-                "brightness_step_pct": increment_pct,
-                "transition": 1
-            }
-        
-        await self.client.call_service("light", "turn_on", service_data)
-        logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
-        
-    async def dim_down(self, area_id: str, decrement_pct: int = 17):
-        """Decrease brightness of all lights in an area by a percentage.
-        
-        Args:
-            area_id: The area ID to control
-            decrement_pct: Percentage to decrease brightness (default 17%)
-        """
-        logger.info(f"Decreasing brightness by {decrement_pct}% in area {area_id}")
-        
-        # Get current light states in the area
-        lights_in_area = await self.client.get_lights_in_area(area_id)
-        
-        # Check if any lights are on
-        any_light_on = False
-        lights_on_count = 0
-        total_brightness = 0
-        
-        for light in lights_in_area:
-            if light.get("state") == "on":
-                any_light_on = True
-                lights_on_count += 1
-                # Get current brightness if available
-                brightness = light.get("attributes", {}).get("brightness")
-                if brightness:
-                    # Convert from 0-255 to percentage
-                    brightness_pct = (brightness / 255) * 100
-                    total_brightness += brightness_pct
-        
-        if not any_light_on:
-            logger.info(f"No lights are on in area {area_id}, nothing to dim")
-            return
-        
-        # Calculate average brightness
-        avg_brightness = total_brightness / lights_on_count if lights_on_count > 0 else 50
-        
-        # If dimming would turn lights off (brightness <= decrement), turn them off instead
-        if avg_brightness <= decrement_pct:
-            logger.info(f"Dimming by {decrement_pct}% would turn lights off, turning off instead")
-            await self._turn_off_lights(area_id)
-        else:
-            # Decrease brightness of lights that are on
-            service_data = {
-                "area_id": area_id,
-                "brightness_step_pct": -decrement_pct,  # Negative value to decrease
+                "kelvin": lighting_values["color_temp"],
+                "brightness_pct": lighting_values["brightness"],
                 "transition": 0.5
             }
             
             await self.client.call_service("light", "turn_on", service_data)
-            logger.info(f"Brightness decreased by {decrement_pct}% in area {area_id}")
+            logger.info(f"Applied magic mode dimming: {lighting_values['color_temp']}K, {lighting_values['brightness']}%")
+            
+        else:
+            # Not in magic mode - use standard dimming
+            logger.info(f"Increasing brightness by {increment_pct}% in area {area_id}")
+            
+            # Get current light states in the area
+            lights_in_area = await self.client.get_lights_in_area(area_id)
+            
+            # Check if any lights are on
+            any_light_on = False
+            for light in lights_in_area:
+                if light.get("state") == "on":
+                    any_light_on = True
+                    break
+            
+            if not any_light_on:
+                logger.info(f"No lights are on in area {area_id}, turning on with default brightness")
+                # Turn on lights at a low brightness if none are on
+                service_data = {
+                    "area_id": area_id,
+                    "brightness_pct": increment_pct,
+                    "transition": 0.5
+                }
+            else:
+                # Increase brightness of lights that are on
+                service_data = {
+                    "area_id": area_id,
+                    "brightness_step_pct": increment_pct,
+                    "transition": 1
+                }
+            
+            await self.client.call_service("light", "turn_on", service_data)
+            logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
+        
+    async def dim_down(self, area_id: str, decrement_pct: int = 17):
+        """Decrease brightness - in magic mode, move along the adaptive curve.
+        
+        Args:
+            area_id: The area ID to control
+            decrement_pct: Percentage to decrease brightness (default 17%) - used only when not in magic mode
+        """
+        # Check if area is in magic mode
+        if area_id in self.client.magic_mode_areas:
+            logger.info(f"Dimming down along magic mode curve for area {area_id}")
+            
+            # Get current sun position
+            sun_position = self.client.sun_data.get('elevation', 0)
+            
+            # Determine time offset direction based on sun position
+            # Before solar noon (morning): dim down = move backward in time
+            # After solar noon (afternoon): dim down = move forward in time
+            azimuth = self.client.sun_data.get('azimuth', 180)
+            is_morning = azimuth < 180  # Sun in eastern sky
+            
+            # Adjust time offset
+            current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
+            if is_morning:
+                # Morning: move backward in time (toward dawn)
+                new_offset = current_offset - 30
+            else:
+                # Afternoon/evening: move forward in time (toward sunset)
+                new_offset = current_offset + 30
+            
+            # Limit offset to reasonable bounds (-12 hours to +12 hours)
+            new_offset = max(-720, min(720, new_offset))
+            self.client.magic_mode_time_offsets[area_id] = new_offset
+            
+            logger.info(f"Time offset for area {area_id}: {current_offset} -> {new_offset} minutes")
+            
+            # Get adaptive lighting values with the new offset
+            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+            
+            # Apply the lighting values (never turn off in magic mode)
+            service_data = {
+                "area_id": area_id,
+                "kelvin": lighting_values["color_temp"],
+                "brightness_pct": max(1, lighting_values["brightness"]),  # Ensure minimum 1% brightness
+                "transition": 0.5
+            }
+            
+            await self.client.call_service("light", "turn_on", service_data)
+            logger.info(f"Applied magic mode dimming: {lighting_values['color_temp']}K, {lighting_values['brightness']}%")
+            
+        else:
+            # Not in magic mode - use standard dimming
+            logger.info(f"Decreasing brightness by {decrement_pct}% in area {area_id}")
+            
+            # Get current light states in the area
+            lights_in_area = await self.client.get_lights_in_area(area_id)
+            
+            # Check if any lights are on
+            any_light_on = False
+            lights_on_count = 0
+            total_brightness = 0
+            
+            for light in lights_in_area:
+                if light.get("state") == "on":
+                    any_light_on = True
+                    lights_on_count += 1
+                    # Get current brightness if available
+                    brightness = light.get("attributes", {}).get("brightness")
+                    if brightness:
+                        # Convert from 0-255 to percentage
+                        brightness_pct = (brightness / 255) * 100
+                        total_brightness += brightness_pct
+            
+            if not any_light_on:
+                logger.info(f"No lights are on in area {area_id}, nothing to dim")
+                return
+            
+            # Calculate average brightness
+            avg_brightness = total_brightness / lights_on_count if lights_on_count > 0 else 50
+            
+            # If dimming would turn lights off (brightness <= decrement), turn them off instead
+            if avg_brightness <= decrement_pct:
+                logger.info(f"Dimming by {decrement_pct}% would turn lights off, turning off instead")
+                await self._turn_off_lights(area_id)
+            else:
+                # Decrease brightness of lights that are on
+                service_data = {
+                    "area_id": area_id,
+                    "brightness_step_pct": -decrement_pct,  # Negative value to decrease
+                    "transition": 0.5
+                }
+                
+                await self.client.call_service("light", "turn_on", service_data)
+                logger.info(f"Brightness decreased by {decrement_pct}% in area {area_id}")
             
     async def _set_lights_for_simulated_time(self, area_id: str) -> None:
         """
