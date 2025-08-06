@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import time
 from zoneinfo import ZoneInfo
+import random
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,37 @@ class SwitchCommandProcessor:
             await self._handle_down_button_press(device_id)
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
+
+    async def _handle_off_triple_press(self, device_id: str):
+        """Handle the OFF button triple press - set random RGB color.
+        
+        Args:
+            device_id: The device ID that triggered the event
+        """
+        logger.info(f"Off button TRIPLE PRESSED on ZHA device: {device_id} - Setting random RGB color!")
+        
+        area_id = self.client.device_to_area_mapping.get(device_id)
+        if not area_id:
+            logger.warning(f"No area mapping found for device: {device_id}")
+            return
+        
+        r = random.randint(0, 255)
+        g = random.randint(0, 255)
+        b = random.randint(0, 255)
+        
+        logger.info(f"Random RGB color for area {area_id}: R={r}, G={g}, B={b}")
+        
+        await self.client.disable_magic_mode(area_id,False)
+        
+        service_data = {
+            "area_id": area_id,
+            "rgb_color": [r, g, b],
+            "brightness_pct": 80,
+            "transition": 0.5
+        }
+        
+        await self.client.call_service("light", "turn_on", service_data)
+        logger.info(f"Set lights in area {area_id} to random RGB color: ({r}, {g}, {b})")
     
     async def _handle_off_button_press(self, device_id: str):
         """Handle the OFF button press - toggle magic mode when lights are on.

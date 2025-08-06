@@ -1,5 +1,9 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.8
+
+  - Triple press OFF random RGB!
+
 ## 1.2.7
 
 - Enhanced magic mode dimming behavior
