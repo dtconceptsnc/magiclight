@@ -41,6 +41,8 @@ class SwitchCommandProcessor:
             await self._handle_off_button_hold(device_id)
         elif button == "off" and command == "off_release":
             await self._handle_off_button_release(device_id)
+        elif button == "off" and command == "off_triple_press":
+            await self._handle_off_triple_press(device_id)
         elif button == "up" and command == "up_press":
             await self._handle_up_button_press(device_id)
         elif button == "down" and command == "down_press":
