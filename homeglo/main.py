@@ -44,6 +44,7 @@ class HomeAssistantWebSocketClient:
         self.sun_data = {}  # Store latest sun data
         self.switch_to_area_mapping = {}  # Will be populated from HA
         self.device_to_area_mapping = {}  # Map device IDs to areas
+        self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
         self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
         self.latitude = None  # Home Assistant latitude
         self.longitude = None  # Home Assistant longitude
@@ -142,6 +143,18 @@ class HomeAssistantWebSocketClient:
         """
         message_id = self._get_next_message_id()
         
+        # If area_id is provided and we have a ZHA group entity for that area, use it instead
+        if "area_id" in service_data and domain == "light":
+            area_id = service_data["area_id"]
+            # Try to find a ZHA group entity for this area
+            light_entity = self.area_to_light_entity.get(area_id)
+            if light_entity:
+                logger.info(f"Using ZHA group entity {light_entity} instead of area_id {area_id}")
+                # Replace area_id with entity_id
+                service_data = service_data.copy()  # Don't modify original
+                del service_data["area_id"]
+                service_data["entity_id"] = light_entity
+        
         service_msg = {
             "id": message_id,
             "type": "call_service",
@@ -219,12 +232,22 @@ class HomeAssistantWebSocketClient:
         Returns:
             List of light entities with their states
         """
-        # Simplified approach: get ALL lights and return them
-        # Let the caller decide how to filter by area
-        # This matches how the switch processor works
-        
         lights = []
         
+        # First check if we have a ZHA group entity for this area
+        light_entity_id = self.area_to_light_entity.get(area_id)
+        if light_entity_id:
+            # Use cached state if available
+            if light_entity_id in self.cached_states:
+                entity = self.cached_states[light_entity_id]
+                logger.debug(f"Using cached ZHA group entity state for {light_entity_id}")
+                return [{
+                    "entity_id": light_entity_id,
+                    "state": entity.get("state"),
+                    "attributes": entity.get("attributes", {})
+                }]
+        
+        # Fallback to getting all states if no ZHA group entity
         # Get current states
         message_id = self._get_next_message_id()
         states_msg = {
@@ -246,7 +269,17 @@ class HomeAssistantWebSocketClient:
                 if msg.get("id") == message_id and msg.get("type") == "result":
                     result = msg.get("result", [])
                     
-                    # Get all light entities
+                    # If we have a ZHA group entity, only return that
+                    if light_entity_id:
+                        for entity in result:
+                            if entity.get("entity_id") == light_entity_id:
+                                return [{
+                                    "entity_id": light_entity_id,
+                                    "state": entity.get("state"),
+                                    "attributes": entity.get("attributes", {})
+                                }]
+                    
+                    # Otherwise get all light entities (fallback behavior)
                     for entity in result:
                         entity_id = entity.get("entity_id", "")
                         if entity_id.startswith("light."):
@@ -264,8 +297,6 @@ class HomeAssistantWebSocketClient:
                 logger.error(f"Error getting light states: {e}")
                 break
         
-        # Note: This returns ALL lights, not filtered by area
-        # The service call with area_id will handle the actual filtering
         return lights
         
     async def get_lux_sensor_value(self, area_id: Optional[str] = None) -> Optional[float]:
@@ -572,6 +603,28 @@ class HomeAssistantWebSocketClient:
                 # Update cached state
                 if entity_id and isinstance(new_state, dict):
                     self.cached_states[entity_id] = new_state
+                    
+                    # Check if this is a ZHA group light entity
+                    if entity_id.startswith("light."):
+                        attributes = new_state.get("attributes", {})
+                        friendly_name = attributes.get("friendly_name", "")
+                        
+                        if "light_" in entity_id.lower() or "light_" in friendly_name.lower():
+                            area_name = None
+                            
+                            if "light_" in entity_id.lower():
+                                parts = entity_id.lower().split("light_")
+                                if len(parts) >= 2:
+                                    area_name = parts[-1]
+                            
+                            if not area_name and "light_" in friendly_name.lower():
+                                parts = friendly_name.lower().split("light_")
+                                if len(parts) >= 2:
+                                    area_name = parts[-1].strip()
+                            
+                            if area_name:
+                                self.area_to_light_entity[area_name] = entity_id
+                                logger.debug(f"Updated ZHA group mapping: {area_name} -> {entity_id}")
                 
                 # Update sun data if it's the sun entity
                 if entity_id == "sun.sun" and isinstance(new_state, dict):
@@ -648,9 +701,60 @@ class HomeAssistantWebSocketClient:
                         if entity_id == "sun.sun":
                             self.sun_data = attributes
                             logger.info(f"Initial sun data: elevation={self.sun_data.get('elevation')}")
+                        
+                        # Detect ZHA group light entities (Light_AREA pattern)
+                        if entity_id.startswith("light."):
+                            # Check both entity_id and friendly_name for Light_ pattern
+                            friendly_name = attributes.get("friendly_name", "")
+                            
+                            # Debug log all light entities
+                            logger.debug(f"Light entity: {entity_id}, friendly_name: {friendly_name}")
+                            
+                            # Check if Light_ appears in either entity_id or friendly_name
+                            if "light_" in entity_id.lower() or "light_" in friendly_name.lower():
+                                # Try to extract area name
+                                area_name = None
+                                
+                                # First try from entity_id
+                                if "light_" in entity_id.lower():
+                                    parts = entity_id.lower().split("light_")
+                                    if len(parts) >= 2:
+                                        area_name = parts[-1]  # Get everything after last "light_"
+                                
+                                # If not found, try from friendly_name
+                                if not area_name and "light_" in friendly_name.lower():
+                                    parts = friendly_name.lower().split("light_")
+                                    if len(parts) >= 2:
+                                        area_name = parts[-1].strip()
+                                
+                                if area_name:
+                                    self.area_to_light_entity[area_name] = entity_id
+                                    logger.info(f"Found ZHA group light entity: {entity_id} (name: {friendly_name}) for area: {area_name}")
                     
                     self.last_states_update = asyncio.get_event_loop().time()
                     logger.info(f"Cached {len(self.cached_states)} entity states")
+                    
+                    # Log ALL light entities for debugging
+                    all_lights = []
+                    for entity_id, state in self.cached_states.items():
+                        if entity_id.startswith("light."):
+                            friendly_name = state.get("attributes", {}).get("friendly_name", "")
+                            all_lights.append((entity_id, friendly_name))
+                    
+                    if all_lights:
+                        logger.info("=== All Light Entities Found ===")
+                        for entity_id, name in all_lights:
+                            logger.info(f"  - {entity_id}: {name}")
+                        logger.info("="*40)
+                    
+                    # Log discovered ZHA group entities
+                    if self.area_to_light_entity:
+                        logger.info("=== Discovered ZHA Group Light Entities ===")
+                        for area, entity in self.area_to_light_entity.items():
+                            logger.info(f"  - Area: {area} -> Entity: {entity}")
+                        logger.info("="*40)
+                    else:
+                        logger.warning("No ZHA group light entities found (looking for 'Light_' pattern)")
             
             # Handle config result
             elif result and isinstance(result, dict):

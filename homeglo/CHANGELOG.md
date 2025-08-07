@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.2.9
+
+- Add support for ZHA group light entities
+  - Automatically detects and uses ZHA group entities (Light_AREA pattern)
+  - Searches both entity_id and friendly_name for Light_ pattern
+  - Uses single ZHA group entity instead of controlling individual lights
+  - Improved logging to show all discovered light entities for debugging
+
 ## 1.2.8
 
   - Triple press OFF random RGB!
