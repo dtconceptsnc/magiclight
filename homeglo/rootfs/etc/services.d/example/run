@@ -80,15 +80,32 @@ bashio::log.info "Starting Home Assistant WebSocket listener..."
 bashio::log.info "Mode: ${MODE}"
 bashio::log.info "WebSocket URL: ${HA_WEBSOCKET_URL}"
 
-# Get lux_adjustment configuration
-LUX_ADJUSTMENT=$(bashio::config 'lux_adjustment')
-if [ "${LUX_ADJUSTMENT}" != "null" ] && [ -n "${LUX_ADJUSTMENT}" ]; then
-    export LUX_ADJUSTMENT="${LUX_ADJUSTMENT}"
+# Get color_mode configuration
+COLOR_MODE=$(bashio::config 'color_mode')
+if [ "${COLOR_MODE}" != "null" ] && [ -n "${COLOR_MODE}" ]; then
+    export COLOR_MODE="${COLOR_MODE}"
 else
-    export LUX_ADJUSTMENT="false"
+    export COLOR_MODE="rgb"
 fi
 
-bashio::log.info "Lux adjustment: ${LUX_ADJUSTMENT}"
+# Get min_color_temp configuration
+MIN_COLOR_TEMP=$(bashio::config 'min_color_temp')
+if [ "${MIN_COLOR_TEMP}" != "null" ] && [ -n "${MIN_COLOR_TEMP}" ]; then
+    export MIN_COLOR_TEMP="${MIN_COLOR_TEMP}"
+else
+    export MIN_COLOR_TEMP="500"
+fi
+
+# Get max_color_temp configuration
+MAX_COLOR_TEMP=$(bashio::config 'max_color_temp')
+if [ "${MAX_COLOR_TEMP}" != "null" ] && [ -n "${MAX_COLOR_TEMP}" ]; then
+    export MAX_COLOR_TEMP="${MAX_COLOR_TEMP}"
+else
+    export MAX_COLOR_TEMP="6500"
+fi
+
+bashio::log.info "Color mode: ${COLOR_MODE}"
+bashio::log.info "Color temperature range: ${MIN_COLOR_TEMP}K - ${MAX_COLOR_TEMP}K"
 
 # Run the Python app
 cd /app

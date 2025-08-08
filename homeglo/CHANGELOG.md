@@ -1,5 +1,20 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.0
+
+- Add configurable color mode support
+  - New dropdown configuration to choose between kelvin, rgb, or xy color modes
+  - Direct color temperature to CIE xy conversion without RGB intermediate step
+  - Centralized light control function for consistent color handling
+  - Default color mode changed to RGB for wider device compatibility
+- Add configurable color temperature range
+  - Min and max color temperature now adjustable in addon configuration
+  - Allows customization for different lighting preferences and hardware
+  - Default range: 500K (warm) to 6500K (cool)
+- Remove lux sensor adjustment feature
+  - Simplified configuration by removing lux_adjustment option
+  - Cleaner codebase focused on core adaptive lighting functionality
+
 ## 1.2.9
 
 - Add support for ZHA group light entities

@@ -1,4 +1,10 @@
 configuration:
-  message:
-    name: Message
-    description: The message that will be printed to the log when starting this example add-on.
+  color_mode:
+    name: Color Mode
+    description: How to send color commands to lights (kelvin for color temperature, rgb for RGB values, xy for CIE coordinates)
+  min_color_temp:
+    name: Minimum Color Temperature
+    description: Minimum color temperature in Kelvin (warmest/most orange light)
+  max_color_temp:
+    name: Maximum Color Temperature
+    description: Maximum color temperature in Kelvin (coolest/most blue light)

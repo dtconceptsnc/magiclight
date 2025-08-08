@@ -112,13 +112,7 @@ class SwitchCommandProcessor:
                 
                 # Get and apply adaptive lighting values
                 lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-                service_data = {
-                    "area_id": area_id,
-                    "kelvin": lighting_values["color_temp"],
-                    "brightness_pct": lighting_values["brightness"],
-                    "transition": 1
-                }
-                await self.client.call_service("light", "turn_on", service_data)
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
             else:
                 logger.info(f"No lights are on in area {area_id}, nothing to do")
             
@@ -273,19 +267,12 @@ class SwitchCommandProcessor:
                 "brightness_pct": 80,
                 "transition": 1
             }
+            await self.client.call_service("light", "turn_on", service_data)
         else:
             # Use centralized method to get adaptive lighting values
             adaptive_values = await self.client.get_adaptive_lighting_for_area(area_id)
-            
-            # Turn on all lights in the area with adaptive values
-            service_data = {
-                "area_id": area_id,
-                "kelvin": adaptive_values['color_temp'],
-                "brightness_pct": adaptive_values['brightness'],
-                "transition": 1  # 1 second transition
-            }
-        
-        await self.client.call_service("light", "turn_on", service_data)
+            # Use the centralized light control function
+            await self.client.turn_on_lights_adaptive(area_id, adaptive_values, transition=1)
         logger.info(f"Turned on lights in area {area_id} with adaptive settings")
         
     async def dim_up(self, area_id: str, increment_pct: int = 17):
@@ -327,16 +314,9 @@ class SwitchCommandProcessor:
             # Get adaptive lighting values with the new offset
             lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
             
-            # Apply the lighting values
-            service_data = {
-                "area_id": area_id,
-                "kelvin": lighting_values["color_temp"],
-                "brightness_pct": lighting_values["brightness"],
-                "transition": 0.5
-            }
-            
-            await self.client.call_service("light", "turn_on", service_data)
-            logger.info(f"Applied magic mode dimming: {lighting_values['color_temp']}K, {lighting_values['brightness']}%")
+            # Apply the lighting values using centralized function
+            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+            logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
             
         else:
             # Not in magic mode - use standard dimming
@@ -409,16 +389,13 @@ class SwitchCommandProcessor:
             # Get adaptive lighting values with the new offset
             lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
             
-            # Apply the lighting values (never turn off in magic mode)
-            service_data = {
-                "area_id": area_id,
-                "kelvin": lighting_values["color_temp"],
-                "brightness_pct": max(1, lighting_values["brightness"]),  # Ensure minimum 1% brightness
-                "transition": 0.5
-            }
+            # Ensure minimum brightness in magic mode
+            lighting_values = lighting_values.copy()
+            lighting_values['brightness'] = max(1, lighting_values['brightness'])
             
-            await self.client.call_service("light", "turn_on", service_data)
-            logger.info(f"Applied magic mode dimming: {lighting_values['color_temp']}K, {lighting_values['brightness']}%")
+            # Apply the lighting values using centralized function
+            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+            logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
             
         else:
             # Not in magic mode - use standard dimming
@@ -491,13 +468,5 @@ class SwitchCommandProcessor:
             return
 
         # 4. hammer the lights – no fade -------------------------------------
-        await self.client.call_service(
-            "light", "turn_on",
-            {
-                "area_id": area_id,
-                "kelvin": adaptive["color_temp"],
-                "brightness_pct": adaptive["brightness"],
-                "transition": 1,
-            }
-        )
+        await self.client.turn_on_lights_adaptive(area_id, adaptive, transition=1)
         logger.info("Lights in %s set for simulated time", area_id)

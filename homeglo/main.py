@@ -13,7 +13,7 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from switch import SwitchCommandProcessor
-from brain import get_adaptive_lighting
+from brain import get_adaptive_lighting, ColorMode
 
 # Configure logging
 logging.basicConfig(
@@ -54,7 +54,15 @@ class HomeAssistantWebSocketClient:
         self.magic_mode_time_offsets = {}  # Track time offsets for dimming along curve
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
-        self.lux_adjustment = os.getenv("LUX_ADJUSTMENT", "false").lower() == "true"  # Lux adjustment setting
+        
+        # Color mode configuration - defaults to RGB
+        color_mode_str = os.getenv("COLOR_MODE", "RGB").upper()
+        try:
+            self.color_mode = ColorMode[color_mode_str]
+        except KeyError:
+            logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to RGB")
+            self.color_mode = ColorMode.RGB
+        logger.info(f"Using color mode: {self.color_mode.value}")
         
     @property
     def websocket_url(self) -> str:
@@ -168,6 +176,36 @@ class HomeAssistantWebSocketClient:
         logger.info(f"Called service: {domain}.{service} (id: {message_id})")
         
         return message_id
+        
+    async def turn_on_lights_adaptive(self, area_id: str, adaptive_values: Dict[str, Any], transition: int = 1) -> None:
+        """Turn on lights with adaptive values using the configured color mode.
+        
+        Args:
+            area_id: The area ID to control lights in
+            adaptive_values: Adaptive lighting values from get_adaptive_lighting
+            transition: Transition time in seconds (default 1)
+        """
+        # Build the base service data
+        service_data = {
+            "area_id": area_id,
+            "brightness_pct": adaptive_values['brightness'],
+            "transition": transition
+        }
+        
+        # Add color data based on the configured color mode
+        if self.color_mode == ColorMode.KELVIN:
+            service_data["kelvin"] = adaptive_values['kelvin']
+            logger.info(f"Turning on lights in {area_id}: {adaptive_values['kelvin']}K @ {adaptive_values['brightness']}%")
+        elif self.color_mode == ColorMode.RGB:
+            rgb = adaptive_values['rgb']
+            service_data["rgb_color"] = rgb
+            logger.info(f"Turning on lights in {area_id}: RGB({rgb[0]},{rgb[1]},{rgb[2]}) @ {adaptive_values['brightness']}%")
+        elif self.color_mode == ColorMode.XY:
+            xy = adaptive_values['xy']
+            service_data["xy_color"] = xy
+            logger.info(f"Turning on lights in {area_id}: XY({xy[0]:.4f},{xy[1]:.4f}) @ {adaptive_values['brightness']}%")
+        
+        await self.call_service("light", "turn_on", service_data)
         
     async def get_states(self) -> int:
         """Get all entity states.
@@ -299,65 +337,6 @@ class HomeAssistantWebSocketClient:
         
         return lights
         
-    async def get_lux_sensor_value(self, area_id: Optional[str] = None) -> Optional[float]:
-        """Get lux sensor value from cached states.
-        
-        Args:
-            area_id: Optional area ID to prefer sensors from
-            
-        Returns:
-            Lux value if found, None otherwise
-        """
-        logger.debug(f"Getting lux sensor value for area: {area_id}")
-        
-        try:
-            area_lux_sensors = []
-            general_lux_sensors = []
-            
-            # Search through cached states
-            for entity_id, entity_data in self.cached_states.items():
-                if not isinstance(entity_data, dict):
-                    continue
-                    
-                attributes = entity_data.get("attributes", {})
-                state = entity_data.get("state")
-                
-                # Check if it's a lux sensor
-                if (entity_id.startswith("sensor.") and 
-                    ("lux" in entity_id.lower() or 
-                     attributes.get("unit_of_measurement") == "lx") and
-                    state not in ["unavailable", "unknown", None]):
-                    
-                    try:
-                        lux_value = float(state)
-                        
-                        # Check if sensor belongs to the specific area
-                        device_id = attributes.get("device_id")
-                        if area_id and device_id and self.device_to_area_mapping.get(device_id) == area_id:
-                            area_lux_sensors.append((entity_id, lux_value))
-                        else:
-                            general_lux_sensors.append((entity_id, lux_value))
-                            
-                    except ValueError:
-                        logger.warning(f"Invalid lux value for {entity_id}: {state}")
-            
-            # Prefer area-specific sensor if available
-            if area_lux_sensors:
-                entity_id, lux_value = area_lux_sensors[0]
-                logger.info(f"Using area-specific lux sensor {entity_id} for area {area_id}: {lux_value} lux")
-                return lux_value
-            elif general_lux_sensors:
-                entity_id, lux_value = general_lux_sensors[0]
-                logger.info(f"Using general lux sensor {entity_id}: {lux_value} lux")
-                return lux_value
-            else:
-                logger.debug("No lux sensors found in cached states")
-                
-        except Exception as e:
-            logger.error(f"Error retrieving lux sensor value: {e}")
-        
-        return None
-        
     async def get_areas_with_switches(self) -> List[str]:
         """Get all areas that have devices with 'Switch' in the friendly name.
         
@@ -456,24 +435,16 @@ class HomeAssistantWebSocketClient:
                 current_time = current_time + timedelta(minutes=offset_minutes)
                 logger.info(f"Applying time offset of {offset_minutes} minutes for area {area_id}")
         
-        # Get lux sensor value for this area
-        lux = await self.get_lux_sensor_value(area_id)
-        
         # Get adaptive lighting values with all settings
         lighting_values = get_adaptive_lighting(
             latitude=self.latitude,
             longitude=self.longitude,
             timezone=self.timezone,
-            current_time=current_time,
-            lux=lux,
-            lux_adjustment=self.lux_adjustment
+            current_time=current_time
         )
         
         # Log the calculation
-        log_msg = f"Adaptive lighting for area {area_id}: {lighting_values['color_temp']}K, {lighting_values['brightness']}%"
-        if lux is not None:
-            log_msg += f", lux: {lux:.0f}"
-        logger.info(log_msg)
+        logger.info(f"Adaptive lighting for area {area_id}: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
         
         return lighting_values
     
@@ -492,16 +463,8 @@ class HomeAssistantWebSocketClient:
             # Get adaptive lighting values using centralized method
             lighting_values = await self.get_adaptive_lighting_for_area(area_id)
             
-            # Send the update command with area_id
-            # This will affect all lights in the area
-            service_data = {
-                "area_id": area_id,
-                "brightness_pct": lighting_values["brightness"],
-                "kelvin": lighting_values["color_temp"],
-                "transition": 2  # 2 second transition for smooth changes
-            }
-            
-            await self.call_service("light", "turn_on", service_data)
+            # Use the centralized light control function
+            await self.turn_on_lights_adaptive(area_id, lighting_values, transition=2)
             
         except Exception as e:
             logger.error(f"Error updating lights in area {area_id}: {e}")

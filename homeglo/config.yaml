@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: HomeGlo
-version: "1.2.9"
+version: "1.3.0"
 slug: homeglo
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/homeglo/homeglo-ha"
@@ -15,6 +15,10 @@ auth_api: true
 homeassistant_api: true
 panel_icon: mdi:lightbulb
 options:
-  lux_adjustment: false
+  color_mode: "rgb"
+  min_color_temp: 500
+  max_color_temp: 6500
 schema:
-  lux_adjustment: bool
+  color_mode: list(kelvin|rgb|xy)
+  min_color_temp: "int(153,9000)"
+  max_color_temp: "int(153,9000)"
