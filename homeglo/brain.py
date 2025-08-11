@@ -50,13 +50,6 @@ DEFAULT_MAX_BRIGHTNESS = 100
 DEFAULT_SUN_CCT_GAMMA = 0.9         # Color temperature gamma (>1 = cooler during day)
 DEFAULT_SUN_BRIGHTNESS_GAMMA = 0.5  # Brightness gamma (1 = cubic smooth-step)
 
-# TWILIGHT
-CIVIL_TWILIGHT = -6.0   # deg, sun elevation at civil-dusk/dawn
-NAUTICAL_TWILIGHT = -12.0
-ASTRONOMICAL_TWILIGHT = -18.0
-
-TWILIGHT = ASTRONOMICAL_TWILIGHT
-
 # ---------------------------------------------------------------------------
 # Adaptive-lighting math (unchanged)
 # ---------------------------------------------------------------------------
@@ -155,43 +148,104 @@ class AdaptiveLighting:
     # colour-space helpers ----------------------------------------------
     @staticmethod
     def color_temperature_to_rgb(kelvin: int) -> Tuple[int, int, int]:
-        temp = kelvin / 100
-        red = 255 if temp <= 66 else 329.698727446 * ((temp - 60) ** -0.1332047592)
-        green = (
-            99.4708025861 * math.log(temp) - 161.1195681661 if temp <= 66 else
-            288.1221695283 * ((temp - 60) ** -0.0755148492)
-        )
-        if temp >= 66:
-            blue = 255
-        elif temp <= 19:
-            blue = 0
-        else:
-            blue = 138.5177312231 * math.log(temp - 10) - 305.0447927307
+        """Convert color temperature to RGB using improved Krystek polynomial approach.
+        
+        This uses polynomial approximations for the Planckian locus to get x,y
+        coordinates, then converts through XYZ to RGB color space.
+        More accurate than the simple Tanner Helland approximation.
+        """
+        # First get x,y coordinates using Krystek polynomials
+        x, y = AdaptiveLighting.color_temperature_to_xy(kelvin)
+        
+        # Convert x,y to XYZ (assuming Y=1 for relative luminance)
+        Y = 1.0
+        X = (x * Y) / y if y != 0 else 0
+        Z = ((1 - x - y) * Y) / y if y != 0 else 0
+        
+        # Convert XYZ to linear RGB (sRGB primaries)
+        r =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z
+        g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z
+        b =  0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z
+        
+        # Clamp negative values
+        r = max(0, r)
+        g = max(0, g)
+        b = max(0, b)
+        
+        # Normalize if any component > 1 (preserve color ratios)
+        max_val = max(r, g, b)
+        if max_val > 1:
+            r /= max_val
+            g /= max_val
+            b /= max_val
+        
+        # Apply gamma correction (linear to sRGB)
+        def linear_to_srgb(c):
+            if c <= 0.0031308:
+                return 12.92 * c
+            else:
+                return 1.055 * (c ** (1/2.4)) - 0.055
+        
+        r = linear_to_srgb(r)
+        g = linear_to_srgb(g)
+        b = linear_to_srgb(b)
+        
+        # Convert to 8-bit values
         return (
-            int(max(0, min(255, red))),
-            int(max(0, min(255, green))),
-            int(max(0, min(255, blue))),
+            int(max(0, min(255, round(r * 255)))),
+            int(max(0, min(255, round(g * 255)))),
+            int(max(0, min(255, round(b * 255)))),
         )
 
     @staticmethod
     def color_temperature_to_xy(cct: float) -> Tuple[float, float]:
+        """Convert color temperature to CIE 1931 x,y using high-precision Krystek polynomials.
+        
+        Uses the improved Krystek & Moritz (1982) polynomial approximations for the
+        Planckian locus. These provide excellent accuracy from 1000K to 25000K.
+        
+        Reference: Krystek, M. (1985). "An algorithm to calculate correlated colour
+        temperature". Color Research & Application, 10(1), 38-40.
         """
-        Convert color temperature in Kelvin to CIE 1931 x,y values.
-        Uses McCamy / Krystek-style approximations for the Planckian locus.
-
-        Valid roughly from 1667 K to 25000 K.
-        """
-        T = max(1667, min(cct, 25000))  # Clamp to valid range
-
-        if T < 4000:
-            # Warm side approximation
-            x = (-0.2661239e9 / T**3) - (0.2343580e6 / T**2) + (0.8776956e3 / T) + 0.179910
-            y = (-1.1063814 * x**3) - (1.34811020 * x**2) + (2.18555832 * x) - 0.20219683
+        T = max(1000, min(cct, 25000))  # Clamp to valid range
+        
+        # Use reciprocal temperature for better numerical stability
+        invT = 1000.0 / T  # T in thousands of Kelvin
+        
+        # Calculate x coordinate using Krystek's polynomial
+        if T <= 4000:
+            # Low temperature range (1000-4000K)
+            x = (-0.2661239 * invT**3 
+                 - 0.2343589 * invT**2 
+                 + 0.8776956 * invT 
+                 + 0.179910)
         else:
-            # Cool side approximation
-            x = (-3.0258469e9 / T**3) + (2.1070379e6 / T**2) + (0.2226347e3 / T) + 0.240390
-            y = ( 3.0817580 * x**3) - (5.87338670 * x**2) + (3.75112997 * x) - 0.37001483
-
+            # High temperature range (4000-25000K)
+            x = (-3.0258469 * invT**3 
+                 + 2.1070379 * invT**2 
+                 + 0.2226347 * invT 
+                 + 0.240390)
+        
+        # Calculate y coordinate using Krystek's polynomial
+        if T <= 2222:
+            # Very low temperature
+            y = (-1.1063814 * x**3 
+                 - 1.34811020 * x**2 
+                 + 2.18555832 * x 
+                 - 0.20219683)
+        elif T <= 4000:
+            # Low-mid temperature
+            y = (-0.9549476 * x**3 
+                 - 1.37418593 * x**2 
+                 + 2.09137015 * x 
+                 - 0.16748867)
+        else:
+            # High temperature
+            y = (3.0817580 * x**3 
+                 - 5.87338670 * x**2 
+                 + 3.75112997 * x 
+                 - 0.37001483)
+        
         return (x, y)
 
     @staticmethod

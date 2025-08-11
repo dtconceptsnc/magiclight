@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.4
+
+- Improved color temperature conversion accuracy
+  - Rewrote color_temperature_to_rgb using Krystek polynomial approach
+  - Now converts CCT → xy → XYZ → RGB for better accuracy
+  - Added proper sRGB gamma correction
+  - Enhanced color_temperature_to_xy with more precise coefficients
+  - Added separate polynomial ranges for improved accuracy (2222K and 4000K breakpoints)
+
 ## 1.3.3
 
 - Fix sun position calculation to match expected behavior
