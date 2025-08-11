@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.2
+
+- Fix gamma parameters not being passed from addon configuration
+  - Added sun_cct_gamma and sun_brightness_gamma to run script
+  - Now properly exports configuration values as environment variables
+  - Gamma parameters will correctly affect adaptive lighting curves
+
 ## 1.3.1
 
 - Add configurable gamma parameters for adaptive lighting curves

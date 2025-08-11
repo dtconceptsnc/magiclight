@@ -107,6 +107,25 @@ fi
 bashio::log.info "Color mode: ${COLOR_MODE}"
 bashio::log.info "Color temperature range: ${MIN_COLOR_TEMP}K - ${MAX_COLOR_TEMP}K"
 
+# Get sun_cct_gamma configuration
+SUN_CCT_GAMMA=$(bashio::config 'sun_cct_gamma')
+if [ "${SUN_CCT_GAMMA}" != "null" ] && [ -n "${SUN_CCT_GAMMA}" ]; then
+    export SUN_CCT_GAMMA="${SUN_CCT_GAMMA}"
+else
+    export SUN_CCT_GAMMA="0.9"
+fi
+
+# Get sun_brightness_gamma configuration
+SUN_BRIGHTNESS_GAMMA=$(bashio::config 'sun_brightness_gamma')
+if [ "${SUN_BRIGHTNESS_GAMMA}" != "null" ] && [ -n "${SUN_BRIGHTNESS_GAMMA}" ]; then
+    export SUN_BRIGHTNESS_GAMMA="${SUN_BRIGHTNESS_GAMMA}"
+else
+    export SUN_BRIGHTNESS_GAMMA="0.5"
+fi
+
+bashio::log.info "Sun CCT gamma: ${SUN_CCT_GAMMA}"
+bashio::log.info "Sun brightness gamma: ${SUN_BRIGHTNESS_GAMMA}"
+
 # Run the Python app
 cd /app
 exec python3 main.py
