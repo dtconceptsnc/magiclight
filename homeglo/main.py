@@ -64,6 +64,11 @@ class HomeAssistantWebSocketClient:
             self.color_mode = ColorMode.RGB
         logger.info(f"Using color mode: {self.color_mode.value}")
         
+        # Gamma configuration for adaptive lighting
+        self.sun_cct_gamma = float(os.getenv("SUN_CCT_GAMMA", "0.9"))
+        self.sun_brightness_gamma = float(os.getenv("SUN_BRIGHTNESS_GAMMA", "0.5"))
+        logger.info(f"Using sun_cct_gamma: {self.sun_cct_gamma}, sun_brightness_gamma: {self.sun_brightness_gamma}")
+        
     @property
     def websocket_url(self) -> str:
         """Get the WebSocket URL."""
@@ -440,7 +445,9 @@ class HomeAssistantWebSocketClient:
             latitude=self.latitude,
             longitude=self.longitude,
             timezone=self.timezone,
-            current_time=current_time
+            current_time=current_time,
+            sun_cct_gamma=self.sun_cct_gamma,
+            sun_brightness_gamma=self.sun_brightness_gamma
         )
         
         # Log the calculation
@@ -517,7 +524,7 @@ class HomeAssistantWebSocketClient:
             event_type = event.get("event_type", "unknown")
             event_data = event.get("data", {})
             
-            logger.info(f"Event received: {event_type}")
+            logger.debug(f"Event received: {event_type}")
             
             # Log more details for call_service events
             if event_type == "call_service":

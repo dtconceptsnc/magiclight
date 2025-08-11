@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.1
+
+- Add configurable gamma parameters for adaptive lighting curves
+  - New sun_cct_gamma parameter to control color temperature curve (default: 0.9)
+  - New sun_brightness_gamma parameter to control brightness curve (default: 0.5)
+  - Allows fine-tuning of how lighting changes throughout the day
+  - Lower gamma values = warmer/dimmer during day, higher = cooler/brighter
+
 ## 1.3.0
 
 - Add configurable color mode support

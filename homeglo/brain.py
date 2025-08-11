@@ -46,9 +46,9 @@ DEFAULT_MAX_COLOR_TEMP = int(os.getenv("MAX_COLOR_TEMP", "6500"))  # Cool daylig
 DEFAULT_MIN_BRIGHTNESS = 1
 DEFAULT_MAX_BRIGHTNESS = 100
 
-# Sun position to color/brightness mapping
-SUN_CCT_GAMMA = 2.0         # Color temperature gamma (>1 = cooler during day)
-SUN_BRIGHTNESS_GAMMA = 1.5  # Brightness gamma (1 = cubic smooth-step)
+# Sun position to color/brightness mapping - default values, can be overridden
+DEFAULT_SUN_CCT_GAMMA = 0.9         # Color temperature gamma (>1 = cooler during day)
+DEFAULT_SUN_BRIGHTNESS_GAMMA = 0.5  # Brightness gamma (1 = cubic smooth-step)
 
 # TWILIGHT
 CIVIL_TWILIGHT = -6.0   # deg, sun elevation at civil-dusk/dawn
@@ -102,7 +102,7 @@ class AdaptiveLighting:
         return max(-1.0, elev_deg / 18.0)
 
     # colour / brightness ------------------------------------------------
-    def calculate_color_temperature(self, pos: float, *, gamma: float = SUN_CCT_GAMMA) -> int:
+    def calculate_color_temperature(self, pos: float, *, gamma: float = DEFAULT_SUN_CCT_GAMMA) -> int:
         """
         Map sun-position (-1 … 1) to colour temperature using a cubic smooth-step.
         `gamma` < 1 warms the day (slower rise); > 1 cools it faster.
@@ -125,7 +125,7 @@ class AdaptiveLighting:
         val = self.min_color_temp + s * (self.max_color_temp - self.min_color_temp)
         return int(val)
 
-    def calculate_brightness(self, pos: float, *, gamma: float = SUN_BRIGHTNESS_GAMMA) -> int:
+    def calculate_brightness(self, pos: float, *, gamma: float = DEFAULT_SUN_BRIGHTNESS_GAMMA) -> int:
         """Calculate brightness based on sun position with optional gamma adjustment.
         
         Args:
@@ -228,7 +228,9 @@ def get_adaptive_lighting(
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
     timezone: Optional[str] = None,
-    current_time: Optional[datetime] = None
+    current_time: Optional[datetime] = None,
+    sun_cct_gamma: Optional[float] = None,
+    sun_brightness_gamma: Optional[float] = None
 ) -> Dict[str, Any]:
     """Compute adaptive-lighting values.
 
@@ -263,8 +265,13 @@ def get_adaptive_lighting(
     )
 
     sun_pos = al.calculate_sun_position(now, elev)
-    cct = base_cct = al.calculate_color_temperature(sun_pos)
-    bri = base_bri = al.calculate_brightness(sun_pos)
+    
+    # Use provided gamma values or defaults
+    cct_gamma = sun_cct_gamma if sun_cct_gamma is not None else DEFAULT_SUN_CCT_GAMMA
+    brightness_gamma = sun_brightness_gamma if sun_brightness_gamma is not None else DEFAULT_SUN_BRIGHTNESS_GAMMA
+    
+    cct = base_cct = al.calculate_color_temperature(sun_pos, gamma=cct_gamma)
+    bri = base_bri = al.calculate_brightness(sun_pos, gamma=brightness_gamma)
     
     # Calculate all color representations
     rgb = al.color_temperature_to_rgb(cct)
