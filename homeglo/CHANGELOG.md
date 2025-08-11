@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.3
+
+- Fix sun position calculation to match expected behavior
+  - Changed from sun elevation angle to time-based cosine wave
+  - Now uses local solar time for proper solar noon alignment
+  - Provides smooth -1 to +1 progression over 24 hours
+  - Matches the HTML visualization formula exactly
+
 ## 1.3.2
 
 - Fix gamma parameters not being passed from addon configuration

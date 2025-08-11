@@ -86,20 +86,27 @@ class AdaptiveLighting:
         self.color_mode = color_mode
 
     def calculate_sun_position(self, now: datetime, elev_deg: float) -> float:
-        if self.sunrise_time and self.sunset_time and self.solar_noon:
-            # ---- outside sunrise-sunset? fade through civil twilight ----
-            if now < self.sunrise_time or now > self.sunset_time:
-                # elev_deg is 0 at horizon, negative below
-                if elev_deg <= TWILIGHT:
-                    return -1.0
-                return elev_deg / -TWILIGHT   # 0°→0, -6°→-1
-            # ---- normal daytime parabola ----
-            return math.sin(math.radians(elev_deg))
-
-        # fallback path (no sunrise/sunset info)
-        if elev_deg >= 0:
-            return min(1.0, elev_deg / 60.0)
-        return max(-1.0, elev_deg / 18.0)
+        """Calculate sun position using time-based cosine wave.
+        
+        This matches the HTML visualization approach:
+        - Uses local solar time (accounting for solar noon)
+        - Returns -cos(2π * hour / 24) where hour is in local solar time
+        - Gives smooth transition from -1 (midnight) to +1 (solar noon)
+        """
+        if self.solar_noon:
+            # Calculate hours from solar noon (solar noon = 0)
+            hours_from_noon = (now - self.solar_noon).total_seconds() / 3600
+            
+            # Convert to 24-hour cycle (0-24 where noon = 12)
+            solar_hour = (hours_from_noon + 12) % 24
+            
+            # Calculate position using cosine wave
+            # -cos(2π * h / 24) gives: midnight=-1, 6am=0, noon=1, 6pm=0
+            return -math.cos(2 * math.pi * solar_hour / 24)
+        
+        # Fallback: use simple time of day if no solar noon available
+        hour = now.hour + now.minute / 60
+        return -math.cos(2 * math.pi * hour / 24)
 
     # colour / brightness ------------------------------------------------
     def calculate_color_temperature(self, pos: float, *, gamma: float = DEFAULT_SUN_CCT_GAMMA) -> int:
