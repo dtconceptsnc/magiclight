@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Adaptive Lighting – Brightness Colored by CCT + Sun (TZ dropdown + hover)</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+  body{font-family:sans-serif;margin:1.5rem;background:#f5f5f5;}
+  .container{max-width:1200px;margin:0 auto;background:#fff;padding:2rem;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);}  
+  h2{margin-top:0;color:#333;}
+  h3{margin-top:2rem;color:#555;}
+  .controls{display:grid;grid-template-columns:220px 1fr 120px;gap:8px;align-items:center;margin-bottom:1rem}
+  input[type=range]{width:100%}
+  input[type=text]{width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px}
+  input[type=checkbox]{margin:0}
+  select{width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;background:#fff}
+  label{font-size:.85rem;font-weight:600;color:#666}
+  .checkbox-label{display:flex;align-items:center;gap:8px}
+  .stage{margin:2rem 0}
+  .note{font-size:.9rem;color:#666;margin-bottom:1rem}
+  .warn{color:#a33;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Adaptive Lighting – Brightness Curve (Colorized by CCT)</h2>
+  <div class="note">
+    Left Y-axis: Brightness (colored by CCT). Right Y-axis: Sun elevation (blue). Month is 1–12. Lat/Lon are text inputs. Time zone via dropdown (DST auto by month).
+  </div>
+
+  <div id="plot" class="stage"></div>
+
+  <h3>Parameters</h3>
+  <div id="ctrl-params" class="controls"></div>
+  <div id="range-warn" class="warn"></div>
+</div>
+
+<script>
+// --------------------------- Params ---------------------------------
+const params = {
+  min_color_temp: 500,
+  max_color_temp: 6500,
+  min_brightness: 1,
+  max_brightness: 100,
+  gamma: 2,
+  gamma_bri: 1.5,
+  half_life_hours_bri: 3.0,   // ← NEW: exponential half-life (hours)
+  month: new Date().getMonth() + 1,
+  latitude: 35.0,
+  longitude: -78.6,
+  timezone: 'US/Eastern',
+  use12Hour: false
+};
+
+// Range sliders: [key, min, default, max, step, label]
+// Range sliders: [key, min, default, max, step, label]
+const sliders = [
+  ['min_color_temp', 500, 500, 6500, 50, 'Min CCT (K)'],
+  ['max_color_temp', 500, 6500, 6500, 50, 'Max CCT (K)'],
+  ['min_brightness', 0, 1, 50, 1, 'Min Brightness (%)'],
+  ['max_brightness', 50, 100, 100, 1, 'Max Brightness (%)'],
+  ['gamma', 0.2, 2, 5, 0.1, 'CCT Gamma'],
+  ['gamma_bri', 0.2, 1.5, 5, 0.1, 'Brightness Gamma'],
+  ['half_life_hours_bri', 0.5, 3.0, 8.0, 0.25, 'Brightness Half-life (hours)'], // ← NEW
+  ['month', 1, new Date().getMonth() + 1, 12, 1, 'Month (1–12)']
+];
+
+// Text inputs (no sliders)
+const textInputs = [
+  ['latitude',  'Latitude (°; N+, S-)'],
+  ['longitude', 'Longitude (°; E+, W-)']
+];
+
+// Time zone dropdown options
+const TZ_OPTIONS = [
+  {id:'US/Eastern',  label:'US/Eastern'},
+  {id:'US/Central',  label:'US/Central'},
+  {id:'US/Mountain', label:'US/Mountain'},
+  {id:'US/Pacific',  label:'US/Pacific'},
+  {id:'US/Alaska',   label:'US/Alaska'},
+  {id:'US/Arizona',  label:'US/Arizona (no DST)'},
+  {id:'US/Hawaii',   label:'US/Hawaii (no DST)'}
+];
+
+// Compute UTC offset (hours) for given zone & month (mid-month rules)
+// DST months: Mar–Oct (3..10). Nov–Feb standard. Arizona/Hawaii never DST.
+function utcOffsetFor(zone, month){
+  const dst = (zone !== 'US/Arizona' && zone !== 'US/Hawaii') && (month >= 3 && month <= 10);
+  switch(zone){
+    case 'US/Eastern':  return dst ? -4 : -5;
+    case 'US/Central':  return dst ? -5 : -6;
+    case 'US/Mountain': return dst ? -6 : -7;
+    case 'US/Pacific':  return dst ? -7 : -8;
+    case 'US/Alaska':   return dst ? -8 : -9;
+    case 'US/Arizona':  return -7;
+    case 'US/Hawaii':   return -10;
+    default: return -5; // fallback Eastern
+  }
+}
+
+function calculateBrightness(pos, {
+  k = null,
+  halfLifeHours = null,
+  gamma = 2.2,
+  minBrightness = 1,
+  maxBrightness = 100
+} = {}) {
+  // --------- choose k ----------
+  if (k == null) {
+    if (!halfLifeHours || halfLifeHours <= 0) {
+      halfLifeHours = 3.0; // sensible default
+    }
+    k = Math.log(2.0) / halfLifeHours;
+  }
+
+  // --------- pos -> 0..12 hours ----------
+  // clamp numerical noise just in case
+  const t01 = Math.max(0.0, Math.min(1.0, (pos + 1.0) * 0.5)); // 0 @ midnight, 1 @ noon
+  const tHours = t01 * 12.0;
+
+  // --------- normalized exponential ----------
+  const denom = 1.0 - Math.exp(-k * 12.0);
+  // avoid division by zero if k is absurdly small
+  const fLin = (denom <= 1e-9)
+    ? t01   // essentially linear when k ~ 0
+    : (1.0 - Math.exp(-k * tHours)) / denom;
+
+  // --------- gamma (perceptual) ----------
+  const f = (gamma === 1.0) ? fLin : Math.pow(fLin, 1.0 / gamma);
+
+  // --------- scale ----------
+  return Math.round(minBrightness + f * (maxBrightness - minBrightness));
+}
+
+// ------------------------- Helpers ----------------------------------
+function smoothstep(x){ x = Math.max(0, Math.min(1, x)); return x*x*(3-2*x); }
+const timeToPos = h => -Math.cos((2*Math.PI*h)/24);
+
+// Format time for display (24-hour HH:MM or 12-hour with AM/PM)
+function formatTime(hour, use12Hour) {
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  
+  if (!use12Hour) {
+    // 24-hour format: HH:MM
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+  
+  // 12-hour format with AM/PM
+  let displayHour = h % 12;
+  if (displayHour === 0) displayHour = 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  
+  if (m === 0) return `${displayHour}${ampm}`;
+  return `${displayHour}:${m.toString().padStart(2, '0')}${ampm}`;
+}
+
+// Approximate black-body CCT (K) to RGB (0-255)
+function cctToRGB(k){
+  k = Math.max(500, Math.min(6500, k));
+  let t = k/100, r,g,b;
+  if (t <= 66) r = 255; else r = 329.698727446 * Math.pow(t - 60, -0.1332047592);
+  if (t <= 66) g = 99.4708025861 * Math.log(t) - 161.1195681661;
+  else g = 288.1221695283 * Math.pow(t - 60, -0.0755148492);
+  if (t >= 66) b = 255;
+  else if (t <= 19) b = 0;
+  else b = 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+  const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+  return `rgb(${clamp(r)},${clamp(g)},${clamp(b)})`;
+}
+
+const CUM_DAYS = [0,31,59,90,120,151,181,212,243,273,304,334]; // start-of-month (non-leap)
+function doyForMonthMid(m){ return CUM_DAYS[m-1] + 15; } // m: 1..12
+
+function deg2rad(d){ return d * Math.PI / 180; }
+function rad2deg(r){ return r * 180 / Math.PI; }
+
+// Solar declination (radians)
+function solarDeclinationRad(doy){
+  const g = 2*Math.PI/365 * (doy - 1);
+  return 0.006918
+       - 0.399912*Math.cos(g) + 0.070257*Math.sin(g)
+       - 0.006758*Math.cos(2*g) + 0.000907*Math.sin(2*g)
+       - 0.002697*Math.cos(3*g) + 0.00148 *Math.sin(3*g);
+}
+
+// Equation of Time (minutes)
+function equationOfTimeMinutes(doy){
+  const B = 2*Math.PI*(doy - 81)/364;
+  return 9.87*Math.sin(2*B) - 7.53*Math.cos(B) - 1.5*Math.sin(B);
+}
+
+// Local Solar Time (hours)
+function localSolarTimeHours(clockHour, utcOffset, longitude, doy){
+  const LSTM = 15 * utcOffset;                          // meridian (deg)
+  const TC_min = equationOfTimeMinutes(doy) + 4*(longitude - LSTM); // minutes
+  return clockHour + TC_min/60;
+}
+
+function hourAngleRad(clockHour, utcOffset, longitude, doy){
+  const LST = localSolarTimeHours(clockHour, utcOffset, longitude, doy);
+  return deg2rad(15*(LST - 12));
+}
+
+// Sun elevation (degrees)
+function sunElevationDeg(clockHour, month, latDeg, lonDeg, tzName){
+  const doy = doyForMonthMid(month);
+  const utcOffset = utcOffsetFor(tzName, month);
+  const phi = deg2rad(latDeg);
+  const delta = solarDeclinationRad(doy);
+  const H = hourAngleRad(clockHour, utcOffset, lonDeg, doy);
+  const sinAlt = Math.sin(phi)*Math.sin(delta) + Math.cos(phi)*Math.cos(delta)*Math.cos(H);
+  return rad2deg(Math.asin(sinAlt));
+}
+
+// Calculate sunrise, sunset, and solar noon times (returns clock hours)
+function calculateSunTimes(month, latDeg, lonDeg, tzName){
+  const doy = doyForMonthMid(month);
+  const phi = deg2rad(latDeg);
+  const delta = solarDeclinationRad(doy);
+  
+  // Hour angle at sunrise/sunset (when sun elevation = 0)
+  const cosH = -Math.tan(phi) * Math.tan(delta);
+  
+  // Solar noon is always at 12:00 local solar time
+  const solarNoonLocalSolar = 12; // hours
+  
+  // Convert from local solar time to clock time
+  const utcOffset = utcOffsetFor(tzName, month);
+  const LSTM = 15 * utcOffset;
+  const TC_min = equationOfTimeMinutes(doy) + 4*(lonDeg - LSTM);
+  
+  const solarNoon = solarNoonLocalSolar - TC_min/60;
+  
+  // Check for polar day/night
+  if (cosH > 1) return {sunrise: null, sunset: null, solarNoon}; // polar night
+  if (cosH < -1) return {sunrise: 0, sunset: 24, solarNoon}; // polar day
+  
+  const H = rad2deg(Math.acos(cosH)); // degrees
+  const sunriseLocalSolar = 12 - H/15; // hours
+  const sunsetLocalSolar = 12 + H/15; // hours
+  
+  const sunrise = sunriseLocalSolar - TC_min/60;
+  const sunset = sunsetLocalSolar - TC_min/60;
+  
+  return {sunrise, sunset, solarNoon};
+}
+
+// --- New helper for clear-sky power (W/m²) ---
+function clearSkyGHI(hour, month, latDeg, lonDeg, tzName){
+  const altDeg = sunElevationDeg(hour, month, latDeg, lonDeg, tzName);
+  if (altDeg <= 0) return 0;                      // sun below horizon
+  const cosZ = Math.sin(deg2rad(altDeg));         // cos(zenith) = sin(altitude)
+  return 1098 * cosZ * Math.exp(-0.059 / cosZ);   // Haurwitz model
+}
+
+// --- Replacement for compute() ---
+function compute(){
+  const hours=[], ccts=[], bris=[], sunPower=[];
+  const doy = doyForMonthMid(params.month);
+  const utcOffset = utcOffsetFor(params.timezone, params.month);
+
+  for (let hour=0; hour<=24; hour+=0.1){
+    // Drive curve with Local Solar Time for proper solar-noon alignment
+    const lst = localSolarTimeHours(hour, utcOffset, params.longitude, doy);
+
+    const pos = timeToPos(lst);
+    const t = (pos+1)*0.5;
+
+    const tGammaCCT = Math.pow(t, params.gamma);
+    const sCCT = smoothstep(tGammaCCT);
+    const cct = params.min_color_temp + sCCT*(params.max_color_temp - params.min_color_temp);
+
+    const bri = calculateBrightness(pos, {
+      // keep either k OR halfLifeHours; if neither, defaults to 3h half-life
+      // k: params.k_bri,                 // (optional) if you already have this
+      halfLifeHours: params.half_life_hours_bri, // (optional) if you have this
+      gamma: params.gamma_bri,
+      minBrightness: params.min_brightness,
+      maxBrightness: params.max_brightness
+    });
+
+    hours.push(hour);  // keep clock time for X-axis
+    ccts.push(cct);
+    bris.push(bri);
+    sunPower.push(clearSkyGHI(hour, params.month, params.latitude, params.longitude, params.timezone));
+  }
+  return {hours, ccts, bris, sunPower};
+}
+
+// Build many tiny line segments so each can be colorized by CCT
+function buildBrightnessColoredByCCT(x, bri, cct){
+  const segs = [];
+  for (let i=1; i<x.length; i++){
+    const midCCT = (cct[i-1]+cct[i])/2;
+    segs.push({
+      type: 'scatter',
+      mode: 'lines',
+      x: [x[i-1], x[i]],
+      y: [bri[i-1], bri[i]],
+      line: {width: 4, color: cctToRGB(midCCT)},
+      name: 'Brightness (%)',
+      yaxis: 'y',
+      hoverinfo: 'skip', // hover is handled by a transparent proxy trace below
+      showlegend: false
+    });
+  }
+  return segs;
+}
+
+function enforceRanges(){
+  const warn = document.getElementById('range-warn');
+  warn.textContent = '';
+  if (params.min_color_temp > params.max_color_temp){
+    const tmp = params.min_color_temp;
+    params.min_color_temp = params.max_color_temp;
+    params.max_color_temp = tmp;
+    warn.textContent = 'Note: Min CCT exceeded Max; values swapped.';
+  }
+  // Clamp month to 1..12
+  params.month = Math.min(12, Math.max(1, Math.round(params.month)));
+}
+
+// --- Replacement for renderPlot() ---
+function renderPlot(x, cct, bri, sunPower){
+  const segs = buildBrightnessColoredByCCT(x, bri.map(v=>Math.round(v)), cct);
+
+  // Legend proxy for the colored brightness line
+  const legendProxy = {
+    type:'scatter', mode:'lines', x:[null], y:[null],
+    name:'Brightness (%)',
+    line:{width:4, color: cctToRGB((params.min_color_temp+params.max_color_temp)/2)},
+    hoverinfo:'skip', showlegend:true, yaxis:'y'
+  };
+
+  // Transparent hover proxy with formatted time
+  const hoverProxy = {
+    type:'scatter', mode:'lines',
+    x: x, y: bri,
+    name: 'Brightness (hover)',
+    line: {width: 10, color: 'rgba(0,0,0,0)'},
+    hovertemplate: params.use12Hour 
+      ? '%{text}<br>Brightness %{y:.0f}%<br>CCT %{customdata:.0f} K<extra></extra>'
+      : 'Time %{text}<br>Brightness %{y:.0f}%<br>CCT %{customdata:.0f} K<extra></extra>',
+    text: x.map(h => formatTime(h, params.use12Hour)),
+    customdata: cct,
+    yaxis: 'y',
+    showlegend: false
+  };
+
+  // Sun Power trace (W/m²)
+  const powerTrace = {
+    type:'scatter', mode:'lines',
+    x: x, y: sunPower,
+    name: 'Sun Power (W/m²)',
+    line: {width: 2, color: 'orange'},
+    yaxis: 'y2',
+    hovertemplate: params.use12Hour
+      ? '%{text}<br>Sun Power %{y:.0f} W/m²<extra></extra>'
+      : 'Time %{text}<br>Sun Power %{y:.0f} W/m²<extra></extra>',
+    text: x.map(h => formatTime(h, params.use12Hour))
+  };
+
+  // Get current time
+  const now = new Date();
+  const currentHour = now.getHours() + now.getMinutes()/60;
+  
+  // Find brightness and CCT at current time
+  let currentBri = 0, currentCCT = params.min_color_temp;
+  for (let i = 1; i < x.length; i++) {
+    if (x[i] >= currentHour) {
+      const t = (currentHour - x[i-1]) / (x[i] - x[i-1]);
+      currentBri = bri[i-1] + t * (bri[i] - bri[i-1]);
+      currentCCT = cct[i-1] + t * (cct[i] - cct[i-1]);
+      break;
+    }
+  }
+  
+  // Current time marker
+  const currentTimeMarker = {
+    type: 'scatter',
+    mode: 'markers',
+    x: [currentHour],
+    y: [currentBri],
+    name: 'Current Time',
+    marker: {
+      size: 12,
+      color: cctToRGB(currentCCT),
+      line: {width: 2, color: 'black'}
+    },
+    hovertemplate: 'Current Time: ' + formatTime(currentHour, params.use12Hour) + '<br>Brightness: %{y:.0f}%<br>CCT: ' + Math.round(currentCCT) + ' K<extra></extra>',
+    yaxis: 'y',
+    showlegend: true
+  };
+
+  // Calculate sunrise, sunset, and solar noon
+  const {sunrise, sunset, solarNoon} = calculateSunTimes(params.month, params.latitude, params.longitude, params.timezone);
+  
+  // Shapes for sunrise/sunset/solar noon vertical lines
+  const shapes = [];
+  const annotations = [];
+  
+  if (sunrise !== null && sunrise >= 0 && sunrise <= 24) {
+    shapes.push({
+      type: 'line',
+      x0: sunrise, x1: sunrise,
+      y0: 0, y1: 1,
+      yref: 'paper',
+      line: {color: 'gold', width: 2, dash: 'dash'}
+    });
+    annotations.push({
+      x: sunrise,
+      y: 1.02,
+      yref: 'paper',
+      text: 'Sunrise',
+      showarrow: false,
+      font: {size: 10, color: 'goldenrod'},
+      xanchor: 'center'
+    });
+  }
+  
+  if (sunset !== null && sunset >= 0 && sunset <= 24) {
+    shapes.push({
+      type: 'line',
+      x0: sunset, x1: sunset,
+      y0: 0, y1: 1,
+      yref: 'paper',
+      line: {color: 'darkorange', width: 2, dash: 'dash'}
+    });
+    annotations.push({
+      x: sunset,
+      y: 1.02,
+      yref: 'paper',
+      text: 'Sunset',
+      showarrow: false,
+      font: {size: 10, color: 'darkorange'},
+      xanchor: 'center'
+    });
+  }
+  
+  // Solar noon marker
+  if (solarNoon >= 0 && solarNoon <= 24) {
+    shapes.push({
+      type: 'line',
+      x0: solarNoon, x1: solarNoon,
+      y0: 0, y1: 1,
+      yref: 'paper',
+      line: {color: 'red', width: 2, dash: 'dot'}
+    });
+    annotations.push({
+      x: solarNoon,
+      y: 1.02,
+      yref: 'paper',
+      text: 'Solar Noon',
+      showarrow: false,
+      font: {size: 10, color: 'red'},
+      xanchor: 'center'
+    });
+  }
+
+  // X-axis configuration based on time format
+  const xaxisConfig = params.use12Hour 
+    ? {
+        title: 'Time',
+        range: [0, 24],
+        tickmode: 'array',
+        tickvals: [0, 3, 6, 9, 12, 15, 18, 21, 24],
+        ticktext: ['12AM', '3AM', '6AM', '9AM', '12PM', '3PM', '6PM', '9PM', '12AM']
+      }
+    : {
+        title: 'Time (24-hour)',
+        range: [0, 24],
+        tickmode: 'array',
+        tickvals: [0, 3, 6, 9, 12, 15, 18, 21, 24],
+        ticktext: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '00:00']
+      };
+
+  Plotly.newPlot('plot', [...segs, legendProxy, hoverProxy, powerTrace, currentTimeMarker], {
+    title: 'Brightness (CCT-colored) + Estimated Sun Power (Clear Sky)',
+    xaxis: xaxisConfig,
+    yaxis:  {title:'Brightness (%)', range:[0,105], autorange:false},
+    yaxis2: {title:'Sun Power (W/m²)', overlaying:'y', side:'right', range:[0,1100]},
+    showlegend:true, legend:{x:0.02,y:0.98}, margin:{t:50},
+    shapes: shapes,
+    annotations: annotations
+  }, {responsive:true});
+}
+
+function draw(){
+  enforceRanges();
+  const {hours, ccts, bris, sunPower} = compute();  // <-- sunPower
+  renderPlot(hours, ccts, bris, sunPower);          // <-- pass sunPower
+}
+
+// Build controls
+function makePanel(){
+  const panel = document.getElementById('ctrl-params');
+
+  // Range sliders
+  sliders.forEach(([key, min, val, max, step, label]) => {
+    const lab = document.createElement('label'); lab.textContent = label;
+    const rng = document.createElement('input');
+    rng.type='range'; rng.min=min; rng.max=max; rng.step=step; rng.value=val;
+    const out = document.createElement('span'); out.textContent = val;
+    rng.oninput = e => {
+      const num = (key==='month') ? parseInt(e.target.value,10) : parseFloat(e.target.value);
+      params[key] = num;
+      out.textContent = e.target.value;
+      draw();
+    };
+    panel.append(lab, rng, out);
+    params[key] = (key==='month') ? val|0 : val;
+  });
+
+  // Text inputs for lat/lon
+  textInputs.forEach(([key, label]) => {
+    const lab = document.createElement('label'); lab.textContent = label;
+    const txt = document.createElement('input');
+    txt.type = 'text';
+    txt.value = params[key];
+    const out = document.createElement('span'); out.textContent = params[key];
+    const commit = () => {
+      const v = parseFloat(txt.value);
+      if (!Number.isNaN(v)) {
+        params[key] = v;
+        out.textContent = v;
+        draw();
+      } else {
+        txt.value = params[key]; // revert
+      }
+    };
+    txt.onblur = commit;
+    txt.onkeydown = e => { if (e.key === 'Enter') { txt.blur(); } };
+    panel.append(lab, txt, out);
+  });
+
+  // Time zone dropdown
+  {
+    const lab = document.createElement('label'); lab.textContent = 'US Time Zone';
+    const sel = document.createElement('select');
+    TZ_OPTIONS.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.id; o.textContent = opt.label;
+      if (opt.id === params.timezone) o.selected = true;
+      sel.appendChild(o);
+    });
+    const out = document.createElement('span'); out.textContent = params.timezone;
+    sel.onchange = e => { params.timezone = e.target.value; out.textContent = params.timezone; draw(); };
+    panel.append(lab, sel, out);
+  }
+
+  // 12-hour format checkbox
+  {
+    const lab = document.createElement('label'); lab.textContent = '12-Hour Format (AM/PM)';
+    const checkboxContainer = document.createElement('div');
+    checkboxContainer.className = 'checkbox-label';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = params.use12Hour;
+    checkboxContainer.appendChild(chk);
+    const out = document.createElement('span'); 
+    out.textContent = params.use12Hour ? 'Enabled' : 'Disabled';
+    chk.onchange = e => { 
+      params.use12Hour = e.target.checked; 
+      out.textContent = params.use12Hour ? 'Enabled' : 'Disabled';
+      draw(); 
+    };
+    panel.append(lab, checkboxContainer, out);
+  }
+}
+
+// Init
+makePanel();
+draw();
+</script>
+</body>
+</html>

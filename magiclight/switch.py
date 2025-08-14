@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Switch command processing module for HomeGlo."""
+"""Switch command processing module for MagicLight."""
 
 import logging
 from typing import Dict, Any, List, Optional

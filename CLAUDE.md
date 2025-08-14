@@ -3,13 +3,13 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
-HomeGlo is a Home Assistant add-on that connects to the Home Assistant WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
+MagicLight is a Home Assistant add-on that connects to the Home Assistant WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
 
 ## Architecture
 
 ### Core Components
-- `homeglo/main.py`: WebSocket client that connects to Home Assistant, handles authentication, subscribes to events, and processes ZHA switch button presses
-- `homeglo/brain.py`: Adaptive lighting calculator that determines color temperature and brightness based on sun position
+- `magiclight/main.py`: WebSocket client that connects to Home Assistant, handles authentication, subscribes to events, and processes ZHA switch button presses
+- `magiclight/brain.py`: Adaptive lighting calculator that determines color temperature and brightness based on sun position
 
 ### Key Functionality
 1. **WebSocket Connection**: Establishes persistent connection to Home Assistant using long-lived access token
@@ -22,7 +22,7 @@ HomeGlo is a Home Assistant add-on that connects to the Home Assistant WebSocket
 ### Local Testing
 ```bash
 # Test Python app directly (requires .env file)
-cd homeglo
+cd magiclight
 ./test_local.sh
 
 # Build addon for current architecture (no cache)
@@ -47,7 +47,7 @@ cd homeglo
 ### Python Dependencies
 ```bash
 # Install requirements
-pip3 install -r homeglo/requirements.txt
+pip3 install -r magiclight/requirements.txt
 ```
 
 ## Configuration

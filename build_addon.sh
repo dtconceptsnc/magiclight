@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build script for HomeGlo Home Assistant addon
+# Build script for MagicLight Home Assistant addon
 # Supports multiple architectures
 
 set -e
@@ -87,16 +87,16 @@ fi
 # Function to build for a single architecture
 build_arch() {
     local arch=$1
-    echo -e "${GREEN}Building HomeGlo addon for ${arch}...${NC}"
+    echo -e "${GREEN}Building MagicLight addon for ${arch}...${NC}"
     
     docker run --rm -it --name builder --privileged \
-        -v "$(pwd)/homeglo":/data \
+        -v "$(pwd)/magiclight":/data \
         -v /var/run/docker.sock:/var/run/docker.sock:ro \
         ghcr.io/home-assistant/amd64-builder \
         -t /data \
         ${TEST_MODE} \
         --${arch} \
-        -i homeglo-${arch} \
+        -i magiclight-${arch} \
         -d local \
         ${NO_CACHE} \
         ${PUSH_MODE}
@@ -112,12 +112,12 @@ build_arch() {
 # Main build process
 cd "$(dirname "$0")"
 
-echo -e "${GREEN}HomeGlo Home Assistant Addon Builder${NC}"
+echo -e "${GREEN}MagicLight Home Assistant Addon Builder${NC}"
 echo "======================================"
 
 # Validate addon configuration
-if [ ! -f "homeglo/config.yaml" ]; then
-    echo -e "${RED}Error: config.yaml not found in homeglo directory${NC}"
+if [ ! -f "magiclight/config.yaml" ]; then
+    echo -e "${RED}Error: config.yaml not found in magiclight directory${NC}"
     exit 1
 fi
 
@@ -137,7 +137,7 @@ echo -e "${GREEN}Build complete!${NC}"
 if [ -z "$PUSH_MODE" ]; then
     echo ""
     echo "To test the addon locally:"
-    echo "  1. The image is available as: homeglo-${ARCH}:latest"
+    echo "  1. The image is available as: magiclight-${ARCH}:latest"
     echo "  2. You can install it through the Home Assistant UI"
     echo ""
     echo "To push to a registry, run with --push option"

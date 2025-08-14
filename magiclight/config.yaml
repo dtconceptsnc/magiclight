@@ -1,9 +1,9 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
-name: HomeGlo
-version: "1.3.4"
-slug: homeglo
+name: MagicLight
+version: "1.3.5"
+slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
-url: "https://github.com/homeglo/homeglo-ha"
+url: "https://github.com/tkthundr/magiclight-ha"
 arch:
   - armhf
   - armv7

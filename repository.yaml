@@ -1,4 +1,4 @@
 # https://developers.home-assistant.io/docs/add-ons/repository#repository-configuration
-name: HomeGlo
-url: 'https://github.com/homeglo/homeglo-ha'
+name: MagicLight
+url: 'https://github.com/tkthundr/magiclight-ha'
 maintainer: Tim K <bright.frog1891@fastmail.com>
