@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.3.6
+
+- Fix multi-area switch control bug
+  - Magic mode is no longer automatically enabled at startup for all areas
+  - Magic mode is now properly managed per-area based on light state
+  - Fixes issue where switches in one area could interfere with other areas
+  - Each area now maintains independent magic mode state
+
+## 1.3.5
+
+- Version skipped
+
 ## 1.3.4
 
 - Improved color temperature conversion accuracy

@@ -649,11 +649,9 @@ class HomeAssistantWebSocketClient:
                             logger.info(f"  - Device ID: {dev_id} -> Area: {area}")
                         logger.info("=========================")
                         
-                        # Initialize magic mode for all areas with switches
+                        # Don't automatically enable magic mode - let it be controlled by switch presses
                         areas_with_switches = set(self.device_to_area_mapping.values())
-                        for area_id in areas_with_switches:
-                            self.enable_magic_mode(area_id)
-                        logger.info(f"Initialized magic mode for {len(areas_with_switches)} areas with switches")
+                        logger.info(f"Found {len(areas_with_switches)} areas with switches")
                     else:
                         logger.warning("No switches found in device registry")
                 
