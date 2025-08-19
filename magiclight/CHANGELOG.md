@@ -1,5 +1,15 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.3
+
+- Improve Light Designer configuration handling and feedback
+  - Designer now fetches current configuration via API on page load
+  - Added cache-control headers to prevent browser caching issues
+  - Enhanced save confirmation with clearer visual feedback
+  - Save button shows loading state during save operation
+  - Success/error messages are more prominent with animations
+  - Configuration always shows the most recent saved values
+
 ## 2.0.2
 
 - Fix API routing for POST requests in Light Designer

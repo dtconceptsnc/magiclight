@@ -59,7 +59,15 @@ class LightDesignerServer:
             # Insert the config script before the closing body tag
             html_content = html_content.replace('</body>', f'{config_script}</body>')
             
-            return web.Response(text=html_content, content_type='text/html')
+            return web.Response(
+                text=html_content, 
+                content_type='text/html',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
         except Exception as e:
             logger.error(f"Error serving designer page: {e}")
             return web.Response(text=f"Error: {str(e)}", status=500)
