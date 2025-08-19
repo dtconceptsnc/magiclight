@@ -64,10 +64,8 @@ class HomeAssistantWebSocketClient:
             self.color_mode = ColorMode.RGB
         logger.info(f"Using color mode: {self.color_mode.value}")
         
-        # Gamma configuration for adaptive lighting
-        self.sun_cct_gamma = float(os.getenv("SUN_CCT_GAMMA", "0.9"))
-        self.sun_brightness_gamma = float(os.getenv("SUN_BRIGHTNESS_GAMMA", "0.5"))
-        logger.info(f"Using sun_cct_gamma: {self.sun_cct_gamma}, sun_brightness_gamma: {self.sun_brightness_gamma}")
+        # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py
+        # The new curve system provides separate control for morning and evening transitions
         
     @property
     def websocket_url(self) -> str:
@@ -440,14 +438,12 @@ class HomeAssistantWebSocketClient:
                 current_time = current_time + timedelta(minutes=offset_minutes)
                 logger.info(f"Applying time offset of {offset_minutes} minutes for area {area_id}")
         
-        # Get adaptive lighting values with all settings
+        # Get adaptive lighting values with new morning/evening curves
         lighting_values = get_adaptive_lighting(
             latitude=self.latitude,
             longitude=self.longitude,
             timezone=self.timezone,
-            current_time=current_time,
-            sun_cct_gamma=self.sun_cct_gamma,
-            sun_brightness_gamma=self.sun_brightness_gamma
+            current_time=current_time
         )
         
         # Log the calculation

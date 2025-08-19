@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, Any
 from enum import Enum
 
@@ -46,9 +46,31 @@ DEFAULT_MAX_COLOR_TEMP = int(os.getenv("MAX_COLOR_TEMP", "6500"))  # Cool daylig
 DEFAULT_MIN_BRIGHTNESS = 1
 DEFAULT_MAX_BRIGHTNESS = 100
 
-# Sun position to color/brightness mapping - default values, can be overridden
-DEFAULT_SUN_CCT_GAMMA = 0.9         # Color temperature gamma (>1 = cooler during day)
-DEFAULT_SUN_BRIGHTNESS_GAMMA = 0.5  # Brightness gamma (1 = cubic smooth-step)
+# Morning curve parameters (defaults from HTML)
+DEFAULT_MORNING_BRI_MID = 6.0       # Midpoint hours from solar midnight
+DEFAULT_MORNING_BRI_STEEP = 1.0     # Steepness of curve
+DEFAULT_MORNING_BRI_DECAY = 0.02    # Decay around noon
+DEFAULT_MORNING_BRI_GAIN = 1.0      # Gain multiplier
+DEFAULT_MORNING_BRI_OFFSET = 0      # Brightness offset
+
+DEFAULT_MORNING_CCT_MID = 6.0       # Midpoint hours from solar midnight
+DEFAULT_MORNING_CCT_STEEP = 1.0     # Steepness of curve
+DEFAULT_MORNING_CCT_DECAY = 0.02    # Decay around noon
+DEFAULT_MORNING_CCT_GAIN = 1.0      # Gain multiplier
+DEFAULT_MORNING_CCT_OFFSET = 0      # Color temp offset
+
+# Evening curve parameters (defaults from HTML)
+DEFAULT_EVENING_BRI_MID = 6.0       # Midpoint hours from solar noon
+DEFAULT_EVENING_BRI_STEEP = 1.0     # Steepness of curve
+DEFAULT_EVENING_BRI_DECAY = 0.02    # Decay around noon
+DEFAULT_EVENING_BRI_GAIN = 1.0      # Gain multiplier
+DEFAULT_EVENING_BRI_OFFSET = 0      # Brightness offset
+
+DEFAULT_EVENING_CCT_MID = 6.0       # Midpoint hours from solar noon
+DEFAULT_EVENING_CCT_STEEP = 1.0     # Steepness of curve
+DEFAULT_EVENING_CCT_DECAY = 0.02    # Decay around noon
+DEFAULT_EVENING_CCT_GAIN = 3.0      # Gain multiplier
+DEFAULT_EVENING_CCT_OFFSET = 0      # Color temp offset
 
 # ---------------------------------------------------------------------------
 # Adaptive-lighting math (unchanged)
@@ -67,7 +89,32 @@ class AdaptiveLighting:
         sunrise_time: Optional[datetime] = None,
         sunset_time: Optional[datetime] = None,
         solar_noon: Optional[datetime] = None,
+        solar_midnight: Optional[datetime] = None,
         color_mode: ColorMode = ColorMode.KELVIN,
+        # Morning brightness curve parameters
+        morning_bri_mid: float = DEFAULT_MORNING_BRI_MID,
+        morning_bri_steep: float = DEFAULT_MORNING_BRI_STEEP,
+        morning_bri_decay: float = DEFAULT_MORNING_BRI_DECAY,
+        morning_bri_gain: float = DEFAULT_MORNING_BRI_GAIN,
+        morning_bri_offset: float = DEFAULT_MORNING_BRI_OFFSET,
+        # Morning CCT curve parameters
+        morning_cct_mid: float = DEFAULT_MORNING_CCT_MID,
+        morning_cct_steep: float = DEFAULT_MORNING_CCT_STEEP,
+        morning_cct_decay: float = DEFAULT_MORNING_CCT_DECAY,
+        morning_cct_gain: float = DEFAULT_MORNING_CCT_GAIN,
+        morning_cct_offset: float = DEFAULT_MORNING_CCT_OFFSET,
+        # Evening brightness curve parameters
+        evening_bri_mid: float = DEFAULT_EVENING_BRI_MID,
+        evening_bri_steep: float = DEFAULT_EVENING_BRI_STEEP,
+        evening_bri_decay: float = DEFAULT_EVENING_BRI_DECAY,
+        evening_bri_gain: float = DEFAULT_EVENING_BRI_GAIN,
+        evening_bri_offset: float = DEFAULT_EVENING_BRI_OFFSET,
+        # Evening CCT curve parameters
+        evening_cct_mid: float = DEFAULT_EVENING_CCT_MID,
+        evening_cct_steep: float = DEFAULT_EVENING_CCT_STEEP,
+        evening_cct_decay: float = DEFAULT_EVENING_CCT_DECAY,
+        evening_cct_gain: float = DEFAULT_EVENING_CCT_GAIN,
+        evening_cct_offset: float = DEFAULT_EVENING_CCT_OFFSET,
     ) -> None:
         self.min_color_temp = min_color_temp
         self.max_color_temp = max_color_temp
@@ -76,7 +123,34 @@ class AdaptiveLighting:
         self.sunrise_time = sunrise_time
         self.sunset_time = sunset_time
         self.solar_noon = solar_noon
+        self.solar_midnight = solar_midnight
         self.color_mode = color_mode
+        
+        # Morning curve parameters
+        self.morning_bri_mid = morning_bri_mid
+        self.morning_bri_steep = morning_bri_steep
+        self.morning_bri_decay = morning_bri_decay
+        self.morning_bri_gain = morning_bri_gain
+        self.morning_bri_offset = morning_bri_offset
+        
+        self.morning_cct_mid = morning_cct_mid
+        self.morning_cct_steep = morning_cct_steep
+        self.morning_cct_decay = morning_cct_decay
+        self.morning_cct_gain = morning_cct_gain
+        self.morning_cct_offset = morning_cct_offset
+        
+        # Evening curve parameters
+        self.evening_bri_mid = evening_bri_mid
+        self.evening_bri_steep = evening_bri_steep
+        self.evening_bri_decay = evening_bri_decay
+        self.evening_bri_gain = evening_bri_gain
+        self.evening_bri_offset = evening_bri_offset
+        
+        self.evening_cct_mid = evening_cct_mid
+        self.evening_cct_steep = evening_cct_steep
+        self.evening_cct_decay = evening_cct_decay
+        self.evening_cct_gain = evening_cct_gain
+        self.evening_cct_offset = evening_cct_offset
 
     def calculate_sun_position(self, now: datetime, elev_deg: float) -> float:
         """Calculate sun position using time-based cosine wave.
@@ -100,50 +174,115 @@ class AdaptiveLighting:
         # Fallback: use simple time of day if no solar noon available
         hour = now.hour + now.minute / 60
         return -math.cos(2 * math.pi * hour / 24)
+    
+    def get_solar_time(self, now: datetime) -> float:
+        """Get the current time in solar hours (0-24 where 0 is solar midnight, 12 is solar noon)."""
+        if self.solar_midnight and self.solar_noon:
+            # Calculate hours from solar midnight
+            hours_from_midnight = (now - self.solar_midnight).total_seconds() / 3600
+            # Wrap to 0-24 range
+            return hours_from_midnight % 24
+        elif self.solar_noon:
+            # Calculate from solar noon if midnight not available
+            hours_from_noon = (now - self.solar_noon).total_seconds() / 3600
+            return (hours_from_noon + 12) % 24
+        else:
+            # Fallback to regular time
+            return now.hour + now.minute / 60
+    
+    @staticmethod
+    def logistic_up(t: float, m: float, k: float) -> float:
+        """Logistic function for morning curves."""
+        return 1 / (1 + math.exp(-k * (t - m)))
+    
+    @staticmethod
+    def decay_around_noon(t: float, alpha: float) -> float:
+        """Decay function centered around solar noon (t=12)."""
+        return math.exp(-alpha * (t - 12) ** 2)
+    
+    def map_morning(self, t: float, m: float, k: float, alpha: float, gain: float, 
+                   offset: float, out_min: float, out_max: float) -> float:
+        """Map morning time to value using logistic curve with decay."""
+        base = self.logistic_up(t, m, k) * self.decay_around_noon(t, alpha)
+        scaled = max(0, min(1, base * gain))
+        y = out_min + (out_max - out_min) * scaled
+        y += offset
+        return y
+    
+    def map_evening(self, t: float, m: float, k: float, alpha: float, gain: float,
+                   offset: float, out_min: float, out_max: float) -> float:
+        """Map evening time to value using inverted logistic curve with decay."""
+        te = t - 12  # Shift time for evening calculation
+        base = (1 - self.logistic_up(te, m, k)) * self.decay_around_noon(t, alpha)
+        scaled = max(0, min(1, base * gain))
+        y = out_min + (out_max - out_min) * scaled
+        y += offset
+        return y
 
     # colour / brightness ------------------------------------------------
-    def calculate_color_temperature(self, pos: float, *, gamma: float = DEFAULT_SUN_CCT_GAMMA) -> int:
-        """
-        Map sun-position (-1 … 1) to colour temperature using a cubic smooth-step.
-        `gamma` < 1 warms the day (slower rise); > 1 cools it faster.
-
-        pos = -1  →  min_color_temp      (night)
-        pos =  0  →  ~⅓ up the range     (dawn / dusk)
-        pos = +1  →  max_color_temp      (noon)
-        """
-        # 1. Linear map  [-1, 1] → [0, 1]
-        t = (pos + 1) * 0.5
-
-        # 2. Optional gamma to bias the curve (0.7-0.9 ≈ warmer day)
-        if gamma != 1.0:
-            t = t ** gamma
-
-        # 3. Cubic smooth-step easing
-        s = t * t * (3.0 - 2.0 * t)
-
-        # 4. Interpolate
-        val = self.min_color_temp + s * (self.max_color_temp - self.min_color_temp)
-        return int(val)
-
-    def calculate_brightness(self, pos: float, *, gamma: float = DEFAULT_SUN_BRIGHTNESS_GAMMA) -> int:
-        """Calculate brightness based on sun position with optional gamma adjustment.
+    def calculate_color_temperature(self, now: datetime) -> int:
+        """Calculate color temperature using morning/evening curves based on solar time."""
+        solar_time = self.get_solar_time(now)
         
-        Args:
-            pos: Sun position (-1 to 1)
-            gamma: Gamma value for brightness curve (1 = cubic smooth-step, <1 = dimmer, >1 = brighter)
-        """
-        # Map -1…1 -> 0…1
-        t = (pos + 1) * 0.5          # 0 at night, 1 at noon
+        if solar_time < 12:
+            # Morning: use morning curve (solar midnight to solar noon)
+            value = self.map_morning(
+                solar_time,
+                self.morning_cct_mid,
+                self.morning_cct_steep,
+                self.morning_cct_decay,
+                self.morning_cct_gain,
+                self.morning_cct_offset,
+                self.min_color_temp,
+                self.max_color_temp
+            )
+        else:
+            # Evening: use evening curve (solar noon to solar midnight)
+            value = self.map_evening(
+                solar_time,
+                self.evening_cct_mid,
+                self.evening_cct_steep,
+                self.evening_cct_decay,
+                self.evening_cct_gain,
+                self.evening_cct_offset,
+                self.min_color_temp,
+                self.max_color_temp
+            )
         
-        # Apply gamma if specified
-        if gamma != 1.0:
-            t = t ** gamma
+        # Clamp to valid range
+        return int(max(self.min_color_temp, min(self.max_color_temp, value)))
+
+    def calculate_brightness(self, now: datetime) -> int:
+        """Calculate brightness using morning/evening curves based on solar time."""
+        solar_time = self.get_solar_time(now)
         
-        # Cubic smooth-step easing
-        s = t * t * (3.0 - 2.0 * t)
+        if solar_time < 12:
+            # Morning: use morning curve (solar midnight to solar noon)
+            value = self.map_morning(
+                solar_time,
+                self.morning_bri_mid,
+                self.morning_bri_steep,
+                self.morning_bri_decay,
+                self.morning_bri_gain,
+                self.morning_bri_offset,
+                self.min_brightness,
+                self.max_brightness
+            )
+        else:
+            # Evening: use evening curve (solar noon to solar midnight)
+            value = self.map_evening(
+                solar_time,
+                self.evening_bri_mid,
+                self.evening_bri_steep,
+                self.evening_bri_decay,
+                self.evening_bri_gain,
+                self.evening_bri_offset,
+                self.min_brightness,
+                self.max_brightness
+            )
         
-        return int(self.min_brightness +
-                s * (self.max_brightness - self.min_brightness))
+        # Clamp to valid range
+        return int(max(self.min_brightness, min(self.max_brightness, value)))
 
     # colour-space helpers ----------------------------------------------
     @staticmethod
@@ -290,15 +429,20 @@ def get_adaptive_lighting(
     longitude: Optional[float] = None,
     timezone: Optional[str] = None,
     current_time: Optional[datetime] = None,
-    sun_cct_gamma: Optional[float] = None,
-    sun_brightness_gamma: Optional[float] = None
+    # Allow overriding curve parameters (optional)
+    morning_bri_params: Optional[Dict[str, float]] = None,
+    morning_cct_params: Optional[Dict[str, float]] = None,
+    evening_bri_params: Optional[Dict[str, float]] = None,
+    evening_cct_params: Optional[Dict[str, float]] = None
 ) -> Dict[str, Any]:
-    """Compute adaptive-lighting values.
+    """Compute adaptive-lighting values using morning/evening curves.
 
     If *latitude*, *longitude* or *timezone* are omitted the function will try
     to pull them from the conventional Home Assistant env-vars.  Failing that
     it falls back to the system local timezone, and raises if lat/lon remain
     undefined.
+    
+    The optional curve parameter dicts can contain: mid, steep, decay, gain, offset
     """
     latitude, longitude, timezone = _auto_location(latitude, longitude, timezone)
     if latitude is None or longitude is None:
@@ -319,27 +463,61 @@ def get_adaptive_lighting(
     solar_events = sun(observer, date=now.date(), tzinfo=loc.timezone)
     elev = solar_elevation(observer, now)
 
-    al = AdaptiveLighting(
-        sunrise_time=solar_events["sunrise"],
-        sunset_time=solar_events["sunset"],
-        solar_noon=solar_events["noon"],
-    )
+    # Calculate solar midnight (opposite of solar noon)
+    solar_noon = solar_events["noon"]
+    solar_midnight = solar_noon - timedelta(hours=12) if solar_noon.hour >= 12 else solar_noon + timedelta(hours=12)
+
+    # Prepare curve parameters (use provided or defaults)
+    kwargs = {
+        "sunrise_time": solar_events["sunrise"],
+        "sunset_time": solar_events["sunset"],
+        "solar_noon": solar_noon,
+        "solar_midnight": solar_midnight,
+    }
+    
+    # Add morning brightness parameters if provided
+    if morning_bri_params:
+        kwargs.update({
+            f"morning_bri_{k}": v for k, v in morning_bri_params.items()
+            if k in ["mid", "steep", "decay", "gain", "offset"]
+        })
+    
+    # Add morning CCT parameters if provided
+    if morning_cct_params:
+        kwargs.update({
+            f"morning_cct_{k}": v for k, v in morning_cct_params.items()
+            if k in ["mid", "steep", "decay", "gain", "offset"]
+        })
+    
+    # Add evening brightness parameters if provided
+    if evening_bri_params:
+        kwargs.update({
+            f"evening_bri_{k}": v for k, v in evening_bri_params.items()
+            if k in ["mid", "steep", "decay", "gain", "offset"]
+        })
+    
+    # Add evening CCT parameters if provided
+    if evening_cct_params:
+        kwargs.update({
+            f"evening_cct_{k}": v for k, v in evening_cct_params.items()
+            if k in ["mid", "steep", "decay", "gain", "offset"]
+        })
+
+    al = AdaptiveLighting(**kwargs)
 
     sun_pos = al.calculate_sun_position(now, elev)
+    solar_time = al.get_solar_time(now)
     
-    # Use provided gamma values or defaults
-    cct_gamma = sun_cct_gamma if sun_cct_gamma is not None else DEFAULT_SUN_CCT_GAMMA
-    brightness_gamma = sun_brightness_gamma if sun_brightness_gamma is not None else DEFAULT_SUN_BRIGHTNESS_GAMMA
-    
-    cct = base_cct = al.calculate_color_temperature(sun_pos, gamma=cct_gamma)
-    bri = base_bri = al.calculate_brightness(sun_pos, gamma=brightness_gamma)
+    # Use new morning/evening curve methods (they take datetime now)
+    cct = al.calculate_color_temperature(now)
+    bri = al.calculate_brightness(now)
     
     # Calculate all color representations
     rgb = al.color_temperature_to_rgb(cct)
     xy_from_kelvin = al.color_temperature_to_xy(cct)
 
-    log_msg = f"{now.isoformat()} – elev {elev:.1f}°, pos {sun_pos:.2f}"
-    log_msg += f" | base: {base_cct}K/{base_bri}% → adjusted: {cct}K/{bri}%"
+    log_msg = f"{now.isoformat()} – elev {elev:.1f}°, solar_time {solar_time:.2f}h"
+    log_msg += f" | lighting: {cct}K/{bri}%"
     logger.info(log_msg)
     
     # Log color information
@@ -351,5 +529,6 @@ def get_adaptive_lighting(
         "brightness": bri,
         "rgb": rgb,
         "xy": xy_from_kelvin,  # Use direct kelvin->xy conversion
-        "sun_position": sun_pos
+        "sun_position": sun_pos,
+        "solar_time": solar_time
     }

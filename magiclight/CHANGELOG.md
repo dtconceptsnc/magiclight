@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 1.4.0
+
+- Replace cubic smoothstep formula with advanced morning/evening curves
+  - Replaced simple gamma-based cubic formula with separate morning and evening logistic curves
+  - Added 20 new curve parameters for fine-grained control over lighting transitions
+  - Morning curves control lighting from solar midnight to solar noon
+  - Evening curves control lighting from solar noon to solar midnight
+  - Each curve has independent controls for midpoint, steepness, decay, gain, and offset
+  - Allows for asymmetric lighting patterns (e.g., slower sunrise, faster sunset)
+  - Better matches natural circadian rhythms with customizable transitions
+  - Removed deprecated sun_cct_gamma and sun_brightness_gamma parameters
+
 ## 1.3.6
 
 - Fix multi-area switch control bug
