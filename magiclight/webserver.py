@@ -23,12 +23,17 @@ class LightDesignerServer:
         
     def setup_routes(self):
         """Set up web routes."""
-        # API routes first (more specific)
+        # API routes - must handle all ingress prefixes
+        self.app.router.add_route('GET', '/{path:.*}/api/config', self.get_config)
+        self.app.router.add_route('POST', '/{path:.*}/api/config', self.save_config)
+        self.app.router.add_route('GET', '/{path:.*}/health', self.health_check)
+        
+        # Direct API routes (for non-ingress access)
         self.app.router.add_get('/api/config', self.get_config)
         self.app.router.add_post('/api/config', self.save_config)
         self.app.router.add_get('/health', self.health_check)
         
-        # Handle root and any ingress paths (catch-all must be last)
+        # Handle root and any other paths (catch-all must be last)
         self.app.router.add_get('/', self.serve_designer)
         self.app.router.add_get('/{path:.*}', self.serve_designer)
         

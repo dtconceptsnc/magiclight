@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.2
+
+- Fix API routing for POST requests in Light Designer
+  - Fixed 405 Method Not Allowed errors when saving configuration
+  - Added proper route handlers for ingress-prefixed API paths
+  - Routes now correctly handle both GET and POST methods with ingress prefixes
+  - Configuration changes apply in real-time without addon restart
+
 ## 2.0.1
 
 - Fix ingress routing for Light Designer interface
