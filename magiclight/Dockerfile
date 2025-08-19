@@ -11,10 +11,16 @@ RUN \
 # Install Python and dependencies
 RUN apk add --no-cache python3 py3-pip tzdata
 
+# Install build dependencies for aiohttp compilation
+RUN apk add --no-cache gcc musl-dev python3-dev
+
 # Copy Python app
 WORKDIR /app
-COPY main.py brain.py switch.py requirements.txt ./
+COPY main.py brain.py switch.py webserver.py designer.html requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Remove build dependencies to reduce image size
+RUN apk del gcc musl-dev python3-dev
 
 # Copy root filesystem
 COPY rootfs /

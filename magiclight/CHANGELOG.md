@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.0
+
+- Add Home Assistant ingress support with Light Designer interface
+  - New web-based Light Designer accessible through Home Assistant sidebar
+  - Interactive graph showing real-time preview of lighting curves
+  - Visual controls for all 20 curve parameters with live updates
+  - Separate morning and evening controls for brightness and color temperature
+  - Save configuration directly from the web interface
+  - Visualizes solar events (sunrise, sunset, solar noon, solar midnight)
+  - Shows current time marker and interactive time selection
+  - Drag-to-select time on graph for instant value preview
+
 ## 1.4.0
 
 - Replace cubic smoothstep formula with advanced morning/evening curves

@@ -438,12 +438,64 @@ class HomeAssistantWebSocketClient:
                 current_time = current_time + timedelta(minutes=offset_minutes)
                 logger.info(f"Applying time offset of {offset_minutes} minutes for area {area_id}")
         
+        # Load curve parameters from config if available
+        curve_params = {}
+        config_path = "/data/options.json"
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    
+                    # Extract curve parameters if present
+                    morning_bri_params = {}
+                    morning_cct_params = {}
+                    evening_bri_params = {}
+                    evening_cct_params = {}
+                    
+                    # Morning brightness parameters
+                    for key in ["mid", "steep", "decay", "gain", "offset"]:
+                        config_key = f"morning_bri_{key}"
+                        if config_key in config:
+                            morning_bri_params[key] = config[config_key]
+                    
+                    # Morning CCT parameters
+                    for key in ["mid", "steep", "decay", "gain", "offset"]:
+                        config_key = f"morning_cct_{key}"
+                        if config_key in config:
+                            morning_cct_params[key] = config[config_key]
+                    
+                    # Evening brightness parameters
+                    for key in ["mid", "steep", "decay", "gain", "offset"]:
+                        config_key = f"evening_bri_{key}"
+                        if config_key in config:
+                            evening_bri_params[key] = config[config_key]
+                    
+                    # Evening CCT parameters
+                    for key in ["mid", "steep", "decay", "gain", "offset"]:
+                        config_key = f"evening_cct_{key}"
+                        if config_key in config:
+                            evening_cct_params[key] = config[config_key]
+                    
+                    # Add to curve_params if any parameters were found
+                    if morning_bri_params:
+                        curve_params["morning_bri_params"] = morning_bri_params
+                    if morning_cct_params:
+                        curve_params["morning_cct_params"] = morning_cct_params
+                    if evening_bri_params:
+                        curve_params["evening_bri_params"] = evening_bri_params
+                    if evening_cct_params:
+                        curve_params["evening_cct_params"] = evening_cct_params
+                        
+            except Exception as e:
+                logger.debug(f"Could not load curve parameters from config: {e}")
+        
         # Get adaptive lighting values with new morning/evening curves
         lighting_values = get_adaptive_lighting(
             latitude=self.latitude,
             longitude=self.longitude,
             timezone=self.timezone,
-            current_time=current_time
+            current_time=current_time,
+            **curve_params
         )
         
         # Log the calculation

@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Light Designer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root{
+    --bg:#121212; --panel:#1e1e1e; --muted:#9aa0a6; --fg:#ffffff; --grid:#444;
+    --accent:#1e90ff; --btn:#2a2a2a; --btnBorder:#444;
+    --nowBlue:#66b8ff;
+  }
+  html,body { height:100%; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 1.5rem; background: var(--bg); color: var(--fg);
+  }
+  .container {
+    max-width: 1200px; margin: 0 auto; background: var(--panel);
+    padding: 2rem; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  }
+  h2 { margin: 0 0 1rem; color: #e0e0e0; }
+  .stage { margin: 1.25rem 0 2rem; }
+  #plot { touch-action: none; height: 460px; }
+  .dragging #plot { cursor: ew-resize !important; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .section { border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; background: #1a1a1a; }
+  .section-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .section-title{ font-size:1.15rem; font-weight:900; text-transform:uppercase; letter-spacing:.03em; color: var(--muted); }
+
+  .group-title { font-size: 1.05rem; font-weight: 800; color: var(--muted); margin: 6px 0 8px; letter-spacing: .02em; }
+
+  .controls-row {
+    display: grid; grid-template-columns: 160px 1fr 110px; gap: 8px; align-items: center; margin: 8px 0;
+  }
+  .controls-wide {
+    display: grid; grid-template-columns: 160px 1fr 90px; gap: 8px; align-items: center; margin: 10px 0;
+  }
+  label { font-size: .9rem; color: var(--muted); font-weight: 800; }
+  .label-reset{ cursor:pointer; text-decoration: underline dotted; color: var(--muted); }
+  .label-reset:hover{ filter:brightness(1.12); }
+  .value { font-variant-numeric: tabular-nums; text-align: right; color: #c9cfd6; font-weight: 700; }
+
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=text], select {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--btnBorder);
+    border-radius: 6px; background: var(--btn); color: #fff;
+  }
+  input[type=checkbox] { accent-color: var(--accent); }
+
+  .dual-range { position: relative; display:flex; align-items: center; gap: 8px; width:100%; }
+  .dual-track { position: relative; flex:1; height: 6px; background: var(--grid); border-radius: 3px; }
+  .dual-range input[type=range]{ position:absolute; width:100%; margin:0; background:transparent; -webkit-appearance:none; appearance:none; height:6px; top:0; }
+  .dual-range input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; background: var(--accent); border-radius:50%; cursor:pointer; position:relative; z-index:2; }
+  .dual-range input[type=range]::-moz-range-thumb{ width:16px; height:16px; background: var(--accent); border-radius:50%; cursor:pointer; position:relative; z-index:2; }
+  .dual-range input[id$="-min"]{ z-index:2; }
+  .dual-range input[id$="-max"]{ z-index:1; }
+  .fill { position:absolute; top:0; height:6px; background: var(--accent); border-radius:3px; z-index:0; }
+  .label-chip{ font-size:.9rem; color:#c9cfd6; width:68px; text-align:right; font-variant-numeric: tabular-nums; }
+
+  .btn { border:1px solid var(--btnBorder); background: var(--btn); color:#c8c8c8; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:800; font-size:.9rem; }
+  .btn:hover { filter: brightness(1.1); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .footer-actions { display:flex; justify-content:space-between; margin-top: 16px; }
+  .big-title { font-size: 1.15rem; font-weight: 900; margin: 1.25rem 0 .5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .warn { color:#ff6b6b; font-size:.9rem; margin-top:6px; }
+  .success { color:#51cf66; font-size:.9rem; margin:10px 0; padding:10px; background:rgba(81,207,102,0.1); border-radius:6px; }
+  @media (max-width: 900px){ .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Home Glo Light Designer</h2>
+  <div id="save-status"></div>
+  <div id="plot" class="stage"></div>
+
+  <div class="grid-2">
+    <!-- Morning -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Morning</div>
+        <button id="reset-morning" class="btn">Reset</button>
+      </div>
+      <div class="group-title">Brightness</div>
+      <div id="morning-bri"></div>
+      <div class="group-title" style="margin-top:12px;">Color Temperature</div>
+      <div id="morning-cct"></div>
+    </div>
+
+    <!-- Evening -->
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">Evening</div>
+        <button id="reset-evening" class="btn">Reset</button>
+      </div>
+      <div class="group-title">Brightness</div>
+      <div id="evening-bri"></div>
+      <div class="group-title" style="margin-top:12px;">Color Temperature</div>
+      <div id="evening-cct"></div>
+    </div>
+  </div>
+
+  <div class="big-title">Ranges</div>
+  <div class="section">
+    <div class="controls-wide">
+      <label>Brightness (min–max)</label>
+      <div class="dual-range">
+        <span id="min-intensity-value" class="label-chip">1</span>
+        <div class="dual-track">
+          <input type="range" id="min-intensity" min="0" max="100" step="1" value="1">
+          <input type="range" id="max-intensity" min="0" max="100" step="1" value="100">
+          <div class="fill" id="intensity-fill"></div>
+        </div>
+        <span id="max-intensity-value" class="label-chip">100</span>
+      </div>
+    </div>
+    <div class="controls-wide">
+      <label>Color Temperature (K, min–max)</label>
+      <div class="dual-range">
+        <span id="min-temp-value" class="label-chip">500</span>
+        <div class="dual-track">
+          <input type="range" id="min-temp" min="500" max="6500" step="50" value="500">
+          <input type="range" id="max-temp" min="500" max="6500" step="50" value="6500">
+          <div class="fill" id="temp-fill"></div>
+        </div>
+        <span id="max-temp-value" class="label-chip">6500</span>
+      </div>
+    </div>
+    <div id="range-warn" class="warn"></div>
+  </div>
+
+  <div class="big-title">Sun Position</div>
+  <div class="section" id="sun-position"></div>
+
+  <div class="footer-actions">
+    <button id="reset-all" class="btn">Reset All</button>
+    <button id="save-config" class="btn btn-primary">Save Configuration</button>
+  </div>
+</div>
+
+<script>
+/* =========================
+   Globals
+========================= */
+let plotDivRef = null;
+let listenersBound = false;
+let rafId = 0;
+let lastClientX = null;
+let setCursorRef = function(xh){};
+
+const SAMPLE_STEP = 0.1;
+const SOLAR_LABEL_SIZE = 10;
+
+function queueResize(){
+  if(!plotDivRef) return;
+  requestAnimationFrame(()=> requestAnimationFrame(()=> Plotly.Plots.resize(plotDivRef)));
+}
+
+/* =========================
+   Defaults & Parameters
+========================= */
+const defaults = {
+  // Ranges
+  min_color_temp: 500, max_color_temp: 6500,
+  min_brightness: 1, max_brightness: 100,
+
+  // Morning Brightness
+  morning_bri_mid: 6.0, morning_bri_steep: 1.0, morning_bri_decay: 0.02, morning_bri_gain: 1.0, morning_bri_offset: 0,
+  // Morning CCT
+  morning_cct_mid: 6.0, morning_cct_steep: 1.0, morning_cct_decay: 0.02, morning_cct_gain: 1.0, morning_cct_offset: 0,
+  // Evening Brightness
+  evening_bri_mid: 6.0, evening_bri_steep: 1.0, evening_bri_decay: 0.02, evening_bri_gain: 1.0, evening_bri_offset: 0,
+  // Evening CCT
+  evening_cct_mid: 6.0, evening_cct_steep: 1.0, evening_cct_decay: 0.02, evening_cct_gain: 1.0, evening_cct_offset: 0,
+
+  // Sun & display
+  month: 6,
+  latitude: 35.0, longitude: -78.6, timezone: 'US/Eastern',
+  use12Hour: true
+};
+
+// Load saved configuration if available
+const params = window.savedConfig ? {...defaults, ...window.savedConfig} : JSON.parse(JSON.stringify(defaults));
+
+// Ensure month is valid
+if (!params.month || params.month < 1 || params.month > 12) {
+  params.month = new Date().getMonth() + 1;
+}
+
+let selectedHour = (new Date().getHours() + new Date().getMinutes()/60);
+
+/* ===========
+   Utilities
+=========== */
+const TZ_OPTIONS = [
+  {id:'US/Eastern',label:'US/Eastern'},{id:'US/Central',label:'US/Central'},
+  {id:'US/Mountain',label:'US/Mountain'},{id:'US/Pacific',label:'US/Pacific'},
+  {id:'US/Alaska',label:'US/Alaska'},{id:'US/Arizona',label:'US/Arizona (no DST)'},
+  {id:'US/Hawaii',label:'US/Hawaii (no DST)'}
+];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function utcOffsetFor(zone, month){
+  const dst = (zone!=='US/Arizona' && zone!=='US/Hawaii') && (month>=3 && month<=10);
+  switch(zone){
+    case 'US/Eastern': return dst ? -4 : -5;
+    case 'US/Central': return dst ? -5 : -6;
+    case 'US/Mountain': return dst ? -6 : -7;
+    case 'US/Pacific': return dst ? -7 : -8;
+    case 'US/Alaska': return dst ? -8 : -9;
+    case 'US/Arizona': return -7;
+    case 'US/Hawaii': return -10;
+    default: return -5;
+  }
+}
+
+function formatTime(hour, use12Hour){
+  let total=Math.round(hour*60); let h=Math.floor(total/60), m=total%60;
+  if(!use12Hour) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  const ampm=h<12?'AM':'PM'; h=h%12; if(h===0) h=12; return `${h}:${String(m).padStart(2,'0')}${ampm}`;
+}
+
+const CUM_DAYS=[0,31,59,90,120,151,181,212,243,273,304,334];
+const deg2rad=d=>d*Math.PI/180, rad2deg=r=>r*180/Math.PI, doyForMonthMid=m=>CUM_DAYS[m-1]+15;
+
+function solarDeclinationRad(doy){ 
+  const g=2*Math.PI/365*(doy-1);
+  return 0.006918-0.399912*Math.cos(g)+0.070257*Math.sin(g)-0.006758*Math.cos(2*g)+0.000907*Math.sin(2*g)-0.002697*Math.cos(3*g)+0.00148*Math.sin(3*g);
+}
+
+function equationOfTimeMinutes(doy){ 
+  const B=2*Math.PI*(doy-81)/364;
+  return 9.87*Math.sin(2*B)-7.53*Math.cos(B)-1.5*Math.sin(B); 
+}
+
+function localSolarTimeHours(clockHour,utcOffset,longitude,doy){
+  const LSTM=15*utcOffset; const TC=equationOfTimeMinutes(doy)+4*(longitude-LSTM); return clockHour+TC/60;
+}
+
+function hourAngleRad(clockHour,utcOffset,longitude,doy){ 
+  const LST=localSolarTimeHours(clockHour,utcOffset,longitude,doy); return deg2rad(15*(LST-12)); 
+}
+
+function sunElevationDeg(clockHour,month,latDeg,lonDeg,tz){ 
+  const doy=doyForMonthMid(month); const utc=utcOffsetFor(tz,month);
+  const phi=deg2rad(latDeg), delta=solarDeclinationRad(doy), H=hourAngleRad(clockHour,utc,lonDeg,doy);
+  return rad2deg(Math.asin(Math.sin(phi)*Math.sin(delta)+Math.cos(phi)*Math.cos(delta)*Math.cos(H)));
+}
+
+function calculateSunTimes(month, lat, lon, tz){
+  const doy=doyForMonthMid(month), phi=deg2rad(lat), delta=solarDeclinationRad(doy);
+  const cosH=-Math.tan(phi)*Math.tan(delta), utc=utcOffsetFor(tz,month);
+  const LSTM=15*utc; const TC=equationOfTimeMinutes(doy)+4*(lon-LSTM);
+  const solarNoon=12-TC/60, solarMidnight=(solarNoon+12)%24;
+  if(cosH>1) return {sunrise:null,sunset:null,solarNoon,solarMidnight};
+  if(cosH<-1) return {sunrise:0,sunset:24,solarNoon,solarMidnight};
+  const H=rad2deg(Math.acos(cosH));
+  return {sunrise:(12-H/15)-TC/60, sunset:(12+H/15)-TC/60, solarNoon, solarMidnight};
+}
+
+function clearSkyGHI(hour,month,lat,lon,tz){
+  const alt=sunElevationDeg(hour,month,lat,lon,tz); if(alt<=0) return null;
+  const cosZ=Math.sin(deg2rad(alt)); return 1098*cosZ*Math.exp(-0.059/cosZ)*300/1098;
+}
+
+function cctToRGB(k){
+  k=Math.max(500,Math.min(6500,k)); const t=k/100; let r,g,b;
+  if(t<=66) r=255; else r=329.698727446*Math.pow(t-60,-0.1332047592);
+  if(t<=66) g=99.4708025861*Math.log(t)-161.1195681661; else g=288.1221695283*Math.pow(t-60,-0.0755148492);
+  if(t>=66) b=255; else if(t<=19) b=0; else b=138.5177312231*Math.log(t-10)-305.0447927307;
+  const clamp=v=>Math.max(0,Math.min(255,Math.round(v))); return `rgb(${clamp(r)},${clamp(g)},${clamp(b)})`;
+}
+
+function parseRGB(str){ const m=str.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i); return m?[+m[1],+m[2],+m[3]]:[255,255,255]; }
+function blend(a,b,t){ return [Math.round(a[0]*(1-t)+b[0]*t), Math.round(a[1]*(1-t)+b[1]*t), Math.round(a[2]*(1-t)+b[2]*t)]; }
+
+function lineColorForCCT(k){
+  const base=parseRGB(cctToRGB(k));
+  if(k<=6000) return `rgb(${base[0]},${base[1]},${base[2]})`;
+  const f=Math.min(1,Math.max(0,(k-6000)/500));
+  const blue=[150,200,255]; const t=0.6*f;
+  const [r,g,b]=blend(base,blue,t); return `rgb(${r},${g},${b})`;
+}
+
+/* =========================
+   Curve math
+========================= */
+const logisticUp=(t,m,k)=>1/(1+Math.exp(-k*(t-m)));
+const decayAroundNoon=(t,alpha)=>Math.exp(-alpha*Math.pow(t-12,2));
+
+function mapMorning(t,{m,k,alpha,gain,offset,outMin,outMax}){
+  const base=logisticUp(t,m,k)*decayAroundNoon(t,alpha);
+  const scaled=Math.max(0,Math.min(1,base*gain));
+  let y=outMin+(outMax-outMin)*scaled; y+=offset; return y;
+}
+
+function mapEvening(t,{m,k,alpha,gain,offset,outMin,outMax}){
+  const te=t-12;
+  const base=(1-logisticUp(te,m,k))*decayAroundNoon(t,alpha);
+  const scaled=Math.max(0,Math.min(1,base*gain));
+  let y=outMin+(outMax-outMin)*scaled; y+=offset; return y;
+}
+
+/* =========================
+   Compute series
+========================= */
+function compute(){
+  const {solarNoon, solarMidnight}=calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
+  const hours=[], bri=[], cct=[], sun=[];
+  const briBounds=[params.min_brightness, params.max_brightness];
+  const cctBounds=[params.min_color_temp, params.max_color_temp];
+
+  for(let t=0; t<12; t+=SAMPLE_STEP){
+    const hour=(solarMidnight + (t/12)*((solarNoon - solarMidnight + 24)%24))%24;
+    hours.push(hour);
+    let vb=mapMorning(t,{m:params.morning_bri_mid,k:params.morning_bri_steep,alpha:params.morning_bri_decay,gain:params.morning_bri_gain,offset:params.morning_bri_offset,outMin:briBounds[0],outMax:briBounds[1]});
+    vb=Math.max(0,Math.min(100,vb)); bri.push(vb);
+    let vc=mapMorning(t,{m:params.morning_cct_mid,k:params.morning_cct_steep,alpha:params.morning_cct_decay,gain:params.morning_cct_gain,offset:params.morning_cct_offset,outMin:cctBounds[0],outMax:cctBounds[1]});
+    vc=Math.max(500,Math.min(6500,vc)); cct.push(vc);
+    sun.push(clearSkyGHI(hour,params.month,params.latitude,params.longitude,params.timezone));
+  }
+  
+  { // noon exact
+    const hour=solarNoon%24; hours.push(hour);
+    let vb=mapMorning(12,{m:params.morning_bri_mid,k:params.morning_bri_steep,alpha:params.morning_bri_decay,gain:params.morning_bri_gain,offset:params.morning_bri_offset,outMin:briBounds[0],outMax:briBounds[1]});
+    vb=Math.max(0,Math.min(100,vb)); bri.push(vb);
+    let vc=mapMorning(12,{m:params.morning_cct_mid,k:params.morning_cct_steep,alpha:params.morning_cct_decay,gain:params.morning_cct_gain,offset:params.morning_cct_offset,outMin:cctBounds[0],outMax:cctBounds[1]});
+    vc=Math.max(500,Math.min(6500,vc)); cct.push(vc);
+    sun.push(clearSkyGHI(hour,params.month,params.latitude,params.longitude,params.timezone));
+  }
+  
+  for(let t=12+SAMPLE_STEP; t<=24.0001; t+=SAMPLE_STEP){
+    const hour=(solarNoon + ((t-12)/12)*((solarMidnight - solarNoon + 24)%24))%24;
+    hours.push(hour);
+    let vb=mapEvening(t,{m:params.evening_bri_mid,k:params.evening_bri_steep,alpha:params.evening_bri_decay,gain:params.evening_bri_gain,offset:params.evening_bri_offset,outMin:briBounds[0],outMax:briBounds[1]});
+    vb=Math.max(0,Math.min(100,vb)); bri.push(vb);
+    let vc=mapEvening(t,{m:params.evening_cct_mid,k:params.evening_cct_steep,alpha:params.evening_cct_decay,gain:params.evening_cct_gain,offset:params.evening_cct_offset,outMin:cctBounds[0],outMax:cctBounds[1]});
+    vc=Math.max(500,Math.min(6500,vc)); cct.push(vc);
+    sun.push(clearSkyGHI(hour,params.month,params.latitude,params.longitude,params.timezone));
+  }
+
+  const idx=hours.map((h,i)=>[h,i]).sort((a,b)=>a[0]-b[0]).map(p=>p[1]);
+  const H=idx.map(i=>hours[i]), B=idx.map(i=>bri[i]), C=idx.map(i=>cct[i]), S=idx.map(i=>sun[i]);
+  return {hours:H, bris:B, ccts:C, sunPower:S};
+}
+
+function interpAtHour(hours, arr, h){
+  if(h<=hours[0]) return arr[0];
+  for(let i=1;i<hours.length;i++){
+    if(h<=hours[i]){
+      const h0=hours[i-1], h1=hours[i], t=(h-h0)/(h1-h0);
+      return arr[i-1] + t*(arr[i]-arr[i-1]);
+    }
+  }
+  return arr[arr.length-1];
+}
+
+/* =========================
+   Plot
+========================= */
+function buildMagicLightColored(x,bri,cct){
+  const segs=[];
+  for(let i=1;i<x.length;i++){
+    if(x[i]-x[i-1] > 1.5) continue;
+    const midC=0.5*(cct[i-1]+cct[i]);
+    const color=lineColorForCCT(midC);
+    segs.push({type:'scatter',mode:'lines',x:[x[i-1],x[i]],y:[bri[i-1],bri[i]],
+               line:{width:4,color},name:'Home Glo',yaxis:'y',hoverinfo:'skip',showlegend:false});
+  }
+  return segs;
+}
+
+function buildSunColored(x,sun){
+  const segs=[];
+  for(let i=1;i<x.length;i++){
+    if(sun[i-1]==null || sun[i]==null) continue;
+    if(x[i]-x[i-1] > 1.5) continue;
+    const mid=0.5*(sun[i-1]+sun[i]);
+    let r=255,g=255,b=255;
+    if(mid<=2){ r=255; g=255; b=200; }
+    else if(mid>200){ const t=(mid-200)/100; r=Math.round(255-55*t); g=Math.round(255-55*t); b=255; }
+    else { const t=(mid-2)/198; r=255; g=255; b=Math.round(200+t*(255-200)); }
+    segs.push({type:'scatter',mode:'lines',x:[x[i-1],x[i]],y:[sun[i-1],sun[i]],
+               line:{width:1,color:`rgb(${r},${g},${b})`,dash:'dot'},name:'sunlight',yaxis:'y',hoverinfo:'skip',showlegend:false});
+  }
+  return segs;
+}
+
+function renderPlot(x,cct,bri,sunPower){
+  const segs=buildMagicLightColored(x,bri.map(v=>Math.round(v)),cct);
+  const sunSegs=buildSunColored(x,sunPower);
+
+  const homeLegend={type:'scatter',mode:'lines',x:[null],y:[null],name:'Home Glo',
+    line:{width:4,color:'#fff'},hoverinfo:'skip',showlegend:true,yaxis:'y'};
+  const sunLegend={type:'scatter',mode:'lines',x:[null],y:[null],name:'sunlight',
+    line:{width:1,color:'#fff',dash:'dot'},hoverinfo:'skip',showlegend:true,yaxis:'y'};
+
+  const hoverProxy={type:'scatter',mode:'lines',x:x,y:bri,name:'Home Glo (hover)',
+    line:{width:14,color:'rgba(0,0,0,0)'},
+    hovertemplate: '%{text}<br>Home Glo %{y:.0f}%<br>color temperature %{customdata:.0f} K<extra></extra>',
+    text:x.map(h=>formatTime(h,params.use12Hour)), customdata:cct, yaxis:'y', showlegend:false};
+
+  const now=new Date(); const nowHour=now.getHours()+now.getMinutes()/60;
+  const nowBri=interpAtHour(x,bri,nowHour); const nowCCT=interpAtHour(x,cct,nowHour);
+  const nowOutline = (getComputedStyle(document.documentElement).getPropertyValue('--nowBlue') || '#66b8ff').trim();
+  const currentTimeMarker={type:'scatter',mode:'markers', x:[nowHour], y:[nowBri], name:'now marker',
+    marker:{size:10,color:cctToRGB(nowCCT), line:{width:2,color: nowOutline}}, hoverinfo:'skip', showlegend:false};
+
+  const {sunrise,sunset,solarNoon,solarMidnight}=calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
+
+  const annotations=[];
+  const annotate=(xpos,label,color)=>{ if(xpos==null||xpos<0||xpos>24) return;
+    annotations.push({x:xpos,y:-0.15,yref:'paper',text:`${label}<br>${formatTime(xpos,params.use12Hour)}`,
+      showarrow:false,font:{size:SOLAR_LABEL_SIZE,color:color||'#fff'},xanchor:'center',yanchor:'top', cliponaxis:false}); };
+  annotate(sunrise,'sunrise');
+  annotate(sunset,'sunset');
+  annotate(solarNoon,'solar noon');
+  annotate(solarMidnight,'solar midnight');
+
+  annotations.push({
+    x: nowHour, y: -0.10, yref: 'paper',
+    text: `now ${formatTime(nowHour, params.use12Hour).toLowerCase()}`,
+    showarrow: false,
+    font: { size: SOLAR_LABEL_SIZE, color: nowOutline, weight: 800 },
+    xanchor: 'center', yanchor: 'top',
+    cliponaxis: false
+  });
+
+  const selBri = interpAtHour(x,bri,selectedHour);
+  const selCCT = interpAtHour(x,cct,selectedHour);
+
+  const selectionMarker = {
+    type:'scatter', mode:'markers', x:[selectedHour], y:[selBri],
+    name:'selected', marker:{ size:12, color:cctToRGB(selCCT), line:{width:2,color:'#ffffff'} },
+    hoverinfo:'skip', showlegend:false
+  };
+
+  const cursorShape = {
+    type:'line', xref:'x', x0:selectedHour, x1:selectedHour,
+    yref:'paper', y0:0, y1:1, line:{color:'#1e90ff', width:2}
+  };
+
+  const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, currentTimeMarker, selectionMarker];
+
+  const layout={
+    dragmode: 'pan',
+    hovermode: 'closest',
+    xaxis:{ range:[0,24], tickmode:'array', tickvals:[0,3,6,9,12,15,18,21,24],
+            ticktext: params.use12Hour? ['12am','3am','6am','9am','12pm','3pm','6pm','9pm','12am']
+                                      : ['00:00','03:00','06:00','09:00','12:00','15:00','18:00','21:00','00:00'],
+            tickfont:{color:'#fff'}, showgrid:true, gridcolor:'#444', fixedrange: true,
+            minor:{ tickmode:'array', tickvals:Array.from({length:25},(_,i)=>i),
+                    ticks:'outside', ticklen:4, tickcolor:'#444', showgrid:true, minor_gridcolor:'#333' } },
+    yaxis:{ title:'brightness', range:[0,300], autorange:false, tickfont:{color:'#fff'}, fixedrange: true, showgrid:true, gridcolor:'#444' },
+    showlegend:true, legend:{x:0.02,y:0.98, font:{color:'#fff'}, bgcolor:'rgba(0,0,0,.5)'},
+    margin:{t:30,b:90},
+    annotations:[
+      ...annotations,
+      {
+        x: selectedHour, y: selBri,
+        text: `${formatTime(selectedHour, params.use12Hour)}<br><b>${Math.round(selBri)}%</b> • ${Math.round(selCCT)} K`,
+        showarrow: true, arrowhead: 4, arrowsize: 1, arrowwidth: 1, arrowcolor: 'rgba(200,200,200,0.8)',
+        ax: 0, ay: -40,
+        bgcolor: 'rgba(0,0,0,0.65)', bordercolor: 'rgba(150,150,150,0.6)', borderwidth: 1,
+        font: {color:'#fff', size:12}
+      }
+    ],
+    shapes:[cursorShape],
+    paper_bgcolor:'#1e1e1e', plot_bgcolor:'#1e1e1e',
+    uirevision: 'keep'
+  };
+
+  const config={responsive:true, editable:false, scrollZoom:false, doubleClick:false, displayModeBar:false};
+
+  const clampX = (x)=> Math.max(0, Math.min(24, x));
+  function setCursor(xh) {
+    if(!plotDivRef) return;
+    const xh2 = clampX(xh); selectedHour = xh2;
+    const selBri2 = interpAtHour(x, bri, xh2);
+    const selCCT2 = interpAtHour(x, cct, xh2);
+
+    Plotly.relayout(plotDivRef, { 'shapes[0].x0': xh2, 'shapes[0].x1': xh2, 'shapes[0].y0': 0, 'shapes[0].y1': 1 });
+
+    const selIdx = plotDivRef.data.findIndex(t => t && t.name === 'selected' && t.mode === 'markers');
+    if (selIdx !== -1) {
+      Plotly.restyle(plotDivRef, { x: [[xh2]], y: [[selBri2]], 'marker.color': [[cctToRGB(selCCT2)]] }, selIdx);
+    }
+
+    const annLen = (plotDivRef.layout.annotations || []).length;
+    if (annLen > 0) {
+      const annIndex = annLen - 1;
+      const upd = {};
+      upd[`annotations[${annIndex}].x`] = xh2;
+      upd[`annotations[${annIndex}].y`] = selBri2;
+      upd[`annotations[${annIndex}].text`] = `${formatTime(xh2, params.use12Hour)}<br><b>${Math.round(selBri2)}%</b> • ${Math.round(selCCT2)} K`;
+      Plotly.relayout(plotDivRef, upd);
+    }
+  }
+  setCursorRef = setCursor;
+
+  if (plotDivRef) {
+    Plotly.react(plotDivRef, data, layout, config).then(queueResize);
+  } else {
+    Plotly.newPlot('plot', data, layout, config).then(div => {
+      plotDivRef = div;
+      bindInteractionsOnce();
+      queueResize();
+    });
+  }
+}
+
+function bindInteractionsOnce(){
+  if (listenersBound || !plotDivRef) return;
+
+  const getPlotArea = () => plotDivRef.querySelector('.cartesianlayer .plot') || plotDivRef;
+
+  const mapClientXToHour = (clientX) => {
+    const rect = getPlotArea().getBoundingClientRect();
+    const t = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(24, 24 * t));
+  };
+
+  let dragging = false;
+
+  const tick = () => {
+    if (lastClientX == null) { rafId = 0; return; }
+    setCursorRef(mapClientXToHour(lastClientX));
+    rafId = 0;
+  };
+
+  const onPointerDown = (e) => {
+    dragging = true;
+    document.body.classList.add('dragging');
+    lastClientX = e.clientX;
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  };
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    lastClientX = e.clientX;
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  };
+  const onPointerUp = () => {
+    dragging = false;
+    document.body.classList.remove('dragging');
+    lastClientX = null;
+  };
+  const onClick = (e) => setCursorRef(mapClientXToHour(e.clientX));
+
+  const area = plotDivRef;
+  area.addEventListener('pointerdown', onPointerDown, { passive: true });
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  area.addEventListener('click', onClick, { passive: true });
+
+  plotDivRef.on('plotly_relayout', ev => {
+    if (('xaxis.range[0]' in ev) || ('xaxis.range[1]' in ev) ||
+        ('yaxis.range[0]' in ev) || ('yaxis.range[1]' in ev)) {
+      Plotly.relayout(plotDivRef, { 'xaxis.range':[0,24], 'yaxis.range':[0,300] }).then(queueResize);
+    }
+  });
+
+  listenersBound = true;
+}
+
+/* =========================
+   UI
+========================= */
+const controls = {};
+
+function updateMidpointLabels(){
+  ['morning_bri_mid','morning_cct_mid','evening_bri_mid','evening_cct_mid'].forEach((key)=>{
+    if (controls[key]) controls[key].dispatchEvent(new Event('input'));
+  });
+}
+
+function addSliderRow(parent, {label, key, min, max, step, format, defaultValue}){
+  const row=document.createElement('div'); row.className='controls-row';
+  const lab=document.createElement('label'); lab.textContent=label; lab.className='label-reset'; lab.title='Click to reset';
+  const input=document.createElement('input'); input.type='range'; input.min=min; input.max=max; input.step=step; input.value=params[key];
+  const val=document.createElement('div'); val.className='value';
+
+  const updateLabel = () => { val.textContent = format ? format(params[key]) : params[key]; };
+
+  input.oninput = e => { const v=parseFloat(e.target.value); params[key]=v; updateLabel(); draw(); };
+  lab.onclick = () => { params[key]=defaultValue; input.value=defaultValue; updateLabel(); draw(); };
+
+  updateLabel();
+  row.append(lab,input,val);
+  parent.appendChild(row);
+  controls[key]=input;
+}
+
+function addRangesUI(){
+  const minT=document.getElementById('min-temp'), maxT=document.getElementById('max-temp');
+  const minI=document.getElementById('min-intensity'), maxI=document.getElementById('max-intensity');
+  const tempFill=document.getElementById('temp-fill'), intFill=document.getElementById('intensity-fill');
+
+  function updateTempFill(){
+    const minVal=+minT.value, maxVal=+maxT.value;
+    const left=((minVal-500)/(6500-500))*100, width=((maxVal-minVal)/(6500-500))*100;
+    tempFill.style.left=`${left}%`; tempFill.style.width=`${width}%`;
+  }
+  function updateIntFill(){
+    const minVal=+minI.value, maxVal=+maxI.value;
+    const left=(minVal/100)*100, width=((maxVal-minVal)/100)*100;
+    intFill.style.left=`${left}%`; intFill.style.width=`${width}%`;
+  }
+  const minTVal=document.getElementById('min-temp-value'), maxTVal=document.getElementById('max-temp-value');
+  const minIVal=document.getElementById('min-intensity-value'), maxIVal=document.getElementById('max-intensity-value');
+
+  function clampRanges(){
+    const warn=document.getElementById('range-warn'); warn.textContent='';
+    if(+minT.value > +maxT.value){ const t=minT.value; minT.value=maxT.value; maxT.value=t; warn.textContent='Note: min CCT exceeded max; swapped.'; }
+    if(+minI.value > +maxI.value){ const t=minI.value; minI.value=maxI.value; maxI.value=t; warn.textContent+=' Note: min brightness exceeded max; swapped.'; }
+    params.min_color_temp=+minT.value; params.max_color_temp=+maxT.value;
+    params.min_brightness=+minI.value; params.max_brightness=+maxI.value;
+    minTVal.textContent=params.min_color_temp; maxTVal.textContent=params.max_color_temp;
+    minIVal.textContent=params.min_brightness; maxIVal.textContent=params.max_brightness;
+    updateTempFill(); updateIntFill(); draw();
+  }
+  minT.oninput=clampRanges; maxT.oninput=clampRanges; minI.oninput=clampRanges; maxI.oninput=clampRanges;
+
+  minT.value=params.min_color_temp; maxT.value=params.max_color_temp;
+  minI.value=params.min_brightness; maxI.value=params.max_brightness;
+  minTVal.textContent=params.min_color_temp; maxTVal.textContent=params.max_color_temp;
+  minIVal.textContent=params.min_brightness; maxIVal.textContent=params.max_brightness;
+  updateTempFill(); updateIntFill();
+
+  controls.min_color_temp=minT; controls.max_color_temp=maxT;
+  controls.min_brightness=minI; controls.max_brightness=maxI;
+}
+
+function addSunUI(){
+  const wrap=document.getElementById('sun-position');
+  wrap.innerHTML='';
+
+  // Month
+  (()=>{ const row=document.createElement('div'); row.className='controls-row';
+    const lab=document.createElement('label'); lab.textContent='Month'; lab.className='label-reset'; lab.title='Click to reset';
+    const sel=document.createElement('select');
+    MONTHS.forEach((name,idx)=>{ const o=document.createElement('option'); o.value=String(idx+1); o.textContent=name; if(idx+1===params.month) o.selected=true; sel.appendChild(o); });
+    const val=document.createElement('div'); val.className='value'; val.textContent=MONTHS[params.month-1];
+    sel.onchange=e=>{ params.month=+e.target.value; val.textContent=MONTHS[params.month-1]; draw(); updateMidpointLabels(); };
+    lab.onclick=()=>{ params.month=defaults.month; sel.value=String(params.month); val.textContent=MONTHS[params.month-1]; draw(); updateMidpointLabels(); };
+    row.append(lab,sel,val); wrap.appendChild(row); controls.month=sel; })();
+
+  // Latitude
+  (()=>{ const row=document.createElement('div'); row.className='controls-row';
+    const lab=document.createElement('label'); lab.textContent='latitude (°; N+, S-)'; lab.className='label-reset'; lab.title='Click to reset';
+    const txt=document.createElement('input'); txt.type='text'; txt.value=params.latitude;
+    const val=document.createElement('div'); val.className='value'; val.textContent=params.latitude;
+    const commit=()=>{ const v=parseFloat(txt.value); if(!Number.isNaN(v)){ params.latitude=v; val.textContent=v; draw(); updateMidpointLabels(); } else { txt.value=params.latitude; } };
+    txt.onblur=commit; txt.onkeydown=e=>{ if(e.key==='Enter') txt.blur(); };
+    lab.onclick=()=>{ params.latitude=defaults.latitude; txt.value=params.latitude; val.textContent=params.latitude; draw(); updateMidpointLabels(); };
+    row.append(lab,txt,val); wrap.appendChild(row); controls.latitude=txt; })();
+
+  // Longitude
+  (()=>{ const row=document.createElement('div'); row.className='controls-row';
+    const lab=document.createElement('label'); lab.textContent='longitude (°; E+, W-)'; lab.className='label-reset'; lab.title='Click to reset';
+    const txt=document.createElement('input'); txt.type='text'; txt.value=params.longitude;
+    const val=document.createElement('div'); val.className='value'; val.textContent=params.longitude;
+    const commit=()=>{ const v=parseFloat(txt.value); if(!Number.isNaN(v)){ params.longitude=v; val.textContent=v; draw(); updateMidpointLabels(); } else { txt.value=params.longitude; } };
+    txt.onblur=commit; txt.onkeydown=e=>{ if(e.key==='Enter') txt.blur(); };
+    lab.onclick=()=>{ params.longitude=defaults.longitude; txt.value=params.longitude; val.textContent=params.longitude; draw(); updateMidpointLabels(); };
+    row.append(lab,txt,val); wrap.appendChild(row); controls.longitude=txt; })();
+
+  // Timezone
+  (()=>{ const row=document.createElement('div'); row.className='controls-row';
+    const lab=document.createElement('label'); lab.textContent='US Time Zone'; lab.className='label-reset'; lab.title='Click to reset';
+    const sel=document.createElement('select');
+    TZ_OPTIONS.forEach(opt=>{ const o=document.createElement('option'); o.value=opt.id; o.textContent=opt.label; if(opt.id===params.timezone) o.selected=true; sel.appendChild(o); });
+    const val=document.createElement('div'); val.className='value'; val.textContent=params.timezone;
+    sel.onchange=e=>{ params.timezone=e.target.value; val.textContent=params.timezone; draw(); updateMidpointLabels(); };
+    lab.onclick=()=>{ params.timezone=defaults.timezone; sel.value=params.timezone; val.textContent=params.timezone; draw(); updateMidpointLabels(); };
+    row.append(lab,sel,val); wrap.appendChild(row); controls.timezone=sel; })();
+
+  // 12-hour
+  (()=>{ const row=document.createElement('div'); row.className='controls-row';
+    const lab=document.createElement('label'); lab.textContent='12-Hour Format (AM/PM)'; lab.className='label-reset'; lab.title='Click to reset';
+    const inner=document.createElement('div'); inner.style.display='flex'; inner.style.alignItems='center'; inner.style.gap='8px';
+    const chk=document.createElement('input'); chk.type='checkbox'; chk.checked=params.use12Hour;
+    const txt=document.createElement('span'); txt.textContent=params.use12Hour?'Enabled':'Disabled';
+    chk.onchange=e=>{ params.use12Hour=e.target.checked; txt.textContent=params.use12Hour?'Enabled':'Disabled'; draw(); updateMidpointLabels(); };
+    lab.onclick=()=>{ params.use12Hour=defaults.use12Hour; chk.checked=params.use12Hour; txt.textContent=params.use12Hour?'Enabled':'Disabled'; draw(); updateMidpointLabels(); };
+    inner.append(chk,txt);
+    const val=document.createElement('div'); val.className='value'; val.textContent='';
+    row.append(lab,inner,val); wrap.appendChild(row);
+    controls.use12Hour = chk;
+  })();
+}
+
+function addMorningEveningUI(){
+  function midLabel(isMorning, midHours){
+    const {solarNoon, solarMidnight}=calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
+    let hour;
+    if(isMorning){
+      hour=(solarMidnight + (midHours/12)*((solarNoon - solarMidnight + 24)%24)) % 24;
+    }else{
+      hour=(solarNoon + (midHours/12)*((solarMidnight - solarNoon + 24)%24)) % 24;
+    }
+    return formatTime(hour, params.use12Hour);
+  }
+  const makeFormat=(key,isMorning,isMid=false)=> (v=>{
+    if(isMid) return midLabel(isMorning, v);
+    if(/decay/.test(key)) return v.toFixed(3);
+    if(/steep/.test(key)) return v.toFixed(2);
+    if(/gain/.test(key))  return v.toFixed(2);
+    if(/offset_cct/.test(key)) return `${Math.round(v)} K`;
+    if(/offset_bri/.test(key)) return `${Math.round(v)} pp`;
+    return v.toFixed(2);
+  });
+
+  const mBri=document.getElementById('morning-bri');
+  const mCct=document.getElementById('morning-cct');
+  const eBri=document.getElementById('evening-bri');
+  const eCct=document.getElementById('evening-cct');
+
+  mBri.innerHTML=''; mCct.innerHTML=''; eBri.innerHTML=''; eCct.innerHTML='';
+
+  const bounds={ mid:[0,12,0.01], steep:[0.05,8,0.05], decay:[0,0.20,0.005], gain:[0.10,3,0.01], offB:[-60,60,1], offC:[-2000,2000,50] };
+
+  // Morning Brightness
+  addSliderRow(mBri,{label:'Midpoint', key:'morning_bri_mid', min:bounds.mid[0],max:bounds.mid[1],step:bounds.mid[2], format:makeFormat('morning_bri_mid',true,true), defaultValue:defaults.morning_bri_mid});
+  addSliderRow(mBri,{label:'Steepness', key:'morning_bri_steep', min:bounds.steep[0],max:bounds.steep[1],step:bounds.steep[2], format:makeFormat('morning_bri_steep',true), defaultValue:defaults.morning_bri_steep});
+  addSliderRow(mBri,{label:'Decay', key:'morning_bri_decay', min:bounds.decay[0],max:bounds.decay[1],step:bounds.decay[2], format:makeFormat('morning_bri_decay',true), defaultValue:defaults.morning_bri_decay});
+  addSliderRow(mBri,{label:'Gain', key:'morning_bri_gain', min:bounds.gain[0],max:bounds.gain[1],step:bounds.gain[2], format:makeFormat('morning_bri_gain',true), defaultValue:defaults.morning_bri_gain});
+  addSliderRow(mBri,{label:'Offset', key:'morning_bri_offset', min:bounds.offB[0],max:bounds.offB[1],step:bounds.offB[2], format:makeFormat('morning_bri_offset',true), defaultValue:defaults.morning_bri_offset});
+
+  // Morning CCT
+  addSliderRow(mCct,{label:'Midpoint', key:'morning_cct_mid', min:bounds.mid[0],max:bounds.mid[1],step:bounds.mid[2], format:makeFormat('morning_cct_mid',true,true), defaultValue:defaults.morning_cct_mid});
+  addSliderRow(mCct,{label:'Steepness', key:'morning_cct_steep', min:bounds.steep[0],max:bounds.steep[1],step:bounds.steep[2], format:makeFormat('morning_cct_steep',true), defaultValue:defaults.morning_cct_steep});
+  addSliderRow(mCct,{label:'Decay', key:'morning_cct_decay', min:bounds.decay[0],max:bounds.decay[1],step:bounds.decay[2], format:makeFormat('morning_cct_decay',true), defaultValue:defaults.morning_cct_decay});
+  addSliderRow(mCct,{label:'Gain', key:'morning_cct_gain', min:bounds.gain[0],max:bounds.gain[1],step:bounds.gain[2], format:makeFormat('morning_cct_gain',true), defaultValue:defaults.morning_cct_gain});
+  addSliderRow(mCct,{label:'Offset', key:'morning_cct_offset', min:bounds.offC[0],max:bounds.offC[1],step:bounds.offC[2], format:makeFormat('morning_cct_offset',true), defaultValue:defaults.morning_cct_offset});
+
+  // Evening Brightness
+  addSliderRow(eBri,{label:'Midpoint', key:'evening_bri_mid', min:bounds.mid[0],max:bounds.mid[1],step:bounds.mid[2], format:makeFormat('evening_bri_mid',false,true), defaultValue:defaults.evening_bri_mid});
+  addSliderRow(eBri,{label:'Steepness', key:'evening_bri_steep', min:bounds.steep[0],max:bounds.steep[1],step:bounds.steep[2], format:makeFormat('evening_bri_steep',false), defaultValue:defaults.evening_bri_steep});
+  addSliderRow(eBri,{label:'Decay', key:'evening_bri_decay', min:bounds.decay[0],max:bounds.decay[1],step:bounds.decay[2], format:makeFormat('evening_bri_decay',false), defaultValue:defaults.evening_bri_decay});
+  addSliderRow(eBri,{label:'Gain', key:'evening_bri_gain', min:bounds.gain[0],max:bounds.gain[1],step:bounds.gain[2], format:makeFormat('evening_bri_gain',false), defaultValue:defaults.evening_bri_gain});
+  addSliderRow(eBri,{label:'Offset', key:'evening_bri_offset', min:bounds.offB[0],max:bounds.offB[1],step:bounds.offB[2], format:makeFormat('evening_bri_offset',false), defaultValue:defaults.evening_bri_offset});
+
+  // Evening CCT
+  addSliderRow(eCct,{label:'Midpoint', key:'evening_cct_mid', min:bounds.mid[0],max:bounds.mid[1],step:bounds.mid[2], format:makeFormat('evening_cct_mid',false,true), defaultValue:defaults.evening_cct_mid});
+  addSliderRow(eCct,{label:'Steepness', key:'evening_cct_steep', min:bounds.steep[0],max:bounds.steep[1],step:bounds.steep[2], format:makeFormat('evening_cct_steep',false), defaultValue:defaults.evening_cct_steep});
+  addSliderRow(eCct,{label:'Decay', key:'evening_cct_decay', min:bounds.decay[0],max:bounds.decay[1],step:bounds.decay[2], format:makeFormat('evening_cct_decay',false), defaultValue:defaults.evening_cct_decay});
+  addSliderRow(eCct,{label:'Gain', key:'evening_cct_gain', min:bounds.gain[0],max:bounds.gain[1],step:bounds.gain[2], format:makeFormat('evening_cct_gain',false), defaultValue:defaults.evening_cct_gain});
+  addSliderRow(eCct,{label:'Offset', key:'evening_cct_offset', min:bounds.offC[0],max:bounds.offC[1],step:bounds.offC[2], format:makeFormat('evening_cct_offset',false), defaultValue:defaults.evening_cct_offset});
+}
+
+/* =========================
+   Draw & Reset
+========================= */
+function draw(){
+  const {hours,ccts,bris,sunPower}=compute();
+  renderPlot(hours,ccts,bris,sunPower);
+}
+
+function resetMorningOnly(){
+  ['morning_bri_mid','morning_bri_steep','morning_bri_decay','morning_bri_gain','morning_bri_offset',
+   'morning_cct_mid','morning_cct_steep','morning_cct_decay','morning_cct_gain','morning_cct_offset'
+  ].forEach(k=>params[k]=defaults[k]);
+  addMorningEveningUI(); draw();
+}
+function resetEveningOnly(){
+  ['evening_bri_mid','evening_bri_steep','evening_bri_decay','evening_bri_gain','evening_bri_offset',
+   'evening_cct_mid','evening_cct_steep','evening_cct_decay','evening_cct_gain','evening_cct_offset'
+  ].forEach(k=>params[k]=defaults[k]);
+  addMorningEveningUI(); draw();
+}
+
+function bindSectionResets(){
+  const rm=document.getElementById('reset-morning');
+  const re=document.getElementById('reset-evening');
+  if(rm) rm.onclick=resetMorningOnly;
+  if(re) re.onclick=resetEveningOnly;
+}
+
+function resetAll(){
+  Object.keys(defaults).forEach(k=>params[k]=defaults[k]);
+  const now=new Date(); selectedHour = now.getHours() + now.getMinutes()/60;
+  Object.keys(controls).forEach(k=>delete controls[k]);
+  addMorningEveningUI();
+  addRangesUI();
+  addSunUI();
+  bindSectionResets();
+  draw();
+}
+
+/* =========================
+   Save Configuration
+========================= */
+async function saveConfiguration() {
+  const statusDiv = document.getElementById('save-status');
+  
+  try {
+    // Prepare config object with all parameters
+    const config = {
+      min_color_temp: params.min_color_temp,
+      max_color_temp: params.max_color_temp,
+      min_brightness: params.min_brightness,
+      max_brightness: params.max_brightness,
+      morning_bri_mid: params.morning_bri_mid,
+      morning_bri_steep: params.morning_bri_steep,
+      morning_bri_decay: params.morning_bri_decay,
+      morning_bri_gain: params.morning_bri_gain,
+      morning_bri_offset: params.morning_bri_offset,
+      morning_cct_mid: params.morning_cct_mid,
+      morning_cct_steep: params.morning_cct_steep,
+      morning_cct_decay: params.morning_cct_decay,
+      morning_cct_gain: params.morning_cct_gain,
+      morning_cct_offset: params.morning_cct_offset,
+      evening_bri_mid: params.evening_bri_mid,
+      evening_bri_steep: params.evening_bri_steep,
+      evening_bri_decay: params.evening_bri_decay,
+      evening_bri_gain: params.evening_bri_gain,
+      evening_bri_offset: params.evening_bri_offset,
+      evening_cct_mid: params.evening_cct_mid,
+      evening_cct_steep: params.evening_cct_steep,
+      evening_cct_decay: params.evening_cct_decay,
+      evening_cct_gain: params.evening_cct_gain,
+      evening_cct_offset: params.evening_cct_offset,
+      latitude: params.latitude,
+      longitude: params.longitude,
+      timezone: params.timezone,
+      month: params.month
+    };
+    
+    // Send to server
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config)
+    });
+    
+    if (response.ok) {
+      statusDiv.innerHTML = '<div class="success">Configuration saved successfully!</div>';
+      setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+    } else {
+      statusDiv.innerHTML = '<div class="warn">Failed to save configuration</div>';
+      setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+    }
+  } catch (error) {
+    console.error('Error saving configuration:', error);
+    statusDiv.innerHTML = '<div class="warn">Error saving configuration</div>';
+    setTimeout(() => { statusDiv.innerHTML = ''; }, 3000);
+  }
+}
+
+/* =========================
+   Bootstrap
+========================= */
+addMorningEveningUI();
+addRangesUI();
+addSunUI();
+bindSectionResets();
+document.getElementById('reset-all').onclick=resetAll;
+document.getElementById('save-config').onclick=saveConfiguration;
+draw();
+</script>
+</body>
+</html>
