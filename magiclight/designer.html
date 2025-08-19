@@ -156,7 +156,7 @@
     <div id="range-warn" class="warn"></div>
   </div>
 
-  <div class="big-title">Sun Position</div>
+  <div class="big-title">Display Settings</div>
   <div class="section" id="sun-position"></div>
 
   <div class="footer-actions">
@@ -661,9 +661,9 @@ function addSunUI(){
   const wrap=document.getElementById('sun-position');
   wrap.innerHTML='';
 
-  // Month
+  // Month selector - useful for testing different seasons
   (()=>{ const row=document.createElement('div'); row.className='controls-row';
-    const lab=document.createElement('label'); lab.textContent='Month'; lab.className='label-reset'; lab.title='Click to reset';
+    const lab=document.createElement('label'); lab.textContent='Test Month'; lab.className='label-reset'; lab.title='Click to reset';
     const sel=document.createElement('select');
     MONTHS.forEach((name,idx)=>{ const o=document.createElement('option'); o.value=String(idx+1); o.textContent=name; if(idx+1===params.month) o.selected=true; sel.appendChild(o); });
     const val=document.createElement('div'); val.className='value'; val.textContent=MONTHS[params.month-1];
@@ -671,49 +671,30 @@ function addSunUI(){
     lab.onclick=()=>{ params.month=defaults.month; sel.value=String(params.month); val.textContent=MONTHS[params.month-1]; draw(); updateMidpointLabels(); };
     row.append(lab,sel,val); wrap.appendChild(row); controls.month=sel; })();
 
-  // Latitude
+  // 12-hour format toggle
   (()=>{ const row=document.createElement('div'); row.className='controls-row';
-    const lab=document.createElement('label'); lab.textContent='latitude (°; N+, S-)'; lab.className='label-reset'; lab.title='Click to reset';
-    const txt=document.createElement('input'); txt.type='text'; txt.value=params.latitude;
-    const val=document.createElement('div'); val.className='value'; val.textContent=params.latitude;
-    const commit=()=>{ const v=parseFloat(txt.value); if(!Number.isNaN(v)){ params.latitude=v; val.textContent=v; draw(); updateMidpointLabels(); } else { txt.value=params.latitude; } };
-    txt.onblur=commit; txt.onkeydown=e=>{ if(e.key==='Enter') txt.blur(); };
-    lab.onclick=()=>{ params.latitude=defaults.latitude; txt.value=params.latitude; val.textContent=params.latitude; draw(); updateMidpointLabels(); };
-    row.append(lab,txt,val); wrap.appendChild(row); controls.latitude=txt; })();
-
-  // Longitude
-  (()=>{ const row=document.createElement('div'); row.className='controls-row';
-    const lab=document.createElement('label'); lab.textContent='longitude (°; E+, W-)'; lab.className='label-reset'; lab.title='Click to reset';
-    const txt=document.createElement('input'); txt.type='text'; txt.value=params.longitude;
-    const val=document.createElement('div'); val.className='value'; val.textContent=params.longitude;
-    const commit=()=>{ const v=parseFloat(txt.value); if(!Number.isNaN(v)){ params.longitude=v; val.textContent=v; draw(); updateMidpointLabels(); } else { txt.value=params.longitude; } };
-    txt.onblur=commit; txt.onkeydown=e=>{ if(e.key==='Enter') txt.blur(); };
-    lab.onclick=()=>{ params.longitude=defaults.longitude; txt.value=params.longitude; val.textContent=params.longitude; draw(); updateMidpointLabels(); };
-    row.append(lab,txt,val); wrap.appendChild(row); controls.longitude=txt; })();
-
-  // Timezone
-  (()=>{ const row=document.createElement('div'); row.className='controls-row';
-    const lab=document.createElement('label'); lab.textContent='US Time Zone'; lab.className='label-reset'; lab.title='Click to reset';
-    const sel=document.createElement('select');
-    TZ_OPTIONS.forEach(opt=>{ const o=document.createElement('option'); o.value=opt.id; o.textContent=opt.label; if(opt.id===params.timezone) o.selected=true; sel.appendChild(o); });
-    const val=document.createElement('div'); val.className='value'; val.textContent=params.timezone;
-    sel.onchange=e=>{ params.timezone=e.target.value; val.textContent=params.timezone; draw(); updateMidpointLabels(); };
-    lab.onclick=()=>{ params.timezone=defaults.timezone; sel.value=params.timezone; val.textContent=params.timezone; draw(); updateMidpointLabels(); };
-    row.append(lab,sel,val); wrap.appendChild(row); controls.timezone=sel; })();
-
-  // 12-hour
-  (()=>{ const row=document.createElement('div'); row.className='controls-row';
-    const lab=document.createElement('label'); lab.textContent='12-Hour Format (AM/PM)'; lab.className='label-reset'; lab.title='Click to reset';
+    const lab=document.createElement('label'); lab.textContent='12-Hour Format'; lab.className='label-reset'; lab.title='Click to reset';
     const inner=document.createElement('div'); inner.style.display='flex'; inner.style.alignItems='center'; inner.style.gap='8px';
     const chk=document.createElement('input'); chk.type='checkbox'; chk.checked=params.use12Hour;
-    const txt=document.createElement('span'); txt.textContent=params.use12Hour?'Enabled':'Disabled';
-    chk.onchange=e=>{ params.use12Hour=e.target.checked; txt.textContent=params.use12Hour?'Enabled':'Disabled'; draw(); updateMidpointLabels(); };
-    lab.onclick=()=>{ params.use12Hour=defaults.use12Hour; chk.checked=params.use12Hour; txt.textContent=params.use12Hour?'Enabled':'Disabled'; draw(); updateMidpointLabels(); };
+    const txt=document.createElement('span'); txt.textContent=params.use12Hour?'AM/PM':'24-hour';
+    chk.onchange=e=>{ params.use12Hour=e.target.checked; txt.textContent=params.use12Hour?'AM/PM':'24-hour'; draw(); updateMidpointLabels(); };
+    lab.onclick=()=>{ params.use12Hour=defaults.use12Hour; chk.checked=params.use12Hour; txt.textContent=params.use12Hour?'AM/PM':'24-hour'; draw(); updateMidpointLabels(); };
     inner.append(chk,txt);
     const val=document.createElement('div'); val.className='value'; val.textContent='';
     row.append(lab,inner,val); wrap.appendChild(row);
     controls.use12Hour = chk;
   })();
+  
+  // Info text about location
+  const info=document.createElement('div');
+  info.style.marginTop='12px';
+  info.style.padding='10px';
+  info.style.background='rgba(100,100,100,0.2)';
+  info.style.borderRadius='6px';
+  info.style.fontSize='0.85rem';
+  info.style.color='var(--muted)';
+  info.innerHTML='<strong>Note:</strong> Location and timezone are automatically provided by Home Assistant.';
+  wrap.appendChild(info);
 }
 
 function addMorningEveningUI(){
@@ -853,10 +834,7 @@ async function saveConfiguration() {
       evening_cct_decay: params.evening_cct_decay,
       evening_cct_gain: params.evening_cct_gain,
       evening_cct_offset: params.evening_cct_offset,
-      latitude: params.latitude,
-      longitude: params.longitude,
-      timezone: params.timezone,
-      month: params.month
+      month: params.month  // Keep month for testing different seasons
     };
     
     // Send to server (use relative path for ingress compatibility)

@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.4
+
+- Simplify Light Designer interface
+  - Removed latitude, longitude, and timezone controls (automatically provided by Home Assistant)
+  - Renamed "Sun Position" section to "Display Settings"
+  - Added informational note about automatic location detection
+  - Kept month selector for testing seasonal variations
+  - Cleaner, more focused interface for curve configuration
+
 ## 2.0.3
 
 - Improve Light Designer configuration handling and feedback
