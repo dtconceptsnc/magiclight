@@ -23,10 +23,14 @@ class LightDesignerServer:
         
     def setup_routes(self):
         """Set up web routes."""
-        self.app.router.add_get('/', self.serve_designer)
+        # API routes first (more specific)
         self.app.router.add_get('/api/config', self.get_config)
         self.app.router.add_post('/api/config', self.save_config)
         self.app.router.add_get('/health', self.health_check)
+        
+        # Handle root and any ingress paths (catch-all must be last)
+        self.app.router.add_get('/', self.serve_designer)
+        self.app.router.add_get('/{path:.*}', self.serve_designer)
         
     async def serve_designer(self, request: Request) -> Response:
         """Serve the Light Designer HTML page."""

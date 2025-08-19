@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.1
+
+- Fix ingress routing for Light Designer interface
+  - Fixed 404 errors when accessing through Home Assistant sidebar
+  - Added catch-all route to handle ingress path prefixes
+  - Updated API routes to work with relative paths
+  - Reordered route registration to ensure API endpoints work correctly
+
 ## 2.0.0
 
 - Add Home Assistant ingress support with Light Designer interface

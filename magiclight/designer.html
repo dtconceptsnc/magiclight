@@ -828,8 +828,8 @@ async function saveConfiguration() {
       month: params.month
     };
     
-    // Send to server
-    const response = await fetch('/api/config', {
+    // Send to server (use relative path for ingress compatibility)
+    const response = await fetch('api/config', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

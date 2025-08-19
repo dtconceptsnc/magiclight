@@ -9,18 +9,15 @@ RUN \
     "https://github.com/home-assistant/tempio/releases/download/${TEMPIO_VERSION}/tempio_${BUILD_ARCH}"
 
 # Install Python and dependencies
-RUN apk add --no-cache python3 py3-pip tzdata
-
-# Install build dependencies for aiohttp compilation
-RUN apk add --no-cache gcc musl-dev python3-dev
+# py3-aiohttp provides pre-built aiohttp package - much faster!
+RUN apk add --no-cache python3 py3-pip py3-aiohttp py3-aiofiles tzdata
 
 # Copy Python app
 WORKDIR /app
 COPY main.py brain.py switch.py webserver.py designer.html requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Remove build dependencies to reduce image size
-RUN apk del gcc musl-dev python3-dev
+# Install only the packages not available from Alpine repos
+RUN pip3 install --no-cache-dir websockets==12.0 python-dateutil==2.8.2 astral==3.2
 
 # Copy root filesystem
 COPY rootfs /
