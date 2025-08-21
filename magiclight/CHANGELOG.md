@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.0.5
+
+- Auto-reset manual offsets at solar midnight
+  - Manual adjustments from dimmer switches now automatically reset to 0 at solar midnight
+  - Ensures lighting curves start fresh each day without accumulated offsets
+  - Reset happens seamlessly in background during periodic updates
+  - Lights in magic mode will update to correct values when offsets reset
+
 ## 2.0.4
 
 - Simplify Light Designer interface

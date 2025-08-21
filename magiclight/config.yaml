@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: MagicLight
-version: "2.0.4"
+version: "2.0.5"
 slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/tkthundr/magic-light"
@@ -20,7 +20,7 @@ panel_icon: mdi:lightbulb
 panel_title: Light Designer
 panel_admin: false
 options:
-  color_mode: "rgb"
+  color_mode: "xy"
   min_color_temp: 500
   max_color_temp: 6500
 schema:

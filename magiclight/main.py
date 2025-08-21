@@ -524,12 +524,77 @@ class HomeAssistantWebSocketClient:
         except Exception as e:
             logger.error(f"Error updating lights in area {area_id}: {e}")
     
+    async def reset_offsets_at_solar_midnight(self, last_check: Optional[datetime]) -> Optional[datetime]:
+        """Reset all manual offsets to 0 at solar midnight.
+        
+        Args:
+            last_check: The last time we checked for solar midnight
+            
+        Returns:
+            The updated last check time
+        """
+        if not (self.latitude and self.longitude and self.timezone):
+            return last_check
+            
+        from datetime import timedelta
+        from zoneinfo import ZoneInfo
+        from astral import LocationInfo
+        from astral.sun import sun
+        
+        # Get current time in the correct timezone
+        tzinfo = ZoneInfo(self.timezone)
+        now = datetime.now(tzinfo)
+        
+        # Calculate solar events for today
+        loc = LocationInfo(latitude=self.latitude, longitude=self.longitude, timezone=self.timezone)
+        solar_events = sun(loc.observer, date=now.date(), tzinfo=tzinfo)
+        solar_noon = solar_events["noon"]
+        
+        # Calculate solar midnight (12 hours from solar noon)
+        if solar_noon.hour >= 12:
+            solar_midnight = solar_noon - timedelta(hours=12)
+        else:
+            solar_midnight = solar_noon + timedelta(hours=12)
+        
+        # Initialize last check if needed
+        if last_check is None:
+            return now
+            
+        # Check if we've passed solar midnight since last check
+        if last_check < solar_midnight <= now:
+            # We've crossed solar midnight - reset all offsets
+            logger.info(f"Solar midnight reached at {solar_midnight.strftime('%H:%M:%S')} - resetting all manual offsets to 0")
+            
+            # Reset all area offsets
+            areas_with_offsets = list(self.magic_mode_time_offsets.keys())
+            for area_id in areas_with_offsets:
+                old_offset = self.magic_mode_time_offsets.get(area_id, 0)
+                if old_offset != 0:
+                    logger.info(f"Resetting offset for area {area_id}: {old_offset} -> 0 minutes")
+                    self.magic_mode_time_offsets[area_id] = 0
+                    
+                    # Update lights in this area if it's in magic mode
+                    if area_id in self.magic_mode_areas:
+                        await self.update_lights_in_magic_mode(area_id)
+            
+            return now
+        elif now.date() != last_check.date():
+            # New day - update last check
+            return now
+            
+        return last_check
+    
     async def periodic_light_updater(self):
         """Periodically update lights in areas with switches."""
+        last_solar_midnight_check = None
+        
         while True:
             try:
                 # Wait for 60 seconds
                 await asyncio.sleep(60)
+                
+                # Check if we should reset offsets at solar midnight
+                last_solar_midnight_check = await self.reset_offsets_at_solar_midnight(last_solar_midnight_check)
                 
                 # Get all areas with switches
                 areas = await self.get_areas_with_switches()
