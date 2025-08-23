@@ -1,5 +1,9 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.8
+
+- Fix Light Designer configuration persistence again
+
 ## 2.1.7
 
 - Fix Light Designer configuration persistence

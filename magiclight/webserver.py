@@ -21,7 +21,9 @@ class LightDesignerServer:
         self.port = port
         self.app = web.Application()
         self.setup_routes()
-        self.config_file = "/data/options.json"
+        # Supervisor manages /data/options.json on restart; keep user overrides separately
+        self.options_file = "/data/options.json"
+        self.designer_file = "/data/designer_config.json"
         
     def setup_routes(self):
         """Set up web routes."""
@@ -42,7 +44,7 @@ class LightDesignerServer:
     async def serve_designer(self, request: Request) -> Response:
         """Serve the Light Designer HTML page."""
         try:
-            # Read the current configuration
+            # Read the current configuration (merged options + designer overrides)
             config = await self.load_config()
             
             # Read the designer HTML template
@@ -107,17 +109,13 @@ class LightDesignerServer:
         return web.json_response({"status": "healthy"})
     
     async def load_config(self) -> dict:
-        """Load configuration from file."""
-        try:
-            if os.path.exists(self.config_file):
-                async with aiofiles.open(self.config_file, 'r') as f:
-                    content = await f.read()
-                    return json.loads(content)
-        except Exception as e:
-            logger.error(f"Error loading config: {e}")
-        
-        # Return default configuration
-        return {
+        """Load configuration, merging HA options with designer overrides.
+
+        Order of precedence (later wins):
+          defaults -> /data/options.json -> /data/designer_config.json
+        """
+        # Defaults used by UI when nothing saved yet
+        config: dict = {
             "color_mode": "rgb",
             "min_color_temp": 500,
             "max_color_temp": 6500,
@@ -149,19 +147,43 @@ class LightDesignerServer:
             "evening_cct_offset": 0,
             # Dimming steps
             "max_dim_steps": DEFAULT_MAX_DIM_STEPS,
-            # Location settings
+            # Location settings (UI preview only)
             "latitude": 35.0,
             "longitude": -78.6,
             "timezone": "US/Eastern",
             "month": 6
         }
+
+        # Merge supervisor-managed options.json (if present)
+        try:
+            if os.path.exists(self.options_file):
+                async with aiofiles.open(self.options_file, 'r') as f:
+                    content = await f.read()
+                    opts = json.loads(content)
+                    if isinstance(opts, dict):
+                        config.update(opts)
+        except Exception as e:
+            logger.warning(f"Error loading {self.options_file}: {e}")
+
+        # Merge user-saved designer config (persists across restarts)
+        try:
+            if os.path.exists(self.designer_file):
+                async with aiofiles.open(self.designer_file, 'r') as f:
+                    content = await f.read()
+                    overrides = json.loads(content)
+                    if isinstance(overrides, dict):
+                        config.update(overrides)
+        except Exception as e:
+            logger.warning(f"Error loading {self.designer_file}: {e}")
+
+        return config
     
     async def save_config_to_file(self, config: dict):
-        """Save configuration to file."""
+        """Save designer configuration to persistent file distinct from options.json."""
         try:
-            async with aiofiles.open(self.config_file, 'w') as f:
+            async with aiofiles.open(self.designer_file, 'w') as f:
                 await f.write(json.dumps(config, indent=2))
-            logger.info(f"Configuration saved to {self.config_file}")
+            logger.info(f"Configuration saved to {self.designer_file}")
         except Exception as e:
             logger.error(f"Error saving config to file: {e}")
             raise
