@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.7
+
+- Fix Light Designer configuration persistence
+  - Designer now properly loads all configuration values
+  - MAX_DIM_STEPS value correctly synchronized between Python and web interface
+  - Configuration reliably persists across container restarts and updates
+  - Improved error handling when loading saved configuration
+  - Move Save Configuration button below chart, above controls
+
 ## 2.1.6
 
 - Add adaptive / step arc support + update designer

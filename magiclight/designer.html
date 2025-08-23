@@ -63,6 +63,7 @@
   .btn { border:1px solid var(--btnBorder); background: var(--btn); color:#c8c8c8; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:800; font-size:.9rem; }
   .btn:hover { filter: brightness(1.1); }
   .btn-primary { background: var(--accent); color: #fff; }
+  .top-actions { display:flex; justify-content:flex-end; gap:8px; margin: 0 0 12px; }
   .footer-actions { display:flex; justify-content:space-between; margin-top: 16px; }
   .big-title { font-size: 1.15rem; font-weight: 900; margin: 1.25rem 0 .5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
   .warn { color:#ff6b6b; font-size:.9rem; margin-top:6px; }
@@ -114,6 +115,9 @@
   <h2>Light Designer</h2>
   <div id="save-status"></div>
   <div id="plot" class="stage"></div>
+  <div class="top-actions">
+    <button id="save-config" class="btn btn-primary">Save Configuration</button>
+  </div>
 
   <!-- Control bar for Brighten/Dim -->
   <div class="section">
@@ -202,7 +206,6 @@
 
   <div class="footer-actions">
     <button id="reset-all" class="btn">Reset All</button>
-    <button id="save-config" class="btn btn-primary">Save Configuration</button>
   </div>
 </div>
 
@@ -245,8 +248,8 @@ const defaults = {
   match_cct_morning: true,
   match_cct_evening: true,
 
-  // Dimming steps (matches MAX_DIM_STEPS from brain.py)
-  max_dim_steps: 15,
+  // Dimming steps (will be overridden by savedConfig if available)
+  max_dim_steps: 5,
 
   // Sun & display
   month: 6,
@@ -1298,9 +1301,9 @@ async function loadConfiguration() {
     if (response.ok) {
       const config = await response.json();
       
-      // Update params with loaded config
+      // Update params with loaded config, including any new keys not in defaults
       Object.keys(config).forEach(key => {
-        if (key in params && config[key] !== null && config[key] !== undefined) {
+        if (config[key] !== null && config[key] !== undefined) {
           params[key] = config[key];
         }
       });
@@ -1312,7 +1315,7 @@ async function loadConfiguration() {
       
       // Ensure max_dim_steps is valid
       if (!params.max_dim_steps || params.max_dim_steps < 1) {
-        params.max_dim_steps = defaults.max_dim_steps;
+        params.max_dim_steps = 5; // Default from Python DEFAULT_MAX_DIM_STEPS
       }
       
       // Update step count input
@@ -1330,7 +1333,22 @@ async function loadConfiguration() {
     }
   } catch (error) {
     console.error('Error loading configuration:', error);
-    // If load fails, use defaults
+    // If load fails, use window.savedConfig or defaults
+    if (window.savedConfig) {
+      Object.keys(window.savedConfig).forEach(key => {
+        if (window.savedConfig[key] !== null && window.savedConfig[key] !== undefined) {
+          params[key] = window.savedConfig[key];
+        }
+      });
+    }
+    
+    // Update step count input even on error
+    const stepInput = document.getElementById('step-count');
+    if (stepInput) {
+      stepInput.value = params.max_dim_steps;
+    }
+    
+    // Rebuild UI
     addMorningEveningUI();
     addRangesUI();
     addSunUI();
@@ -1350,7 +1368,7 @@ const stepInput = document.getElementById('step-count');
 if (stepInput) {
   stepInput.value = params.max_dim_steps;
   stepInput.addEventListener('input', (e) => {
-    params.max_dim_steps = parseInt(e.target.value) || 15;
+    params.max_dim_steps = parseInt(e.target.value) || window.savedConfig?.max_dim_steps || defaults.max_dim_steps;
     updatePreviewDeltas();
   });
 }
