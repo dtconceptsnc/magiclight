@@ -92,6 +92,20 @@
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  /* Control bar styles */
+  .control-bar{
+    display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap;
+  }
+  .ctrl-side{ display:flex; align-items:center; gap:10px; }
+  .delta{ color:#c9cfd6; font-variant-numeric: tabular-nums; opacity:.9; }
+  .ctrl-center{ display:flex; align-items:center; gap:8px; }
+  .num { width:80px; padding:6px 8px; border:1px solid var(--btnBorder); border-radius:6px; background:var(--btn); color:#fff; }
+
+  /* Grey-out when mirrored */
+  .is-locked { opacity: .5; }
+  .mirror-slot { display:flex; align-items:center; gap:6px; }
+  .mirror-slot label { cursor:pointer; text-transform: lowercase; }
+
   @media (max-width: 900px){ .grid-2 { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -100,6 +114,27 @@
   <h2>Light Designer</h2>
   <div id="save-status"></div>
   <div id="plot" class="stage"></div>
+
+  <!-- Control bar for Brighten/Dim -->
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Control</div>
+    </div>
+    <div class="control-bar" id="control-bar">
+      <div id="left-side" class="ctrl-side">
+        <button id="left-btn" class="btn">Dim</button>
+        <span id="left-delta" class="delta">—</span>
+      </div>
+      <div class="ctrl-center">
+        <label>Steps</label>
+        <input id="step-count" class="num" type="number" value="15" min="1" max="500" step="1" />
+      </div>
+      <div id="right-side" class="ctrl-side">
+        <span id="right-delta" class="delta">—</span>
+        <button id="right-btn" class="btn">Brighten</button>
+      </div>
+    </div>
+  </div>
 
   <div class="grid-2">
     <!-- Morning -->
@@ -110,7 +145,10 @@
       </div>
       <div class="group-title">Brightness</div>
       <div id="morning-bri"></div>
-      <div class="group-title" style="margin-top:12px;">Color Temperature</div>
+      <div id="morning-cct-title" class="group-title" style="margin-top:12px; display:flex; align-items:center; justify-content:space-between;">
+        <span>Color Temperature</span>
+        <span class="mirror-slot" id="mirror-slot-morning"></span>
+      </div>
       <div id="morning-cct"></div>
     </div>
 
@@ -122,7 +160,10 @@
       </div>
       <div class="group-title">Brightness</div>
       <div id="evening-bri"></div>
-      <div class="group-title" style="margin-top:12px;">Color Temperature</div>
+      <div id="evening-cct-title" class="group-title" style="margin-top:12px; display:flex; align-items:center; justify-content:space-between;">
+        <span>Color Temperature</span>
+        <span class="mirror-slot" id="mirror-slot-evening"></span>
+      </div>
       <div id="evening-cct"></div>
     </div>
   </div>
@@ -200,6 +241,10 @@ const defaults = {
   // Evening CCT
   evening_cct_mid: 6.0, evening_cct_steep: 1.0, evening_cct_decay: 0.02, evening_cct_gain: 1.0, evening_cct_offset: 0,
 
+  // Mirror flags default ON
+  match_cct_morning: true,
+  match_cct_evening: true,
+
   // Sun & display
   month: 6,
   latitude: 35.0, longitude: -78.6, timezone: 'US/Eastern',
@@ -215,6 +260,20 @@ if (!params.month || params.month < 1 || params.month > 12) {
 }
 
 let selectedHour = (new Date().getHours() + new Date().getMinutes()/60);
+
+/* Global arc data for interpolation and stepping */
+let arc = { hours:[], bris:[], ccts:[] };
+
+/* Half-day arc caches for stepping in solar-path order */
+let morningArc = null, eveningArc = null;
+
+/* Weights for arc distance calculation */
+const W_B = 1.0;   // brightness weight
+const W_C = 0.6;   // color (mired) weight
+
+/* draw suppression for mirrored updates */
+let _suppressDrawDepth = 0;
+function withSuppressedDraw(fn){ _suppressDrawDepth++; try{ fn(); } finally { _suppressDrawDepth--; } }
 
 /* ===========
    Utilities
@@ -329,7 +388,7 @@ function mapEvening(t,{m,k,alpha,gain,offset,outMin,outMax}){
 }
 
 /* =========================
-   Compute series
+   Compute series (returns halves)
 ========================= */
 function compute(){
   const {solarNoon, solarMidnight}=calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
@@ -366,9 +425,23 @@ function compute(){
     sun.push(clearSkyGHI(hour,params.month,params.latitude,params.longitude,params.timezone));
   }
 
+  // Split into morning and evening halves for arc building
+  const splitIdx = hours.findIndex((h,i) => i>0 && Math.abs(h - solarNoon%24) < 0.01);
+  const mornHours = hours.slice(0, splitIdx+1);
+  const mornBri = bri.slice(0, splitIdx+1);
+  const mornCct = cct.slice(0, splitIdx+1);
+  
+  const eveHours = hours.slice(splitIdx);
+  const eveBri = bri.slice(splitIdx);
+  const eveCct = cct.slice(splitIdx);
+
   const idx=hours.map((h,i)=>[h,i]).sort((a,b)=>a[0]-b[0]).map(p=>p[1]);
   const H=idx.map(i=>hours[i]), B=idx.map(i=>bri[i]), C=idx.map(i=>cct[i]), S=idx.map(i=>sun[i]);
-  return {hours:H, bris:B, ccts:C, sunPower:S};
+  return {
+    hours:H, bris:B, ccts:C, sunPower:S,
+    morn:{hours:mornHours, bris:mornBri, ccts:mornCct},
+    eve:{hours:eveHours, bris:eveBri, ccts:eveCct}
+  };
 }
 
 function interpAtHour(hours, arr, h){
@@ -380,6 +453,241 @@ function interpAtHour(hours, arr, h){
     }
   }
   return arr[arr.length-1];
+}
+
+/* =========================
+   Half-arc builders (solar-path order)
+========================= */
+function buildHalfArc(half){
+  const bmin = params.min_brightness, bmax = params.max_brightness;
+  const toMired = k => 1e6 / k;
+  const cminM = toMired(params.max_color_temp);
+  const cmaxM = toMired(params.min_color_temp);
+
+  const H = half.hours, Braw = half.bris, Craw = half.ccts;
+
+  const Bn = Braw.map(b => (b - bmin) / Math.max(1e-9, (bmax - bmin)));
+  const Cmir = Craw.map(k => toMired(k));
+  const Cn = Cmir.map(m => (m - cminM) / Math.max(1e-9, (cmaxM - cminM)));
+
+  const S=[0];
+  for(let i=1;i<H.length;i++){
+    const dB = Bn[i]-Bn[i-1];
+    const dC = Cn[i]-Cn[i-1];
+    const dS = Math.sqrt(W_B*dB*dB + W_C*dC*dC);
+    S.push(S[i-1] + dS);
+  }
+  const total = S[S.length-1];
+
+  function sAtHour(h){
+    for(let i=1;i<H.length;i++){
+      const h0=H[i-1], h1=H[i];
+      let span = h1 - h0;
+      if (span < -12) span += 24;
+      if (span >  12) span -= 24;
+
+      let dh = h - h0;
+      if (dh < -12) dh += 24;
+      if (dh >  12) dh -= 24;
+
+      const between = span>=0 ? (dh>=0 && dh<=span) : (dh<=0 && dh>=span);
+      if (between){
+        const t = (span===0) ? 0 : (dh/span);
+        return S[i-1] + t*(S[i]-S[i-1]);
+      }
+    }
+    const dStart = Math.min(Math.abs(h-H[0]), 24-Math.abs(h-H[0]));
+    const dEnd   = Math.min(Math.abs(h-H[H.length-1]), 24-Math.abs(h-H[H.length-1]));
+    return (dStart<=dEnd)? 0 : total;
+  }
+
+  function hourAtS(s){
+    if (s<=0) return H[0];
+    if (s>=total) return H[H.length-1];
+    for(let i=1;i<S.length;i++){
+      if (s <= S[i]){
+        const t=(s-S[i-1])/Math.max(1e-9,(S[i]-S[i-1]));
+        let h0=H[i-1], h1=H[i];
+        let span = h1 - h0;
+        if (span < -12) span += 24;
+        if (span >  12) span -= 24;
+        let h = h0 + t*span;
+        if (h<0) h+=24;
+        if (h>=24) h-=24;
+        return h;
+      }
+    }
+    return H[H.length-1];
+  }
+
+  return { hours:H, bris:Braw, ccts:Craw, S, total, sAtHour, hourAtS };
+}
+
+function rebuildHalfArcCaches(morn, eve){
+  morningArc = buildHalfArc(morn);
+  eveningArc = buildHalfArc(eve);
+}
+
+/* =========================
+   Dim/Brighten helpers
+========================= */
+function meetsConstraint(action, hTarget, b0, k0){
+  const b1 = interpAtHour(arc.hours, arc.bris, hTarget);
+  const k1 = interpAtHour(arc.hours, arc.ccts, hTarget);
+  const m0 = 1e6 / k0, m1 = 1e6 / k1; // mireds
+  const EPS_B = 0.05;   // brightness tolerance in % points
+  const EPS_M = 1e-4;   // tiny color tolerance
+  if (action === 'dim') {      // dimmer AND warmer
+    return (b1 <= b0 + EPS_B) && (m1 >= m0 - EPS_M);
+  } else {                     // brighten: brighter AND cooler
+    return (b1 >= b0 - EPS_B) && (m1 <= m0 + EPS_M);
+  }
+}
+
+function currentHalf(){
+  const {solarNoon, solarMidnight} = calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
+  const h = selectedHour;
+  return (h >= solarNoon) || (h < solarMidnight) ? 'evening' : 'morning';
+}
+
+/* === HARD GUARANTEES: never cross halves; stop within 1 minute of edge === */
+function computeActionTarget(action){
+  if(!morningArc || !eveningArc) return null;
+
+  const half = currentHalf();
+  const arcRef = (half==='morning') ? morningArc : eveningArc;
+
+  const stepCount = Math.max(1, Math.min(500, parseInt(document.getElementById('step-count')?.value || '15',10)));
+  const stepS = Math.max(1e-9, arcRef.total / stepCount);
+
+  // Direction along S (solar-path arc length)
+  // Morning (midnight→noon): brighten=+step, dim=-step
+  // Evening (noon→midnight):  brighten=-step, dim=+step
+  const sDir = (half==='morning')
+    ? (action==='brighten' ? +1 : -1)
+    : (action==='brighten' ? -1 : +1);
+
+  // ==== HALF GUARDS (1-minute corridors from noon/midnight) ====
+  const GUARD_H = 1/60; // hours = 1 minute
+  const { solarNoon, solarMidnight } = calculateSunTimes(params.month, params.latitude, params.longitude, params.timezone);
+
+  // Define guarded boundary hours for this half
+  const guardStartHour = (half==='morning')
+    ? (solarMidnight + GUARD_H) % 24
+    : (solarNoon + GUARD_H) % 24; // evening start (near noon)
+
+  const guardEndHour = (half==='morning')
+    ? (solarNoon - GUARD_H + 24) % 24
+    : (solarMidnight - GUARD_H + 24) % 24; // evening end (near midnight)
+
+  // Convert guarded hours to guarded S-positions (monotonic in each half)
+  const sStart = arcRef.sAtHour(guardStartHour);
+  const sEnd   = arcRef.sAtHour(guardEndHour);
+  const sNow   = arcRef.sAtHour(selectedHour);
+
+  // ==== STOP IF ALREADY AT EDGE ====
+  const EPSs = Math.max(1e-9, arcRef.total / 1e6);
+  if ((sDir > 0 && sNow >= sEnd - EPSs) || (sDir < 0 && sNow <= sStart + EPSs)) {
+    return null; // "no change" — already within ~1 minute guard of the boundary
+  }
+
+  // Propose next step and clamp to [sStart, sEnd]
+  let sTarget = sNow + sDir * stepS;
+  if (sTarget < sStart) sTarget = sStart;
+  if (sTarget > sEnd)   sTarget = sEnd;
+
+  // Convert back to hour
+  let hTarget = arcRef.hourAtS(sTarget);
+
+  // Snap if we land essentially on the boundary
+  if (Math.abs(sTarget - sStart) <= stepS * 0.51) hTarget = arcRef.hourAtS(sStart);
+  if (Math.abs(sTarget - sEnd)   <= stepS * 0.51) hTarget = arcRef.hourAtS(sEnd);
+
+  // Re-check perceptual constraint; if it fails, nudge along within the same [sStart,sEnd] range
+  const b0 = interpAtHour(arc.hours, arc.bris, selectedHour);
+  const k0 = interpAtHour(arc.hours, arc.ccts, selectedHour);
+  if (!meetsConstraint(action, hTarget, b0, k0)) {
+    const delta = Math.max((sEnd - sStart) / 400, 1e-9);
+    let s = sTarget, found = false;
+    for (let i=0; i<800; i++) {
+      s = Math.min(sEnd, Math.max(sStart, s + sDir * delta));
+      hTarget = arcRef.hourAtS(s);
+      if (meetsConstraint(action, hTarget, b0, k0)) { found = true; break; }
+      if (s === sStart || s === sEnd) break;
+    }
+    if (!found) return null;
+  }
+
+  return hTarget;
+}
+
+function stepArc(action){
+  const hTarget = computeActionTarget(action);
+  if (hTarget==null) return;
+  setCursorRef(hTarget);
+  updatePreviewDeltas();
+}
+
+/* ========= Preview & layout of the Control bar ========= */
+function fmtSigned(n, unit){
+  const sign = n>0?'+':(n<0?'−':'±');
+  const abs = Math.abs(Math.round(n));
+  return `${sign}${abs}${unit}`;
+}
+function fmtTimeDelta(hNew, hOld){
+  const minutes = Math.round((hNew - hOld)*60);
+  const sign = minutes>0?'+':(minutes<0?'−':'±');
+  const a = Math.abs(minutes);
+  const hh = Math.floor(a/60), mm = a%60;
+  if (hh>0) return `${sign}${hh}h ${mm}m`;
+  return `${sign}${mm}m`;
+}
+function updatePreviewDeltas(){
+  const leftBtn = document.getElementById('left-btn');
+  const rightBtn = document.getElementById('right-btn');
+  const leftDelta = document.getElementById('left-delta');
+  const rightDelta = document.getElementById('right-delta');
+
+  if(!morningArc || !eveningArc || !arc.hours.length) {
+    leftDelta.textContent = '—';
+    rightDelta.textContent = '—';
+    return;
+  }
+
+  const half = currentHalf();
+  if (half === 'morning'){
+    leftBtn.textContent = 'Dim';
+    leftBtn.onclick = ()=> stepArc('dim');
+    rightBtn.textContent = 'Brighten';
+    rightBtn.onclick = ()=> stepArc('brighten');
+  } else {
+    leftBtn.textContent = 'Brighten';
+    leftBtn.onclick = ()=> stepArc('brighten');
+    rightBtn.textContent = 'Dim';
+    rightBtn.onclick = ()=> stepArc('dim');
+  }
+
+  const b0 = interpAtHour(arc.hours, arc.bris, selectedHour);
+  const k0 = interpAtHour(arc.hours, arc.ccts, selectedHour);
+
+  function preview(action){
+    const hT = computeActionTarget(action);
+    if (hT==null) return 'no change';
+    const b1 = interpAtHour(arc.hours, arc.bris, hT);
+    const k1 = interpAtHour(arc.hours, arc.ccts, hT);
+    const dt = fmtTimeDelta(hT, selectedHour);
+    const db = fmtSigned(b1 - b0, '%');
+    const dk = fmtSigned(k1 - k0, 'K');
+    return `${dt}, ${db}, ${dk}`;
+  }
+
+  if (half === 'morning'){
+    leftDelta.textContent  = preview('dim');
+    rightDelta.textContent = preview('brighten');
+  } else {
+    leftDelta.textContent  = preview('brighten');
+    rightDelta.textContent = preview('dim');
+  }
 }
 
 /* =========================
@@ -413,7 +721,14 @@ function buildSunColored(x,sun){
   return segs;
 }
 
-function renderPlot(x,cct,bri,sunPower){
+function renderPlot(x,cct,bri,sunPower, morn, eve){
+  // Build half-arc caches for stepping
+  rebuildHalfArcCaches(morn, eve);
+
+  // Set global arc for interpolation & constraints (sorted-by-hour arrays)
+  arc.hours = x.slice();
+  arc.bris  = bri.map(v=>Math.round(v));
+  arc.ccts  = cct.slice();
   const segs=buildMagicLightColored(x,bri.map(v=>Math.round(v)),cct);
   const sunSegs=buildSunColored(x,sunPower);
 
@@ -522,6 +837,7 @@ function renderPlot(x,cct,bri,sunPower){
       upd[`annotations[${annIndex}].text`] = `${formatTime(xh2, params.use12Hour)}<br><b>${Math.round(selBri2)}%</b> • ${Math.round(selCCT2)} K`;
       Plotly.relayout(plotDivRef, upd);
     }
+    updatePreviewDeltas();
   }
   setCursorRef = setCursor;
 
@@ -586,6 +902,9 @@ function bindInteractionsOnce(){
     }
   });
 
+  const steps = document.getElementById('step-count');
+  if (steps) steps.addEventListener('input', updatePreviewDeltas);
+
   listenersBound = true;
 }
 
@@ -600,6 +919,30 @@ function updateMidpointLabels(){
   });
 }
 
+/* unified param update to support mirroring & single draw */
+function updateParam(key, value){
+  params[key] = value;
+
+  // If brightness changed and mirror is ON, copy to CCT for same half
+  if (/_bri_/.test(key)){
+    const isMorning = /morning_/.test(key);
+    const mirrorOn = isMorning ? params.match_cct_morning : params.match_cct_evening;
+    if (mirrorOn){
+      const cKey = key.replace('_bri_', '_cct_');
+      if (controls[cKey]){
+        withSuppressedDraw(()=>{
+          controls[cKey].value = String(value);
+          controls[cKey].dispatchEvent(new Event('input'));
+        });
+      } else {
+        params[cKey] = value;
+      }
+    }
+  }
+
+  if (_suppressDrawDepth===0) draw();
+}
+
 function addSliderRow(parent, {label, key, min, max, step, format, defaultValue}){
   const row=document.createElement('div'); row.className='controls-row';
   const lab=document.createElement('label'); lab.textContent=label; lab.className='label-reset'; lab.title='Click to reset';
@@ -608,8 +951,8 @@ function addSliderRow(parent, {label, key, min, max, step, format, defaultValue}
 
   const updateLabel = () => { val.textContent = format ? format(params[key]) : params[key]; };
 
-  input.oninput = e => { const v=parseFloat(e.target.value); params[key]=v; updateLabel(); draw(); };
-  lab.onclick = () => { params[key]=defaultValue; input.value=defaultValue; updateLabel(); draw(); };
+  input.oninput = e => { const v=parseFloat(e.target.value); updateParam(key, v); updateLabel(); };
+  lab.onclick = () => { updateParam(key, defaultValue); input.value=defaultValue; updateLabel(); };
 
   updateLabel();
   row.append(lab,input,val);
@@ -697,6 +1040,71 @@ function addSunUI(){
   wrap.appendChild(info);
 }
 
+/* ===== Mirror brightness helpers ===== */
+function setCctDisabled(half, disabled){
+  const containerId = (half==='morning') ? 'morning-cct' : 'evening-cct';
+  const cont = document.getElementById(containerId);
+  if (cont) cont.classList.toggle('is-locked', !!disabled);
+  const keys = (half==='morning') ? 
+    ['morning_cct_mid','morning_cct_steep','morning_cct_decay','morning_cct_gain','morning_cct_offset'] :
+    ['evening_cct_mid','evening_cct_steep','evening_cct_decay','evening_cct_gain','evening_cct_offset'];
+  keys.forEach(k=>{
+    if (controls[k]) controls[k].disabled = !!disabled;
+  });
+}
+
+function syncCctWithBri(half){
+  const src = (half==='morning') ? 
+    ['morning_bri_mid','morning_bri_steep','morning_bri_decay','morning_bri_gain','morning_bri_offset'] :
+    ['evening_bri_mid','evening_bri_steep','evening_bri_decay','evening_bri_gain','evening_bri_offset'];
+  const dst = (half==='morning') ? 
+    ['morning_cct_mid','morning_cct_steep','morning_cct_decay','morning_cct_gain','morning_cct_offset'] :
+    ['evening_cct_mid','evening_cct_steep','evening_cct_decay','evening_cct_gain','evening_cct_offset'];
+  for (let i=0;i<src.length;i++){
+    const sKey = src[i], dKey = dst[i];
+    const val = params[sKey];
+    params[dKey] = val;
+    if (controls[dKey]){
+      withSuppressedDraw(()=>{
+        controls[dKey].value = String(val);
+        controls[dKey].dispatchEvent(new Event('input'));
+      });
+    }
+  }
+}
+
+function setCctMatchState(half, on){
+  if (half==='morning') params.match_cct_morning = on; else params.match_cct_evening = on;
+  if (on) syncCctWithBri(half);
+  setCctDisabled(half, on);
+}
+
+function renderMirrorToggles(){
+  const make = (slotId, half) => {
+    const slot = document.getElementById(slotId);
+    if (!slot) return;
+    slot.innerHTML = '';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = (half==='morning') ? params.match_cct_morning : params.match_cct_evening;
+    const lbl = document.createElement('label');
+    lbl.textContent = 'mirror brightness';
+    lbl.onclick = () => { chk.checked = !chk.checked; chk.dispatchEvent(new Event('change')); };
+    chk.onchange = (e) => {
+      setCctMatchState(half, e.target.checked);
+      draw();
+    };
+    slot.appendChild(chk);
+    slot.appendChild(lbl);
+    controls[half==='morning'?'match_cct_morning':'match_cct_evening'] = chk;
+
+    setCctDisabled(half, chk.checked);
+    if (chk.checked) syncCctWithBri(half);
+  };
+  make('mirror-slot-morning','morning');
+  make('mirror-slot-evening','evening');
+}
+
 function addMorningEveningUI(){
   function midLabel(isMorning, midHours){
     const {solarNoon, solarMidnight}=calculateSunTimes(params.month,params.latitude,params.longitude,params.timezone);
@@ -754,26 +1162,31 @@ function addMorningEveningUI(){
   addSliderRow(eCct,{label:'Decay', key:'evening_cct_decay', min:bounds.decay[0],max:bounds.decay[1],step:bounds.decay[2], format:makeFormat('evening_cct_decay',false), defaultValue:defaults.evening_cct_decay});
   addSliderRow(eCct,{label:'Gain', key:'evening_cct_gain', min:bounds.gain[0],max:bounds.gain[1],step:bounds.gain[2], format:makeFormat('evening_cct_gain',false), defaultValue:defaults.evening_cct_gain});
   addSliderRow(eCct,{label:'Offset', key:'evening_cct_offset', min:bounds.offC[0],max:bounds.offC[1],step:bounds.offC[2], format:makeFormat('evening_cct_offset',false), defaultValue:defaults.evening_cct_offset});
+
+  renderMirrorToggles();
 }
 
 /* =========================
    Draw & Reset
 ========================= */
 function draw(){
-  const {hours,ccts,bris,sunPower}=compute();
-  renderPlot(hours,ccts,bris,sunPower);
+  const {hours,ccts,bris,sunPower,morn,eve}=compute();
+  renderPlot(hours,ccts,bris,sunPower,morn,eve);
+  updatePreviewDeltas();
 }
 
 function resetMorningOnly(){
   ['morning_bri_mid','morning_bri_steep','morning_bri_decay','morning_bri_gain','morning_bri_offset',
    'morning_cct_mid','morning_cct_steep','morning_cct_decay','morning_cct_gain','morning_cct_offset'
   ].forEach(k=>params[k]=defaults[k]);
+  params.match_cct_morning = defaults.match_cct_morning;
   addMorningEveningUI(); draw();
 }
 function resetEveningOnly(){
   ['evening_bri_mid','evening_bri_steep','evening_bri_decay','evening_bri_gain','evening_bri_offset',
    'evening_cct_mid','evening_cct_steep','evening_cct_decay','evening_cct_gain','evening_cct_offset'
   ].forEach(k=>params[k]=defaults[k]);
+  params.match_cct_evening = defaults.match_cct_evening;
   addMorningEveningUI(); draw();
 }
 
@@ -792,6 +1205,7 @@ function resetAll(){
   addRangesUI();
   addSunUI();
   bindSectionResets();
+  const steps=document.getElementById('step-count'); if(steps){ steps.value='15'; }
   draw();
 }
 
@@ -834,6 +1248,8 @@ async function saveConfiguration() {
       evening_cct_decay: params.evening_cct_decay,
       evening_cct_gain: params.evening_cct_gain,
       evening_cct_offset: params.evening_cct_offset,
+      match_cct_morning: params.match_cct_morning,
+      match_cct_evening: params.match_cct_evening,
       month: params.month  // Keep month for testing different seasons
     };
     
@@ -913,6 +1329,9 @@ async function loadConfiguration() {
 ========================= */
 document.getElementById('reset-all').onclick=resetAll;
 document.getElementById('save-config').onclick=saveConfiguration;
+
+// Steps change should update preview
+document.getElementById('step-count').addEventListener('input', updatePreviewDeltas);
 
 // Load configuration and initialize
 loadConfiguration();

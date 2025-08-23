@@ -7,6 +7,7 @@ set -e
 
 # Default values
 RUN_AFTER_BUILD=false
+HOST_PORT=8099
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -15,10 +16,20 @@ while [[ $# -gt 0 ]]; do
             RUN_AFTER_BUILD=true
             shift
             ;;
+        -p|--port)
+            if [[ -n $2 && $2 != -* ]]; then
+                HOST_PORT="$2"
+                shift 2
+            else
+                echo "Error: --port requires a value (e.g. --port 8099)"
+                exit 1
+            fi
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  -r, --run    Run the container after building"
+            echo "  -r, --run           Run the container after building"
+            echo "  -p, --port <port>   Host port to map to 8099 (default: 8099)"
             echo "  -h, --help   Display this help message"
             exit 0
             ;;
@@ -94,5 +105,9 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
     docker run --rm -it \
         --name magiclight-test \
         ${ENV_FILE} \
+        -p "${HOST_PORT}:8099" \
         local/magiclight-${ARCH}:latest
+    
+    echo ""
+    echo "Light Designer web UI should be available at: http://localhost:${HOST_PORT}"
 fi
