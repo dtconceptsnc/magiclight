@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.6
+
+- Add adaptive / step arc support + update designer
+  - Dimmer switches now adjust brightness along the new step arc
+  - Light Designer updated to visualize and test dimming behavior with offset controls
+  - Shows real-time preview of how dimming affects lighting values
+
 ## 2.0.5
 
 - Auto-reset manual offsets at solar midnight

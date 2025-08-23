@@ -46,6 +46,9 @@ DEFAULT_MAX_COLOR_TEMP = int(os.getenv("MAX_COLOR_TEMP", "6500"))  # Cool daylig
 DEFAULT_MIN_BRIGHTNESS = 1
 DEFAULT_MAX_BRIGHTNESS = 100
 
+# Default dimming steps (for arc-based dimming)
+DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "5"))
+
 # Morning curve parameters (defaults from HTML)
 DEFAULT_MORNING_BRI_MID = 6.0       # Midpoint hours from solar midnight
 DEFAULT_MORNING_BRI_STEEP = 1.0     # Steepness of curve
@@ -386,6 +389,178 @@ class AdaptiveLighting:
                  - 0.37001483)
         
         return (x, y)
+    
+    def calculate_step_target(self, now: datetime, action: str = 'brighten', 
+                            max_steps: int = DEFAULT_MAX_DIM_STEPS) -> Tuple[datetime, Dict[str, Any]]:
+        """Calculate target time and lighting values for dim/brighten step.
+        
+        This implements the arc-based stepping algorithm from the designer:
+        - Builds an arc through the day's lighting curve
+        - Steps along this arc maintaining perceptual consistency
+        - Ensures smooth transitions that feel natural
+        
+        Args:
+            now: Current time
+            action: 'brighten' or 'dim'
+            max_steps: Maximum number of steps in the arc (default 15)
+            
+        Returns:
+            Tuple of (target_datetime, lighting_values_dict)
+        """
+        solar_time = self.get_solar_time(now)
+        is_morning = solar_time < 12
+        
+        # Calculate arc for the current half-day
+        # Morning: solar midnight to solar noon
+        # Evening: solar noon to solar midnight
+        
+        # Sample the curve to build arc
+        samples = []
+        sample_step = 0.1  # Sample every 0.1 solar hours
+        
+        if is_morning:
+            # Sample from midnight to noon
+            for t in [i * sample_step for i in range(int(12 / sample_step) + 1)]:
+                samples.append({
+                    'solar_time': t,
+                    'brightness': self.map_morning(
+                        t, self.morning_bri_mid, self.morning_bri_steep,
+                        self.morning_bri_decay, self.morning_bri_gain,
+                        self.morning_bri_offset, self.min_brightness, self.max_brightness
+                    ),
+                    'kelvin': self.map_morning(
+                        t, self.morning_cct_mid, self.morning_cct_steep,
+                        self.morning_cct_decay, self.morning_cct_gain,
+                        self.morning_cct_offset, self.min_color_temp, self.max_color_temp
+                    )
+                })
+        else:
+            # Sample from noon to midnight
+            for t in [12 + i * sample_step for i in range(int(12 / sample_step) + 1)]:
+                samples.append({
+                    'solar_time': t,
+                    'brightness': self.map_evening(
+                        t, self.evening_bri_mid, self.evening_bri_steep,
+                        self.evening_bri_decay, self.evening_bri_gain,
+                        self.evening_bri_offset, self.min_brightness, self.max_brightness
+                    ),
+                    'kelvin': self.map_evening(
+                        t, self.evening_cct_mid, self.evening_cct_steep,
+                        self.evening_cct_decay, self.evening_cct_gain,
+                        self.evening_cct_offset, self.min_color_temp, self.max_color_temp
+                    )
+                })
+        
+        # Build arc with weighted distances
+        # Normalize values for distance calculation
+        bmin, bmax = self.min_brightness, self.max_brightness
+        kmin, kmax = self.min_color_temp, self.max_color_temp
+        
+        # Convert kelvin to mireds for perceptual uniformity
+        def to_mired(k):
+            return 1e6 / k if k > 0 else 0
+        
+        mired_min = to_mired(kmax)
+        mired_max = to_mired(kmin)
+        
+        # Build arc distances
+        arc_distances = [0]
+        for i in range(1, len(samples)):
+            # Normalized brightness difference
+            b_norm_prev = (samples[i-1]['brightness'] - bmin) / max(1e-9, bmax - bmin)
+            b_norm_curr = (samples[i]['brightness'] - bmin) / max(1e-9, bmax - bmin)
+            db = b_norm_curr - b_norm_prev
+            
+            # Normalized mired difference
+            m_prev = to_mired(samples[i-1]['kelvin'])
+            m_curr = to_mired(samples[i]['kelvin'])
+            m_norm_prev = (m_prev - mired_min) / max(1e-9, mired_max - mired_min)
+            m_norm_curr = (m_curr - mired_min) / max(1e-9, mired_max - mired_min)
+            dm = m_norm_curr - m_norm_prev
+            
+            # Weighted distance (brightness weight = 1.0, color weight = 0.6)
+            distance = math.sqrt(1.0 * db**2 + 0.6 * dm**2)
+            arc_distances.append(arc_distances[-1] + distance)
+        
+        total_arc_length = arc_distances[-1]
+        
+        # Find current position on arc
+        current_idx = 0
+        min_diff = float('inf')
+        for i, sample in enumerate(samples):
+            diff = abs(sample['solar_time'] - solar_time)
+            if diff < min_diff:
+                min_diff = diff
+                current_idx = i
+        
+        # Interpolate to get exact arc position
+        if current_idx < len(samples) - 1:
+            t_curr = samples[current_idx]['solar_time']
+            t_next = samples[current_idx + 1]['solar_time']
+            if t_next > t_curr:
+                interp = (solar_time - t_curr) / (t_next - t_curr)
+                current_arc_pos = arc_distances[current_idx] + \
+                    interp * (arc_distances[current_idx + 1] - arc_distances[current_idx])
+            else:
+                current_arc_pos = arc_distances[current_idx]
+        else:
+            current_arc_pos = arc_distances[current_idx]
+        
+        # Calculate step size
+        step_size = total_arc_length / max_steps if max_steps > 0 else total_arc_length / 15
+        
+        # Determine step direction
+        # Morning: brighten = forward (toward noon), dim = backward (toward midnight)
+        # Evening: brighten = backward (toward noon), dim = forward (toward midnight)
+        if is_morning:
+            step_dir = step_size if action == 'brighten' else -step_size
+        else:
+            step_dir = -step_size if action == 'brighten' else step_size
+        
+        # Calculate target arc position
+        target_arc_pos = current_arc_pos + step_dir
+        target_arc_pos = max(0, min(total_arc_length, target_arc_pos))
+        
+        # Find target sample index and interpolation
+        target_idx = 0
+        for i in range(len(arc_distances) - 1):
+            if arc_distances[i] <= target_arc_pos <= arc_distances[i + 1]:
+                target_idx = i
+                break
+        
+        # Interpolate target values
+        if target_idx < len(samples) - 1 and arc_distances[target_idx + 1] > arc_distances[target_idx]:
+            interp = (target_arc_pos - arc_distances[target_idx]) / \
+                    (arc_distances[target_idx + 1] - arc_distances[target_idx])
+            target_solar_time = samples[target_idx]['solar_time'] + \
+                interp * (samples[target_idx + 1]['solar_time'] - samples[target_idx]['solar_time'])
+            target_brightness = samples[target_idx]['brightness'] + \
+                interp * (samples[target_idx + 1]['brightness'] - samples[target_idx]['brightness'])
+            target_kelvin = samples[target_idx]['kelvin'] + \
+                interp * (samples[target_idx + 1]['kelvin'] - samples[target_idx]['kelvin'])
+        else:
+            target_solar_time = samples[target_idx]['solar_time']
+            target_brightness = samples[target_idx]['brightness']
+            target_kelvin = samples[target_idx]['kelvin']
+        
+        # Convert solar time back to real datetime
+        hours_diff = target_solar_time - solar_time
+        target_datetime = now + timedelta(hours=hours_diff)
+        
+        # Prepare lighting values
+        target_kelvin = int(max(self.min_color_temp, min(self.max_color_temp, target_kelvin)))
+        target_brightness = int(max(self.min_brightness, min(self.max_brightness, target_brightness)))
+        
+        rgb = self.color_temperature_to_rgb(target_kelvin)
+        xy = self.color_temperature_to_xy(target_kelvin)
+        
+        return target_datetime, {
+            'kelvin': target_kelvin,
+            'brightness': target_brightness,
+            'rgb': rgb,
+            'xy': xy,
+            'solar_time': target_solar_time
+        }
 
     @staticmethod
     def rgb_to_xy(rgb: Tuple[int, int, int]) -> Tuple[float, float]:
@@ -422,6 +597,92 @@ def _auto_location(lat: Optional[float], lon: Optional[float], tz: Optional[str]
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def calculate_dimming_step(
+    current_time: datetime,
+    action: str,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    timezone: Optional[str] = None,
+    max_steps: int = DEFAULT_MAX_DIM_STEPS,
+    # Allow overriding curve parameters (optional)
+    morning_bri_params: Optional[Dict[str, float]] = None,
+    morning_cct_params: Optional[Dict[str, float]] = None,
+    evening_bri_params: Optional[Dict[str, float]] = None,
+    evening_cct_params: Optional[Dict[str, float]] = None
+) -> Dict[str, Any]:
+    """Calculate the next dimming step along the adaptive curve.
+    
+    Args:
+        current_time: Current time
+        action: 'brighten' or 'dim'
+        latitude: Location latitude
+        longitude: Location longitude
+        timezone: Timezone string
+        max_steps: Maximum number of steps in the dimming arc
+        *_params: Optional curve parameter overrides
+        
+    Returns:
+        Dict with target lighting values and time offset
+    """
+    latitude, longitude, timezone = _auto_location(latitude, longitude, timezone)
+    if latitude is None or longitude is None:
+        raise ValueError("Latitude/longitude not provided and not found in env vars")
+
+    try:
+        tzinfo = ZoneInfo(timezone) if timezone else None
+    except ZoneInfoNotFoundError:
+        logger.warning("Unknown timezone '%s' – falling back to system local", timezone)
+        tzinfo = None
+
+    now = current_time.astimezone(tzinfo) if tzinfo else current_time
+
+    loc = LocationInfo(latitude=latitude, longitude=longitude, timezone=tzinfo or "UTC")
+    observer = loc.observer
+    solar_events = sun(observer, date=now.date(), tzinfo=loc.timezone)
+    
+    # Calculate solar midnight
+    solar_noon = solar_events["noon"]
+    solar_midnight = solar_noon - timedelta(hours=12) if solar_noon.hour >= 12 else solar_noon + timedelta(hours=12)
+
+    # Prepare curve parameters
+    kwargs = {
+        "sunrise_time": solar_events["sunrise"],
+        "sunset_time": solar_events["sunset"],
+        "solar_noon": solar_noon,
+        "solar_midnight": solar_midnight,
+    }
+    
+    # Add curve parameters if provided
+    if morning_bri_params:
+        kwargs.update({f"morning_bri_{k}": v for k, v in morning_bri_params.items()
+                      if k in ["mid", "steep", "decay", "gain", "offset"]})
+    if morning_cct_params:
+        kwargs.update({f"morning_cct_{k}": v for k, v in morning_cct_params.items()
+                      if k in ["mid", "steep", "decay", "gain", "offset"]})
+    if evening_bri_params:
+        kwargs.update({f"evening_bri_{k}": v for k, v in evening_bri_params.items()
+                      if k in ["mid", "steep", "decay", "gain", "offset"]})
+    if evening_cct_params:
+        kwargs.update({f"evening_cct_{k}": v for k, v in evening_cct_params.items()
+                      if k in ["mid", "steep", "decay", "gain", "offset"]})
+
+    al = AdaptiveLighting(**kwargs)
+    
+    # Calculate the step target
+    target_time, lighting_values = al.calculate_step_target(now, action, max_steps)
+    
+    # Calculate time offset in minutes
+    time_offset_minutes = (target_time - now).total_seconds() / 60
+    
+    logger.info(f"Dimming step: {action} from {now.isoformat()} to {target_time.isoformat()}")
+    logger.info(f"Target values: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+    
+    return {
+        **lighting_values,
+        'time_offset_minutes': time_offset_minutes,
+        'target_time': target_time
+    }
 
 def get_adaptive_lighting(
     *,

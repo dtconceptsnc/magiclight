@@ -8,6 +8,8 @@ import time
 from zoneinfo import ZoneInfo
 import random
 
+from brain import calculate_dimming_step, DEFAULT_MAX_DIM_STEPS
+
 
 logger = logging.getLogger(__name__)
 
@@ -286,37 +288,52 @@ class SwitchCommandProcessor:
         if area_id in self.client.magic_mode_areas:
             logger.info(f"Dimming up along magic mode curve for area {area_id}")
             
-            # Get current sun position
-            sun_position = self.client.sun_data.get('elevation', 0)
-            
-            # Determine time offset direction based on sun position
-            # Before solar noon (morning): dim up = move forward in time
-            # After solar noon (afternoon): dim up = move backward in time
-            # Solar noon is when sun elevation is at its peak (around 0° azimuth)
-            azimuth = self.client.sun_data.get('azimuth', 180)
-            is_morning = azimuth < 180  # Sun in eastern sky
-            
-            # Adjust time offset
+            # Get current time with offset
             current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            if is_morning:
-                # Morning: move forward in time (toward noon)
+            current_time = datetime.now() + timedelta(minutes=current_offset)
+            
+            # Use the new arc-based dimming calculation
+            try:
+                # Get max_dim_steps from config if available
+                max_steps = DEFAULT_MAX_DIM_STEPS  # Use the constant from brain.py
+                if hasattr(self.client, 'config') and self.client.config:
+                    max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
+                
+                dimming_result = calculate_dimming_step(
+                    current_time=current_time,
+                    action='brighten',
+                    max_steps=max_steps,
+                    # Location is pulled from environment automatically
+                )
+                
+                # Update the stored offset
+                new_offset = current_offset + dimming_result['time_offset_minutes']
+                # Limit offset to reasonable bounds (-12 hours to +12 hours)
+                new_offset = max(-720, min(720, new_offset))
+                self.client.magic_mode_time_offsets[area_id] = new_offset
+                
+                logger.info(f"Time offset for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
+                
+                # Apply the lighting values
+                lighting_values = {
+                    'kelvin': dimming_result['kelvin'],
+                    'brightness': dimming_result['brightness'],
+                    'rgb': dimming_result.get('rgb'),
+                    'xy': dimming_result.get('xy')
+                }
+                
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+                logger.info(f"Applied magic mode brightening: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                
+            except Exception as e:
+                logger.error(f"Error calculating dimming step: {e}")
+                # Fall back to simple time offset adjustment
                 new_offset = current_offset + 30
-            else:
-                # Afternoon/evening: move backward in time (toward noon)
-                new_offset = current_offset - 30
-            
-            # Limit offset to reasonable bounds (-12 hours to +12 hours)
-            new_offset = max(-720, min(720, new_offset))
-            self.client.magic_mode_time_offsets[area_id] = new_offset
-            
-            logger.info(f"Time offset for area {area_id}: {current_offset} -> {new_offset} minutes")
-            
-            # Get adaptive lighting values with the new offset
-            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-            
-            # Apply the lighting values using centralized function
-            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-            logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                new_offset = max(-720, min(720, new_offset))
+                self.client.magic_mode_time_offsets[area_id] = new_offset
+                
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
             
         else:
             # Not in magic mode - use standard dimming
@@ -362,40 +379,54 @@ class SwitchCommandProcessor:
         if area_id in self.client.magic_mode_areas:
             logger.info(f"Dimming down along magic mode curve for area {area_id}")
             
-            # Get current sun position
-            sun_position = self.client.sun_data.get('elevation', 0)
-            
-            # Determine time offset direction based on sun position
-            # Before solar noon (morning): dim down = move backward in time
-            # After solar noon (afternoon): dim down = move forward in time
-            azimuth = self.client.sun_data.get('azimuth', 180)
-            is_morning = azimuth < 180  # Sun in eastern sky
-            
-            # Adjust time offset
+            # Get current time with offset
             current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            if is_morning:
-                # Morning: move backward in time (toward dawn)
+            current_time = datetime.now() + timedelta(minutes=current_offset)
+            
+            # Use the new arc-based dimming calculation
+            try:
+                # Get max_dim_steps from config if available
+                max_steps = DEFAULT_MAX_DIM_STEPS  # Use the constant from brain.py
+                if hasattr(self.client, 'config') and self.client.config:
+                    max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
+                
+                dimming_result = calculate_dimming_step(
+                    current_time=current_time,
+                    action='dim',
+                    max_steps=max_steps,
+                    # Location is pulled from environment automatically
+                )
+                
+                # Update the stored offset
+                new_offset = current_offset + dimming_result['time_offset_minutes']
+                # Limit offset to reasonable bounds (-12 hours to +12 hours)
+                new_offset = max(-720, min(720, new_offset))
+                self.client.magic_mode_time_offsets[area_id] = new_offset
+                
+                logger.info(f"Time offset for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
+                
+                # Apply the lighting values
+                lighting_values = {
+                    'kelvin': dimming_result['kelvin'],
+                    'brightness': max(1, dimming_result['brightness']),  # Ensure minimum brightness
+                    'rgb': dimming_result.get('rgb'),
+                    'xy': dimming_result.get('xy')
+                }
+                
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+                logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                
+            except Exception as e:
+                logger.error(f"Error calculating dimming step: {e}")
+                # Fall back to simple time offset adjustment
                 new_offset = current_offset - 30
-            else:
-                # Afternoon/evening: move forward in time (toward sunset)
-                new_offset = current_offset + 30
-            
-            # Limit offset to reasonable bounds (-12 hours to +12 hours)
-            new_offset = max(-720, min(720, new_offset))
-            self.client.magic_mode_time_offsets[area_id] = new_offset
-            
-            logger.info(f"Time offset for area {area_id}: {current_offset} -> {new_offset} minutes")
-            
-            # Get adaptive lighting values with the new offset
-            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-            
-            # Ensure minimum brightness in magic mode
-            lighting_values = lighting_values.copy()
-            lighting_values['brightness'] = max(1, lighting_values['brightness'])
-            
-            # Apply the lighting values using centralized function
-            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-            logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                new_offset = max(-720, min(720, new_offset))
+                self.client.magic_mode_time_offsets[area_id] = new_offset
+                
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                lighting_values = lighting_values.copy()
+                lighting_values['brightness'] = max(1, lighting_values['brightness'])
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
             
         else:
             # Not in magic mode - use standard dimming

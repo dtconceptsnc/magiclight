@@ -127,7 +127,7 @@
       </div>
       <div class="ctrl-center">
         <label>Steps</label>
-        <input id="step-count" class="num" type="number" value="15" min="1" max="500" step="1" />
+        <input id="step-count" class="num" type="number" min="1" max="500" step="1" />
       </div>
       <div id="right-side" class="ctrl-side">
         <span id="right-delta" class="delta">—</span>
@@ -244,6 +244,9 @@ const defaults = {
   // Mirror flags default ON
   match_cct_morning: true,
   match_cct_evening: true,
+
+  // Dimming steps (matches MAX_DIM_STEPS from brain.py)
+  max_dim_steps: 15,
 
   // Sun & display
   month: 6,
@@ -557,7 +560,7 @@ function computeActionTarget(action){
   const half = currentHalf();
   const arcRef = (half==='morning') ? morningArc : eveningArc;
 
-  const stepCount = Math.max(1, Math.min(500, parseInt(document.getElementById('step-count')?.value || '15',10)));
+  const stepCount = Math.max(1, Math.min(500, parseInt(document.getElementById('step-count')?.value || params.max_dim_steps,10)));
   const stepS = Math.max(1e-9, arcRef.total / stepCount);
 
   // Direction along S (solar-path arc length)
@@ -1205,7 +1208,7 @@ function resetAll(){
   addRangesUI();
   addSunUI();
   bindSectionResets();
-  const steps=document.getElementById('step-count'); if(steps){ steps.value='15'; }
+  const steps=document.getElementById('step-count'); if(steps){ steps.value=params.max_dim_steps; }
   draw();
 }
 
@@ -1250,6 +1253,7 @@ async function saveConfiguration() {
       evening_cct_offset: params.evening_cct_offset,
       match_cct_morning: params.match_cct_morning,
       match_cct_evening: params.match_cct_evening,
+      max_dim_steps: params.max_dim_steps,
       month: params.month  // Keep month for testing different seasons
     };
     
@@ -1306,6 +1310,17 @@ async function loadConfiguration() {
         params.month = new Date().getMonth() + 1;
       }
       
+      // Ensure max_dim_steps is valid
+      if (!params.max_dim_steps || params.max_dim_steps < 1) {
+        params.max_dim_steps = defaults.max_dim_steps;
+      }
+      
+      // Update step count input
+      const stepInput = document.getElementById('step-count');
+      if (stepInput) {
+        stepInput.value = params.max_dim_steps;
+      }
+      
       // Rebuild UI with new values
       addMorningEveningUI();
       addRangesUI();
@@ -1330,8 +1345,15 @@ async function loadConfiguration() {
 document.getElementById('reset-all').onclick=resetAll;
 document.getElementById('save-config').onclick=saveConfiguration;
 
-// Steps change should update preview
-document.getElementById('step-count').addEventListener('input', updatePreviewDeltas);
+// Initialize step count with default value
+const stepInput = document.getElementById('step-count');
+if (stepInput) {
+  stepInput.value = params.max_dim_steps;
+  stepInput.addEventListener('input', (e) => {
+    params.max_dim_steps = parseInt(e.target.value) || 15;
+    updatePreviewDeltas();
+  });
+}
 
 // Load configuration and initialize
 loadConfiguration();

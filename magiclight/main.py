@@ -55,13 +55,13 @@ class HomeAssistantWebSocketClient:
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         
-        # Color mode configuration - defaults to RGB
-        color_mode_str = os.getenv("COLOR_MODE", "RGB").upper()
+        # Color mode configuration - defaults to XY
+        color_mode_str = os.getenv("COLOR_MODE", "XY").upper()
         try:
             self.color_mode = ColorMode[color_mode_str]
         except KeyError:
-            logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to RGB")
-            self.color_mode = ColorMode.RGB
+            logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to XY")
+            self.color_mode = ColorMode.XY
         logger.info(f"Using color mode: {self.color_mode.value}")
         
         # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py

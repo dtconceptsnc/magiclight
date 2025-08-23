@@ -10,6 +10,8 @@ from aiohttp.web import Request, Response
 import aiofiles
 from pathlib import Path
 
+from brain import DEFAULT_MAX_DIM_STEPS
+
 logger = logging.getLogger(__name__)
 
 class LightDesignerServer:
@@ -145,6 +147,8 @@ class LightDesignerServer:
             "evening_cct_decay": 0.02,
             "evening_cct_gain": 1.0,
             "evening_cct_offset": 0,
+            # Dimming steps
+            "max_dim_steps": DEFAULT_MAX_DIM_STEPS,
             # Location settings
             "latitude": 35.0,
             "longitude": -78.6,
