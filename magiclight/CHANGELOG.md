@@ -1,5 +1,15 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.11
+
+- Fix dimming to use saved designer curve parameters
+  - Fixed critical issue where dimming used default curves while main lighting used saved curves
+  - Dimming now properly uses the same curve parameters as configured in Light Designer
+  - Eliminates brightness jumps caused by curve parameter mismatch
+- Enable designer configuration saving in development environment
+  - Development mode now uses .data/ directory for configuration persistence
+  - Designer settings can now be saved and tested locally
+
 ## 2.1.10
 
 - Fix dimming calculation to prevent large brightness jumps

@@ -537,10 +537,17 @@ class AdaptiveLighting:
         else:
             target_solar_time = samples[target_idx]['solar_time']
         
+        # Debug logging
+        logger.debug(f"Arc stepping: current_solar_time={solar_time:.2f}, target_solar_time={target_solar_time:.2f}")
+        logger.debug(f"Arc position: current={current_arc_pos:.3f}, target={target_arc_pos:.3f}, total_length={total_arc_length:.3f}")
+        logger.debug(f"Step size={step_size:.3f}, direction={'forward' if step_dir > 0 else 'backward'}")
+        
         # Recalculate brightness and kelvin from the actual curves at target_solar_time
         # This ensures smooth transitions without interpolation artifacts
         if target_solar_time < 12:
             # Morning: use morning curves
+            logger.debug(f"Morning brightness params: mid={self.morning_bri_mid}, steep={self.morning_bri_steep}, "
+                        f"decay={self.morning_bri_decay}, gain={self.morning_bri_gain}, offset={self.morning_bri_offset}")
             target_brightness = self.map_morning(
                 target_solar_time, self.morning_bri_mid, self.morning_bri_steep,
                 self.morning_bri_decay, self.morning_bri_gain,
@@ -553,6 +560,8 @@ class AdaptiveLighting:
             )
         else:
             # Evening: use evening curves
+            logger.debug(f"Evening brightness params: mid={self.evening_bri_mid}, steep={self.evening_bri_steep}, "
+                        f"decay={self.evening_bri_decay}, gain={self.evening_bri_gain}, offset={self.evening_bri_offset}")
             target_brightness = self.map_evening(
                 target_solar_time, self.evening_bri_mid, self.evening_bri_steep,
                 self.evening_bri_decay, self.evening_bri_gain,
@@ -571,6 +580,9 @@ class AdaptiveLighting:
         # Prepare lighting values
         target_kelvin = int(max(self.min_color_temp, min(self.max_color_temp, target_kelvin)))
         target_brightness = int(max(self.min_brightness, min(self.max_brightness, target_brightness)))
+        
+        logger.debug(f"Final target values: brightness={target_brightness}%, kelvin={target_kelvin}K")
+        logger.debug(f"Brightness bounds: min={self.min_brightness}, max={self.max_brightness}")
         
         rgb = self.color_temperature_to_rgb(target_kelvin)
         xy = self.color_temperature_to_xy(target_kelvin)

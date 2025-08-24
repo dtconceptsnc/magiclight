@@ -21,9 +21,22 @@ class LightDesignerServer:
         self.port = port
         self.app = web.Application()
         self.setup_routes()
-        # Supervisor manages /data/options.json on restart; keep user overrides separately
-        self.options_file = "/data/options.json"
-        self.designer_file = "/data/designer_config.json"
+        
+        # Detect environment and set appropriate paths
+        # In Home Assistant, /data directory exists. In dev, use local directory
+        if os.path.exists("/data"):
+            # Running in Home Assistant
+            self.data_dir = "/data"
+        else:
+            # Running in development - use local .data directory
+            self.data_dir = os.path.join(os.path.dirname(__file__), ".data")
+            # Create directory if it doesn't exist
+            os.makedirs(self.data_dir, exist_ok=True)
+            logger.info(f"Development mode: using {self.data_dir} for configuration storage")
+        
+        # Set file paths based on data directory
+        self.options_file = os.path.join(self.data_dir, "options.json")
+        self.designer_file = os.path.join(self.data_dir, "designer_config.json")
         
     def setup_routes(self):
         """Set up web routes."""
@@ -112,7 +125,7 @@ class LightDesignerServer:
         """Load configuration, merging HA options with designer overrides.
 
         Order of precedence (later wins):
-          defaults -> /data/options.json -> /data/designer_config.json
+          defaults -> options.json -> designer_config.json
         """
         # Defaults used by UI when nothing saved yet
         config: dict = {

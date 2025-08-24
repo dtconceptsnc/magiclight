@@ -441,7 +441,21 @@ class HomeAssistantWebSocketClient:
         # Load curve parameters by merging supervisor options and designer overrides
         curve_params = {}
         merged_config: Dict[str, Any] = {}
-        for path in ["/data/options.json", "/data/designer_config.json"]:
+        
+        # Detect environment and set appropriate data directory
+        if os.path.exists("/data"):
+            # Running in Home Assistant
+            data_dir = "/data"
+        else:
+            # Running in development - use local .data directory
+            data_dir = os.path.join(os.path.dirname(__file__), ".data")
+            if not os.path.exists(data_dir):
+                os.makedirs(data_dir, exist_ok=True)
+                logger.info(f"Development mode: using {data_dir} for configuration")
+        
+        # Load configs from appropriate directory
+        for filename in ["options.json", "designer_config.json"]:
+            path = os.path.join(data_dir, filename)
             if os.path.exists(path):
                 try:
                     with open(path, 'r') as f:
@@ -491,6 +505,9 @@ class HomeAssistantWebSocketClient:
                 curve_params["evening_cct_params"] = evening_cct_params
         except Exception as e:
             logger.debug(f"Could not parse curve parameters from merged config: {e}")
+        
+        # Store curve parameters for use in switch dimming calculations
+        self.curve_params = curve_params
         
         # Get adaptive lighting values with new morning/evening curves
         lighting_values = get_adaptive_lighting(

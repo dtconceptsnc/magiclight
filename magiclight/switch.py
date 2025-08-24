@@ -297,11 +297,16 @@ class SwitchCommandProcessor:
                 if hasattr(self.client, 'config') and self.client.config:
                     max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
                 
+                # Get curve parameters from client if available
+                curve_params = {}
+                if hasattr(self.client, 'curve_params'):
+                    curve_params = self.client.curve_params
+                
                 dimming_result = calculate_dimming_step(
                     current_time=current_time,
                     action='brighten',
                     max_steps=max_steps,
-                    # Location is pulled from environment automatically
+                    **curve_params  # Pass the curve parameters
                 )
                 
                 # Update the stored offset
@@ -382,12 +387,34 @@ class SwitchCommandProcessor:
                 max_steps = DEFAULT_MAX_DIM_STEPS  # Use the constant from brain.py
                 if hasattr(self.client, 'config') and self.client.config:
                     max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
+                    logger.debug(f"Using max_dim_steps from config: {max_steps}")
+                else:
+                    logger.debug(f"Using default max_dim_steps: {max_steps}")
+                
+                # Get current light brightness before dimming
+                lights_in_area = await self.client.get_lights_in_area(area_id)
+                current_brightness = None
+                for light in lights_in_area:
+                    if light.get("state") == "on":
+                        brightness = light.get("attributes", {}).get("brightness")
+                        if brightness:
+                            current_brightness = int((brightness / 255) * 100)
+                            break
+                
+                logger.debug(f"Current brightness before dimming: {current_brightness}%")
+                logger.debug(f"Current time with offset: {current_time.isoformat()}, offset={current_offset} minutes")
+                
+                # Get curve parameters from client if available
+                curve_params = {}
+                if hasattr(self.client, 'curve_params'):
+                    curve_params = self.client.curve_params
+                    logger.debug(f"Using curve_params from client: {list(curve_params.keys())}")
                 
                 dimming_result = calculate_dimming_step(
                     current_time=current_time,
                     action='dim',
                     max_steps=max_steps,
-                    # Location is pulled from environment automatically
+                    **curve_params  # Pass the curve parameters
                 )
                 
                 # Update the stored offset
@@ -397,6 +424,8 @@ class SwitchCommandProcessor:
                 self.client.magic_mode_time_offsets[area_id] = new_offset
                 
                 logger.info(f"Time offset for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
+                logger.debug(f"Dimming result - brightness: {dimming_result['brightness']}%, kelvin: {dimming_result['kelvin']}K")
+                logger.debug(f"Time offset change: {dimming_result['time_offset_minutes']:.1f} minutes")
                 
                 # Apply the lighting values
                 lighting_values = {
@@ -407,7 +436,7 @@ class SwitchCommandProcessor:
                 }
                 
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}% (was {current_brightness}%)")
                 
             except Exception as e:
                 logger.error(f"Error calculating dimming step: {e}")
