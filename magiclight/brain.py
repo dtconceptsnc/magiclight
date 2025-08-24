@@ -528,20 +528,41 @@ class AdaptiveLighting:
                 target_idx = i
                 break
         
-        # Interpolate target values
+        # Interpolate to find target solar time, then recalculate values from curves
         if target_idx < len(samples) - 1 and arc_distances[target_idx + 1] > arc_distances[target_idx]:
             interp = (target_arc_pos - arc_distances[target_idx]) / \
                     (arc_distances[target_idx + 1] - arc_distances[target_idx])
             target_solar_time = samples[target_idx]['solar_time'] + \
                 interp * (samples[target_idx + 1]['solar_time'] - samples[target_idx]['solar_time'])
-            target_brightness = samples[target_idx]['brightness'] + \
-                interp * (samples[target_idx + 1]['brightness'] - samples[target_idx]['brightness'])
-            target_kelvin = samples[target_idx]['kelvin'] + \
-                interp * (samples[target_idx + 1]['kelvin'] - samples[target_idx]['kelvin'])
         else:
             target_solar_time = samples[target_idx]['solar_time']
-            target_brightness = samples[target_idx]['brightness']
-            target_kelvin = samples[target_idx]['kelvin']
+        
+        # Recalculate brightness and kelvin from the actual curves at target_solar_time
+        # This ensures smooth transitions without interpolation artifacts
+        if target_solar_time < 12:
+            # Morning: use morning curves
+            target_brightness = self.map_morning(
+                target_solar_time, self.morning_bri_mid, self.morning_bri_steep,
+                self.morning_bri_decay, self.morning_bri_gain,
+                self.morning_bri_offset, self.min_brightness, self.max_brightness
+            )
+            target_kelvin = self.map_morning(
+                target_solar_time, self.morning_cct_mid, self.morning_cct_steep,
+                self.morning_cct_decay, self.morning_cct_gain,
+                self.morning_cct_offset, self.min_color_temp, self.max_color_temp
+            )
+        else:
+            # Evening: use evening curves
+            target_brightness = self.map_evening(
+                target_solar_time, self.evening_bri_mid, self.evening_bri_steep,
+                self.evening_bri_decay, self.evening_bri_gain,
+                self.evening_bri_offset, self.min_brightness, self.max_brightness
+            )
+            target_kelvin = self.map_evening(
+                target_solar_time, self.evening_cct_mid, self.evening_cct_steep,
+                self.evening_cct_decay, self.evening_cct_gain,
+                self.evening_cct_offset, self.min_color_temp, self.max_color_temp
+            )
         
         # Convert solar time back to real datetime
         hours_diff = target_solar_time - solar_time

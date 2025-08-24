@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.10
+
+- Fix dimming calculation to prevent large brightness jumps
+  - Fixed issue where dimming could jump from 90% to 4% brightness
+  - Brightness now correctly follows the adaptive curve without interpolation artifacts
+  - Recalculates actual curve values instead of interpolating between samples
+
 ## 2.1.9
 
 - Bottom button behavior changes
