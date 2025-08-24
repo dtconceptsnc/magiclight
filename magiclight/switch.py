@@ -85,7 +85,7 @@ class SwitchCommandProcessor:
         logger.info(f"Set lights in area {area_id} to random RGB color: ({r}, {g}, {b})")
     
     async def _handle_off_button_press(self, device_id: str):
-        """Handle the OFF button press - toggle magic mode when lights are on.
+        """Handle the OFF button press - always reset to time offset 0 and enable magic mode.
         
         Args:
             device_id: The device ID that triggered the event
@@ -98,25 +98,23 @@ class SwitchCommandProcessor:
             logger.warning(f"No area mapping found for device: {device_id}")
             return
         
-        # Check if magic mode is enabled
-        if area_id in self.client.magic_mode_areas:
-            # Magic mode is ON - disable it (with flash indication)
-            await self.client.disable_magic_mode(area_id)
-        else:
-            # Magic mode is OFF - check if lights are on
-            lights_in_area = await self.client.get_lights_in_area(area_id)
-            any_light_on = any(light.get("state") == "on" for light in lights_in_area)
-            
-            if any_light_on:
-                # Lights are ON but magic mode is OFF - enable magic mode and apply adaptive lighting
-                logger.info(f"Enabling magic mode and applying adaptive lighting for area {area_id}")
-                self.client.enable_magic_mode(area_id)
-                
-                # Get and apply adaptive lighting values
-                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
-            else:
-                logger.info(f"No lights are on in area {area_id}, nothing to do")
+        # Check if lights are on in the area
+        lights_in_area = await self.client.get_lights_in_area(area_id)
+        any_light_on = any(light.get("state") == "on" for light in lights_in_area)
+
+        # Reset time offset to 0 and enable magic mode
+        logger.info(f"Resetting to time offset 0 and enabling magic mode for area {area_id}")
+        
+        # Reset the time offset to 0
+        self.client.magic_mode_time_offsets[area_id] = 0
+        
+        # Enable magic mode (this also resets time offset to 0 internally)
+        self.client.enable_magic_mode(area_id)
+        
+        # Get and apply adaptive lighting values for current time (offset 0)
+        lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+        await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
+        logger.info(f"Magic mode enabled with time offset 0 for area {area_id}")
             
     async def _handle_on_button_press(self, device_id: str):
         """Handle the ON button press with toggle functionality.
@@ -350,13 +348,8 @@ class SwitchCommandProcessor:
                     break
             
             if not any_light_on:
-                logger.info(f"No lights are on in area {area_id}, turning on with default brightness")
-                # Turn on lights at a low brightness if none are on
-                service_data = {
-                    "area_id": area_id,
-                    "brightness_pct": increment_pct,
-                    "transition": 0.5
-                }
+                logger.info(f"No lights are on in area {area_id}, not turning on lights")
+                return
             else:
                 # Increase brightness of lights that are on
                 service_data = {
@@ -365,8 +358,8 @@ class SwitchCommandProcessor:
                     "transition": 1
                 }
             
-            await self.client.call_service("light", "turn_on", service_data)
-            logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
+                await self.client.call_service("light", "turn_on", service_data)
+                logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
         
     async def dim_down(self, area_id: str, decrement_pct: int = 17):
         """Decrease brightness - in magic mode, move along the adaptive curve.

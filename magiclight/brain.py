@@ -47,7 +47,7 @@ DEFAULT_MIN_BRIGHTNESS = 1
 DEFAULT_MAX_BRIGHTNESS = 100
 
 # Default dimming steps (for arc-based dimming)
-DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "5"))
+DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "8"))
 
 # Morning curve parameters (defaults from HTML)
 DEFAULT_MORNING_BRI_MID = 6.0       # Midpoint hours from solar midnight

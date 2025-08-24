@@ -56,7 +56,7 @@ class HomeAssistantWebSocketClient:
         self.last_states_update = None  # Timestamp of last states update
         
         # Color mode configuration - defaults to XY
-        color_mode_str = os.getenv("COLOR_MODE", "XY").upper()
+        color_mode_str = os.getenv("COLOR_MODE", "xy")
         try:
             self.color_mode = ColorMode[color_mode_str]
         except KeyError:

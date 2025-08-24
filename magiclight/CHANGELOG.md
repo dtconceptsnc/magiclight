@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.1.9
+
+- Bottom button behavior changes
+  - Bottom button now always resets to time offset 0 and enables magic mode
+  - Removed toggle behavior - bottom button consistently returns to present time
+  - Dim up button no longer turns on lights when they're off
+
 ## 2.1.8
 
 - Fix Light Designer configuration persistence again
