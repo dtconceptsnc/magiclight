@@ -444,6 +444,10 @@ class ZigBeeController(LightController):
             
             # Get current ZHA groups
             existing_groups = await self.list_zha_groups()
+            logger.info(f"Retrieved {len(existing_groups)} existing ZHA groups")
+            for group in existing_groups:
+                members = group.get('members', [])
+                logger.info(f"Group '{group.get('name')}' (ID={group.get('group_id')}): {len(members)} members")
             existing_groups_by_name = {g.get('name'): g for g in existing_groups}
             
             # Get all areas with their lights
@@ -518,38 +522,54 @@ class ZigBeeController(LightController):
                         ))
                     else:
                         # Compare existing and new members (ensure lowercase comparison)
-                        existing_member_set = {(m.get('ieee').lower() if m.get('ieee') else None, m.get('endpoint_id')) 
-                                             for m in existing_members 
-                                             if m and m.get('ieee')}
+                        # Handle nested structure where IEEE is in device.ieee
+                        existing_member_set = set()
+                        for m in existing_members:
+                            if m:
+                                # Check if IEEE is directly on member or nested in device
+                                ieee = m.get('ieee') or (m.get('device', {}).get('ieee') if m.get('device') else None)
+                                endpoint_id = m.get('endpoint_id')
+                                if ieee and endpoint_id is not None:
+                                    existing_member_set.add((ieee.lower(), endpoint_id))
+                        
                         new_member_set = {(m['ieee'].lower(), m['endpoint_id']) for m in members}
                         
                         if existing_member_set != new_member_set:
                             logger.info(f"Updating members for group '{group_name}'")
+                            logger.info(f"  Existing members: {existing_member_set}")
+                            logger.info(f"  New members: {new_member_set}")
                             
                             # Remove members that shouldn't be in the group
                             to_remove = [{'ieee': ieee, 'endpoint_id': ep} 
                                        for ieee, ep in existing_member_set - new_member_set]
                             if to_remove:
-                                logger.debug(f"Removing {len(to_remove)} members from group {group_name}")
+                                logger.info(f"Removing {len(to_remove)} members from group {group_name}")
                                 for member in to_remove:
-                                    logger.debug(f"  Remove: IEEE={member['ieee']}, endpoint={member['endpoint_id']}")
-                                await self.manage_group(GroupCommand(
+                                    logger.info(f"  Remove: IEEE={member['ieee']}, endpoint={member['endpoint_id']}")
+                                result = await self.manage_group(GroupCommand(
                                     name=group_name,
                                     group_id=existing_group['group_id'],
                                     members=to_remove,
                                     operation='remove_members'
                                 ))
+                                if not result:
+                                    logger.error(f"Failed to remove members from group {group_name}")
                             
                             # Add new members
                             to_add = [{'ieee': ieee, 'endpoint_id': ep} 
                                     for ieee, ep in new_member_set - existing_member_set]
                             if to_add:
-                                await self.manage_group(GroupCommand(
+                                logger.info(f"Adding {len(to_add)} members to group {group_name}")
+                                for member in to_add:
+                                    logger.info(f"  Add: IEEE={member['ieee']}, endpoint={member['endpoint_id']}")
+                                result = await self.manage_group(GroupCommand(
                                     name=group_name,
                                     group_id=existing_group['group_id'],
                                     members=to_add,
                                     operation='add_members'
                                 ))
+                                if not result:
+                                    logger.error(f"Failed to add members to group {group_name}")
                         else:
                             logger.debug(f"Group '{group_name}' already has correct members")
                     
@@ -637,12 +657,15 @@ class ZigBeeController(LightController):
                 logger.error(f"Unknown group operation: {command.operation}")
                 return False
             
+            logger.debug(f"Sending group management message: {json.dumps(message, indent=2)}")
             result = await self.ws_client.send_message_wait_response(message)
             logger.info(f"Group operation {command.operation} completed for group {command.group_id}")
+            logger.debug(f"Result: {result}")
             return True
             
         except Exception as e:
             logger.error(f"Failed to manage ZHA group: {e}")
+            logger.error(f"Error details: {str(e)}")
             return False
 
 

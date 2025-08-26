@@ -784,6 +784,27 @@ class HomeAssistantWebSocketClient:
                 logger.error(f"Error in periodic light updater: {e}")
                 # Continue running even if there's an error
         
+    async def sync_zha_groups(self):
+        """Helper method to sync ZHA groups with areas."""
+        try:
+            logger.info("Syncing ZHA groups with Home Assistant areas...")
+            # Refresh device registry first
+            await self.get_device_registry()
+            
+            zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
+            if zigbee_controller:
+                areas_with_switches = set(self.device_to_area_mapping.values())
+                if areas_with_switches:
+                    logger.info(f"Found {len(areas_with_switches)} areas with switches")
+                    await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
+                    logger.info("ZHA group sync completed")
+                else:
+                    logger.warning("No areas with switches found")
+            else:
+                logger.warning("ZigBee controller not available for group sync")
+        except Exception as e:
+            logger.error(f"Failed to sync ZHA groups: {e}")
+    
     async def handle_zha_switch_press(self, device_id: str, command: str, button: str):
         """Handle ZHA switch button press.
         
@@ -843,6 +864,40 @@ class HomeAssistantWebSocketClient:
                 
                 if device_id and command and button:
                     await self.handle_zha_switch_press(device_id, command, button)
+            
+            # Handle device registry updates (when devices are added/removed/modified)
+            elif event_type == "device_registry_updated":
+                action = event_data.get("action")
+                device_id = event_data.get("device_id")
+                
+                logger.info(f"Device registry updated: action={action}, device_id={device_id}")
+                
+                # Trigger resync if a device was added, removed, or updated
+                if action in ["create", "update", "remove"]:
+                    await self.sync_zha_groups()
+            
+            # Handle area registry updates (when areas are added/removed/modified)
+            elif event_type == "area_registry_updated":
+                action = event_data.get("action")
+                area_id = event_data.get("area_id")
+                
+                logger.info(f"Area registry updated: action={action}, area_id={area_id}")
+                
+                # Always resync on area changes
+                await self.sync_zha_groups()
+            
+            # Handle entity registry updates (when entities change areas)
+            elif event_type == "entity_registry_updated":
+                action = event_data.get("action")
+                entity_id = event_data.get("entity_id")
+                changes = event_data.get("changes", {})
+                
+                # Check if area_id changed
+                if "area_id" in changes:
+                    old_area = changes["area_id"].get("old_value")
+                    new_area = changes["area_id"].get("new_value")
+                    logger.info(f"Entity {entity_id} moved from area {old_area} to {new_area}")
+                    await self.sync_zha_groups()
             
             # Handle state changes
             elif event_type == "state_changed":

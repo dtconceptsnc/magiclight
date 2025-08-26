@@ -1,5 +1,16 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.2.2
+
+- Auto-sync ZHA groups when devices change areas
+  - Added event listeners for device_registry_updated events
+  - Added event listeners for area_registry_updated events  
+  - Added event listeners for entity_registry_updated events
+  - Automatically resync ZHA groups when devices are added, removed, or moved between areas
+  - Fixed bug where existing group members were not properly detected (nested device structure)
+  - Enhanced logging to show group membership changes during sync
+  - Groups now properly remove devices when they're moved to different areas
+
 ## 2.2.1
 
 - Fixed initialization and ZHA group mapping

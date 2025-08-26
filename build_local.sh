@@ -68,8 +68,7 @@ docker run --rm -it --name builder --privileged \
     --test \
     --${ARCH} \
     -i magiclight-${ARCH} \
-    -d local \
-    --no-cache
+    -d local
 
 echo "Build complete! Image: local/magiclight-${ARCH}:latest"
 
