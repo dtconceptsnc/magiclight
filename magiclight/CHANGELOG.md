@@ -1,5 +1,39 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.2.0
+
+- Major refactor: Multi-protocol light controller architecture
+  - Created modular light_controller.py with protocol abstraction layer
+  - Support for multiple lighting protocols (ZigBee, Z-Wave, WiFi, Matter, HomeAssistant)
+  - Protocol-agnostic LightCommand interface for unified light control
+  - Automatic protocol detection based on device type
+  - Future-ready architecture for mixed-protocol environments
+
+- ZHA group synchronization with Home Assistant areas
+  - Automatically creates/updates ZHA groups to match HA areas on startup
+  - Groups named with "Glo_" prefix to avoid conflicts with other integrations
+  - Only creates groups for areas that have switches installed
+  - Syncs group membership when lights are added/removed from areas
+  - Removes obsolete groups when areas are deleted
+  - Improved device discovery using device registry identifiers
+  - Enhanced IEEE address extraction from HA device identifiers
+  - Better endpoint detection for different light types (Hue uses endpoint 11)
+
+- Enhanced debugging and logging
+  - Detailed logging for ZHA device discovery and group operations
+  - IEEE address and endpoint information logged for troubleshooting
+  - Group synchronization status reporting
+
+- Fixed WebSocket API implementation
+  - Corrected service call parameter structure for light control
+  - Added send_message_wait_response for synchronous WebSocket operations
+  - Improved error handling for WebSocket messages
+
+- Switch handling improvements
+  - Abstracted switch operations to use light controller
+  - Protocol-aware switch commands
+  - Better separation of switch logic from light implementation
+
 ## 2.1.11
 
 - Fix dimming to use saved designer curve parameters

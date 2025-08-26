@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import random
 
 from brain import calculate_dimming_step, DEFAULT_MAX_DIM_STEPS
+from light_controller import LightCommand, Protocol
 
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,14 @@ class SwitchCommandProcessor:
         self.client = websocket_client
         self.simulated_time_offset = timedelta(hours=0)  # Track time simulation offset
         self.last_off_hold_time = 0  # Track last time off_hold was processed
+        # Default protocol for switches - can be overridden per switch
+        self.default_protocol = Protocol.ZIGBEE
         
     async def process_button_press(self, device_id: str, command: str, button: str):
-        """Process a button press from a ZHA switch.
+        """Process a button press from a switch.
         
         Args:
-            device_id: The device ID from ZHA
+            device_id: The device ID
             command: The command (e.g., 'on_press', 'off_press', 'up_press', 'down_press')
             button: The button identifier (e.g., 'on', 'off', 'up', 'down')
         """
@@ -53,13 +56,26 @@ class SwitchCommandProcessor:
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
 
+    def get_protocol_for_device(self, device_id: str) -> Protocol:
+        """Determine the protocol for a given device.
+        
+        Args:
+            device_id: The device ID
+            
+        Returns:
+            The protocol to use for this device
+        """
+        # In the future, this could look up device info to determine protocol
+        # For now, return the default protocol
+        return self.default_protocol
+
     async def _handle_off_triple_press(self, device_id: str):
         """Handle the OFF button triple press - set random RGB color.
         
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Off button TRIPLE PRESSED on ZHA device: {device_id} - Setting random RGB color!")
+        logger.info(f"Off button TRIPLE PRESSED on device: {device_id} - Setting random RGB color!")
         
         area_id = self.client.device_to_area_mapping.get(device_id)
         if not area_id:
@@ -72,16 +88,29 @@ class SwitchCommandProcessor:
         
         logger.info(f"Random RGB color for area {area_id}: R={r}, G={g}, B={b}")
         
-        await self.client.disable_magic_mode(area_id,False)
+        # Disable magic mode
+        await self.client.disable_magic_mode(area_id, False)
         
-        service_data = {
-            "area_id": area_id,
-            "rgb_color": [r, g, b],
-            "brightness_pct": 80,
-            "transition": 0.5
-        }
+        # Use light controller to set random color
+        if self.client.light_controller:
+            command = LightCommand(
+                area=area_id,
+                rgb_color=(r, g, b),
+                brightness=int(0.8 * 255),  # 80% brightness
+                transition=0.5,
+                on=True
+            )
+            protocol = self.get_protocol_for_device(device_id)
+            await self.client.light_controller.turn_on_lights(command, protocol=protocol)
+        else:
+            # Fallback to direct service call
+            service_data = {
+                "rgb_color": [r, g, b],
+                "brightness_pct": 80,
+                "transition": 0.5
+            }
+            await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
         
-        await self.client.call_service("light", "turn_on", service_data)
         logger.info(f"Set lights in area {area_id} to random RGB color: ({r}, {g}, {b})")
     
     async def _handle_off_button_press(self, device_id: str):
@@ -90,7 +119,7 @@ class SwitchCommandProcessor:
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Off button pressed on ZHA device: {device_id}")
+        logger.info(f"Off button pressed on device: {device_id}")
         
         # Get area for this device
         area_id = self.client.device_to_area_mapping.get(device_id)
@@ -122,7 +151,7 @@ class SwitchCommandProcessor:
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Top button (ON) pressed on ZHA device: {device_id}")
+        logger.info(f"Top button (ON) pressed on device: {device_id}")
         
         # Get area for this device
         area_id = self.client.device_to_area_mapping.get(device_id)
@@ -143,11 +172,11 @@ class SwitchCommandProcessor:
         
         if any_light_on:
             # Turn off all lights in the area and disable magic mode (no flash when turning off)
-            await self._turn_off_lights(area_id)
+            await self._turn_off_lights(area_id, device_id)
             await self.client.disable_magic_mode(area_id, flash=False)
         else:
             # Turn on all lights with adaptive lighting and enable magic mode
-            await self._turn_on_lights_adaptive(area_id)
+            await self._turn_on_lights_adaptive(area_id, device_id)
             self.client.enable_magic_mode(area_id)  # This will reset time offset to 0
             
     async def _handle_off_button_hold(self, device_id: str):
@@ -164,7 +193,7 @@ class SwitchCommandProcessor:
             return
         
         self.last_off_hold_time = current_time
-        logger.info(f"Off button HELD on ZHA device: {device_id} - Simulating time +1 hour")
+        logger.info(f"Off button HELD on device: {device_id} - Simulating time +1 hour")
         
         # Get area for this device
         area_id = self.client.device_to_area_mapping.get(device_id)
@@ -178,7 +207,7 @@ class SwitchCommandProcessor:
         logger.info(f"Time simulation: +{total_hours} hour(s) from current time")
         
         # Calculate what the lighting should be at the simulated time
-        await self._set_lights_for_simulated_time(area_id)
+        await self._set_lights_for_simulated_time(area_id, device_id)
         
     async def _handle_off_button_release(self, device_id: str):
         """Handle the OFF button release - reset time simulation.
@@ -186,7 +215,7 @@ class SwitchCommandProcessor:
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Off button RELEASED on ZHA device: {device_id} - Resetting time simulation")
+        logger.info(f"Off button RELEASED on device: {device_id} - Resetting time simulation")
         
         # Reset simulated time offset
         self.simulated_time_offset = timedelta(hours=0)
@@ -199,7 +228,7 @@ class SwitchCommandProcessor:
             return
         
         # Set lights back to current time adaptive values
-        await self._turn_on_lights_adaptive(area_id)
+        await self._turn_on_lights_adaptive(area_id, device_id)
         
     async def _handle_up_button_press(self, device_id: str):
         """Handle the UP button press for dimming up.
@@ -207,7 +236,7 @@ class SwitchCommandProcessor:
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Up button pressed on ZHA device: {device_id}")
+        logger.info(f"Up button pressed on device: {device_id}")
         
         # Get area for this device
         area_id = self.client.device_to_area_mapping.get(device_id)
@@ -216,7 +245,7 @@ class SwitchCommandProcessor:
             return
         
         # Increase brightness
-        await self.dim_up(area_id)
+        await self.dim_up(area_id, device_id)
         
     async def _handle_down_button_press(self, device_id: str):
         """Handle the DOWN button press for dimming down.
@@ -224,7 +253,7 @@ class SwitchCommandProcessor:
         Args:
             device_id: The device ID that triggered the event
         """
-        logger.info(f"Down button pressed on ZHA device: {device_id}")
+        logger.info(f"Down button pressed on device: {device_id}")
         
         # Get area for this device
         area_id = self.client.device_to_area_mapping.get(device_id)
@@ -233,27 +262,39 @@ class SwitchCommandProcessor:
             return
         
         # Decrease brightness
-        await self.dim_down(area_id)
+        await self.dim_down(area_id, device_id)
         
-    async def _turn_off_lights(self, area_id: str):
+    async def _turn_off_lights(self, area_id: str, device_id: str):
         """Turn off all lights in an area.
         
         Args:
             area_id: The area ID to control
+            device_id: The device ID that triggered this action
         """
         logger.info(f"Turning all lights OFF in area {area_id}")
-        service_data = {
-            "area_id": area_id,
-            "transition": 1  # 1 second transition
-        }
-        await self.client.call_service("light", "turn_off", service_data)
+        
+        # Use light controller if available
+        if self.client.light_controller:
+            command = LightCommand(
+                area=area_id,
+                transition=1.0,
+                on=False
+            )
+            protocol = self.get_protocol_for_device(device_id)
+            await self.client.light_controller.turn_off_lights(command, protocol=protocol)
+        else:
+            # Fallback to direct service call
+            service_data = {"transition": 1}
+            await self.client.call_service("light", "turn_off", service_data, {"area_id": area_id})
+        
         logger.info(f"Turned off all lights in area {area_id}")
         
-    async def _turn_on_lights_adaptive(self, area_id: str):
+    async def _turn_on_lights_adaptive(self, area_id: str, device_id: str):
         """Turn on all lights in an area with adaptive lighting.
         
         Args:
             area_id: The area ID to control
+            device_id: The device ID that triggered this action
         """
         logger.info(f"Turning lights ON with adaptive settings in area {area_id}")
         
@@ -261,13 +302,23 @@ class SwitchCommandProcessor:
         if not self.client.sun_data:
             logger.warning("No sun data available for adaptive lighting")
             # Fall back to default white light
-            service_data = {
-                "area_id": area_id,
-                "kelvin": 3500,  # Neutral white
-                "brightness_pct": 80,
-                "transition": 1
-            }
-            await self.client.call_service("light", "turn_on", service_data)
+            if self.client.light_controller:
+                command = LightCommand(
+                    area=area_id,
+                    color_temp=3500,  # Neutral white
+                    brightness=int(0.8 * 255),  # 80% brightness
+                    transition=1.0,
+                    on=True
+                )
+                protocol = self.get_protocol_for_device(device_id)
+                await self.client.light_controller.turn_on_lights(command, protocol=protocol)
+            else:
+                service_data = {
+                    "kelvin": 3500,
+                    "brightness_pct": 80,
+                    "transition": 1
+                }
+                await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
         else:
             # Use centralized method to get adaptive lighting values
             adaptive_values = await self.client.get_adaptive_lighting_for_area(area_id)
@@ -275,11 +326,12 @@ class SwitchCommandProcessor:
             await self.client.turn_on_lights_adaptive(area_id, adaptive_values, transition=1)
         logger.info(f"Turned on lights in area {area_id} with adaptive settings")
         
-    async def dim_up(self, area_id: str, increment_pct: int = 17):
+    async def dim_up(self, area_id: str, device_id: str, increment_pct: int = 17):
         """Increase brightness - in magic mode, move along the adaptive curve.
         
         Args:
             area_id: The area ID to control
+            device_id: The device ID that triggered this action
             increment_pct: Percentage to increase brightness (default 17%) - used only when not in magic mode
         """
         # Check if area is in magic mode
@@ -357,20 +409,30 @@ class SwitchCommandProcessor:
                 return
             else:
                 # Increase brightness of lights that are on
-                service_data = {
-                    "area_id": area_id,
-                    "brightness_step_pct": increment_pct,
-                    "transition": 1
-                }
-            
-                await self.client.call_service("light", "turn_on", service_data)
+                if self.client.light_controller:
+                    # Use brightness step command via light controller
+                    # This requires getting current state and calculating new brightness
+                    # For now, use direct service call for brightness stepping
+                    service_data = {
+                        "brightness_step_pct": increment_pct,
+                        "transition": 1
+                    }
+                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+                else:
+                    service_data = {
+                        "brightness_step_pct": increment_pct,
+                        "transition": 1
+                    }
+                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+                
                 logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
         
-    async def dim_down(self, area_id: str, decrement_pct: int = 17):
+    async def dim_down(self, area_id: str, device_id: str, decrement_pct: int = 17):
         """Decrease brightness - in magic mode, move along the adaptive curve.
         
         Args:
             area_id: The area ID to control
+            device_id: The device ID that triggered this action
             decrement_pct: Percentage to decrease brightness (default 17%) - used only when not in magic mode
         """
         # Check if area is in magic mode
@@ -483,25 +545,36 @@ class SwitchCommandProcessor:
             # If dimming would turn lights off (brightness <= decrement), turn them off instead
             if avg_brightness <= decrement_pct:
                 logger.info(f"Dimming by {decrement_pct}% would turn lights off, turning off instead")
-                await self._turn_off_lights(area_id)
+                await self._turn_off_lights(area_id, device_id)
             else:
                 # Decrease brightness of lights that are on
-                service_data = {
-                    "area_id": area_id,
-                    "brightness_step_pct": -decrement_pct,  # Negative value to decrease
-                    "transition": 0.5
-                }
+                if self.client.light_controller:
+                    # Use brightness step command via service call for now
+                    service_data = {
+                        "brightness_step_pct": -decrement_pct,  # Negative value to decrease
+                        "transition": 0.5
+                    }
+                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+                else:
+                    service_data = {
+                        "brightness_step_pct": -decrement_pct,
+                        "transition": 0.5
+                    }
+                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
                 
-                await self.client.call_service("light", "turn_on", service_data)
                 logger.info(f"Brightness decreased by {decrement_pct}% in area {area_id}")
             
-    async def _set_lights_for_simulated_time(self, area_id: str) -> None:
+    async def _set_lights_for_simulated_time(self, area_id: str, device_id: str) -> None:
         """
         Push the lights in *area_id* to whatever they should look like at
         (now + self.simulated_time_offset).  Uses the same adaptive-lighting
         brain as a normal ON-press so the maths can never drift.
+        
+        Args:
+            area_id: The area to control
+            device_id: The device that triggered this action
         """
-        # 1. work out the pretend “current” time -----------------------------
+        # 1. work out the pretend "current" time -----------------------------
         tzinfo = ZoneInfo(getattr(self.client, "timezone", "UTC"))
         simulated_time = (datetime.now(tzinfo) + self.simulated_time_offset)
         logger.info("Setting lights for simulated time: %s",

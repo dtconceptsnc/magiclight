@@ -14,6 +14,12 @@ from websockets.client import WebSocketClientProtocol
 
 from switch import SwitchCommandProcessor
 from brain import get_adaptive_lighting, ColorMode
+from light_controller import (
+    LightControllerFactory,
+    MultiProtocolController,
+    LightCommand,
+    Protocol
+)
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +52,7 @@ class HomeAssistantWebSocketClient:
         self.device_to_area_mapping = {}  # Map device IDs to areas
         self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
         self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
+        self.light_controller = None  # Will be initialized after websocket connection
         self.latitude = None  # Home Assistant latitude
         self.longitude = None  # Home Assistant longitude
         self.timezone = None  # Home Assistant timezone
@@ -56,12 +63,17 @@ class HomeAssistantWebSocketClient:
         self.last_states_update = None  # Timestamp of last states update
         
         # Color mode configuration - defaults to XY
-        color_mode_str = os.getenv("COLOR_MODE", "xy")
+        color_mode_str = os.getenv("COLOR_MODE", "xy").lower()
         try:
-            self.color_mode = ColorMode[color_mode_str]
-        except KeyError:
-            logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to XY")
-            self.color_mode = ColorMode.XY
+            # Try to get by value (lowercase) first
+            self.color_mode = ColorMode(color_mode_str)
+        except ValueError:
+            # Try uppercase enum name as fallback
+            try:
+                self.color_mode = ColorMode[color_mode_str.upper()]
+            except KeyError:
+                logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to XY")
+                self.color_mode = ColorMode.XY
         logger.info(f"Using color mode: {self.color_mode.value}")
         
         # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py
@@ -141,7 +153,7 @@ class HomeAssistantWebSocketClient:
         
         return message_id
         
-    async def call_service(self, domain: str, service: str, service_data: Dict[str, Any]) -> int:
+    async def call_service(self, domain: str, service: str, service_data: Dict[str, Any], target: Optional[Dict[str, Any]] = None) -> int:
         """Call a Home Assistant service.
         
         Args:
@@ -154,25 +166,37 @@ class HomeAssistantWebSocketClient:
         """
         message_id = self._get_next_message_id()
         
+        # Handle target parameter separately from service_data
+        final_target = target or {}
+        final_service_data = service_data.copy() if service_data else {}
+        
+        # Extract area_id or entity_id from service_data if present (legacy support)
+        if "area_id" in final_service_data:
+            final_target["area_id"] = final_service_data.pop("area_id")
+        if "entity_id" in final_service_data:
+            final_target["entity_id"] = final_service_data.pop("entity_id")
+        
         # If area_id is provided and we have a ZHA group entity for that area, use it instead
-        if "area_id" in service_data and domain == "light":
-            area_id = service_data["area_id"]
+        if "area_id" in final_target and domain == "light":
+            area_id = final_target["area_id"]
             # Try to find a ZHA group entity for this area
             light_entity = self.area_to_light_entity.get(area_id)
             if light_entity:
                 logger.info(f"Using ZHA group entity {light_entity} instead of area_id {area_id}")
                 # Replace area_id with entity_id
-                service_data = service_data.copy()  # Don't modify original
-                del service_data["area_id"]
-                service_data["entity_id"] = light_entity
+                final_target = {"entity_id": light_entity}
         
         service_msg = {
             "id": message_id,
             "type": "call_service",
             "domain": domain,
-            "service": service,
-            "service_data": service_data
+            "service": service
         }
+        
+        if final_service_data:
+            service_msg["service_data"] = final_service_data
+        if final_target:
+            service_msg["target"] = final_target
 
         logger.info(f"Sending service call: {domain}.{service} (id: {message_id})")
         await self.websocket.send(json.dumps(service_msg))
@@ -181,37 +205,64 @@ class HomeAssistantWebSocketClient:
         return message_id
         
     async def turn_on_lights_adaptive(self, area_id: str, adaptive_values: Dict[str, Any], transition: int = 1) -> None:
-        """Turn on lights with adaptive values using the configured color mode.
+        """Turn on lights with adaptive values using the light controller.
         
         Args:
             area_id: The area ID to control lights in
             adaptive_values: Adaptive lighting values from get_adaptive_lighting
             transition: Transition time in seconds (default 1)
         """
-        # Build the base service data
-        service_data = {
-            "area_id": area_id,
-            "brightness_pct": adaptive_values['brightness'],
-            "transition": transition
-        }
+        # Create light command - only set ONE color mode
+        command = LightCommand(
+            area=area_id,
+            brightness=int(adaptive_values['brightness'] * 255 / 100),  # Convert to 0-255
+            color_temp=adaptive_values['kelvin'] if self.color_mode == ColorMode.KELVIN else None,
+            rgb_color=tuple(adaptive_values['rgb']) if self.color_mode == ColorMode.RGB else None,
+            xy_color=tuple(adaptive_values['xy']) if self.color_mode == ColorMode.XY else None,
+            transition=float(transition),
+            on=True
+        )
         
-        # Add color data based on the configured color mode
-        if self.color_mode == ColorMode.KELVIN:
-            service_data["kelvin"] = adaptive_values['kelvin']
-            logger.info(f"Turning on lights in {area_id}: {adaptive_values['kelvin']}K @ {adaptive_values['brightness']}%")
-        elif self.color_mode == ColorMode.RGB:
-            rgb = adaptive_values['rgb']
-            service_data["rgb_color"] = rgb
-            logger.info(f"Turning on lights in {area_id}: RGB({rgb[0]},{rgb[1]},{rgb[2]}) @ {adaptive_values['brightness']}%")
-        elif self.color_mode == ColorMode.XY:
-            xy = adaptive_values['xy']
-            service_data["xy_color"] = xy
-            logger.info(f"Turning on lights in {area_id}: XY({xy[0]:.4f},{xy[1]:.4f}) @ {adaptive_values['brightness']}%")
+        # Use light controller to turn on lights
+        if self.light_controller:
+            # Use ZigBee protocol for ZHA switches
+            await self.light_controller.turn_on_lights(command, protocol=Protocol.ZIGBEE)
+        else:
+            # Fallback to direct service call (legacy)
+            service_data = {
+                "brightness_pct": adaptive_values['brightness'],
+                "transition": transition
+            }
+            
+            # Add color data based on the configured color mode
+            if self.color_mode == ColorMode.KELVIN:
+                service_data["kelvin"] = adaptive_values['kelvin']
+            elif self.color_mode == ColorMode.RGB:
+                service_data["rgb_color"] = adaptive_values['rgb']
+            elif self.color_mode == ColorMode.XY:
+                service_data["xy_color"] = adaptive_values['xy']
+            
+            await self.call_service("light", "turn_on", service_data, {"area_id": area_id})
         
-        await self.call_service("light", "turn_on", service_data)
-        
-    async def get_states(self) -> int:
+    async def get_states(self) -> List[Dict[str, Any]]:
         """Get all entity states.
+        
+        Returns:
+            List of entity states, or empty list if failed
+        """
+        result = await self.send_message_wait_response({"type": "get_states"})
+        if result and isinstance(result, list):
+            # Update cache
+            self.cached_states.clear()
+            for state in result:
+                entity_id = state.get("entity_id", "")
+                if entity_id:
+                    self.cached_states[entity_id] = state
+            return result
+        return list(self.cached_states.values()) if self.cached_states else []
+    
+    async def request_states(self) -> int:
+        """Request all entity states (legacy method for initialization).
         
         Returns:
             Message ID of the request
@@ -228,23 +279,40 @@ class HomeAssistantWebSocketClient:
         
         return message_id
         
-    async def get_device_registry(self) -> int:
-        """Get device registry information.
+    async def get_device_registry(self) -> Dict[str, str]:
+        """Get device registry information and wait for switches to be mapped.
         
         Returns:
-            Message ID of the request
+            Dictionary mapping device IDs to area IDs for switches
         """
-        message_id = self._get_next_message_id()
+        result = await self.send_message_wait_response({"type": "config/device_registry/list"})
         
-        device_msg = {
-            "id": message_id,
-            "type": "config/device_registry/list"
-        }
+        if result and isinstance(result, list):
+            # Process device registry to find switches
+            for device in result:
+                device_id = device.get("id")
+                area_id = device.get("area_id")
+                name = (device.get("name_by_user") or "")
+                model = device.get("model", "")
+                
+                if device_id and area_id and "switch" in name.lower():
+                    self.device_to_area_mapping[device_id] = area_id
+                    logger.info(f"Mapped device {device_id} ({name}, {model}) to area {area_id}")
+            
+            # Log summary of discovered switches
+            if self.device_to_area_mapping:
+                logger.info("=== Discovered Switches ===")
+                logger.info(f"Found {len(self.device_to_area_mapping)} switches:")
+                for dev_id, area in self.device_to_area_mapping.items():
+                    logger.info(f"  - Device ID: {dev_id} -> Area: {area}")
+                logger.info("=========================")
+                
+                areas_with_switches = set(self.device_to_area_mapping.values())
+                logger.info(f"Found {len(areas_with_switches)} areas with switches")
+            else:
+                logger.warning("No switches found in device registry")
         
-        await self.websocket.send(json.dumps(device_msg))
-        logger.info(f"Requested device registry (id: {message_id})")
-        
-        return message_id
+        return self.device_to_area_mapping
         
     async def get_config(self) -> int:
         """Get Home Assistant configuration.
@@ -394,20 +462,18 @@ class HomeAssistantWebSocketClient:
                 
                 # Quick dim to 30%
                 await self.call_service("light", "turn_on", {
-                    "area_id": area_id,
                     "brightness_pct": 30,
                     "transition": 0.2
-                })
+                }, {"area_id": area_id})
                 
                 # Brief pause
                 await asyncio.sleep(0.3)
                 
                 # Back to full brightness
                 await self.call_service("light", "turn_on", {
-                    "area_id": area_id,
                     "brightness_pct": 100,
                     "transition": 0.2
-                })
+                }, {"area_id": area_id})
     
     async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None, apply_time_offset: bool = True) -> Dict[str, Any]:
         """Get adaptive lighting values for a specific area.
@@ -712,16 +778,16 @@ class HomeAssistantWebSocketClient:
                         attributes = new_state.get("attributes", {})
                         friendly_name = attributes.get("friendly_name", "")
                         
-                        if "light_" in entity_id.lower() or "light_" in friendly_name.lower():
+                        if "glo_" in entity_id.lower() or "glo_" in friendly_name.lower():
                             area_name = None
                             
-                            if "light_" in entity_id.lower():
-                                parts = entity_id.lower().split("light_")
+                            if "glo_" in entity_id.lower():
+                                parts = entity_id.lower().split("glo_")
                                 if len(parts) >= 2:
                                     area_name = parts[-1]
                             
-                            if not area_name and "light_" in friendly_name.lower():
-                                parts = friendly_name.lower().split("light_")
+                            if not area_name and "glo_" in friendly_name.lower():
+                                parts = friendly_name.lower().split("glo_")
                                 if len(parts) >= 2:
                                     area_name = parts[-1].strip()
                             
@@ -803,28 +869,28 @@ class HomeAssistantWebSocketClient:
                             self.sun_data = attributes
                             logger.info(f"Initial sun data: elevation={self.sun_data.get('elevation')}")
                         
-                        # Detect ZHA group light entities (Light_AREA pattern)
+                        # Detect ZHA group light entities (Glo_AREA pattern)
                         if entity_id.startswith("light."):
-                            # Check both entity_id and friendly_name for Light_ pattern
+                            # Check both entity_id and friendly_name for Glo_ pattern
                             friendly_name = attributes.get("friendly_name", "")
                             
                             # Debug log all light entities
                             logger.debug(f"Light entity: {entity_id}, friendly_name: {friendly_name}")
                             
-                            # Check if Light_ appears in either entity_id or friendly_name
-                            if "light_" in entity_id.lower() or "light_" in friendly_name.lower():
+                            # Check if Glo_ appears in either entity_id or friendly_name
+                            if "glo_" in entity_id.lower() or "glo_" in friendly_name.lower():
                                 # Try to extract area name
                                 area_name = None
                                 
                                 # First try from entity_id
-                                if "light_" in entity_id.lower():
-                                    parts = entity_id.lower().split("light_")
+                                if "glo_" in entity_id.lower():
+                                    parts = entity_id.lower().split("glo_")
                                     if len(parts) >= 2:
-                                        area_name = parts[-1]  # Get everything after last "light_"
+                                        area_name = parts[-1]  # Get everything after last "glo_"
                                 
                                 # If not found, try from friendly_name
-                                if not area_name and "light_" in friendly_name.lower():
-                                    parts = friendly_name.lower().split("light_")
+                                if not area_name and "glo_" in friendly_name.lower():
+                                    parts = friendly_name.lower().split("glo_")
                                     if len(parts) >= 2:
                                         area_name = parts[-1].strip()
                                 
@@ -855,7 +921,7 @@ class HomeAssistantWebSocketClient:
                             logger.info(f"  - Area: {area} -> Entity: {entity}")
                         logger.info("="*40)
                     else:
-                        logger.warning("No ZHA group light entities found (looking for 'Light_' pattern)")
+                        logger.warning("No ZHA group light entities found (looking for 'Glo_' pattern)")
             
             # Handle config result
             elif result and isinstance(result, dict):
@@ -879,6 +945,51 @@ class HomeAssistantWebSocketClient:
         else:
             logger.debug(f"Received message type: {msg_type}")
             
+    async def send_message_wait_response(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Send a message and wait for its specific response.
+        
+        Args:
+            message: The message to send (without id)
+            
+        Returns:
+            The result from the response, or None if failed
+        """
+        if not self.websocket:
+            logger.error("WebSocket not connected")
+            return None
+            
+        # Add message ID
+        message["id"] = self._get_next_message_id()
+        msg_id = message["id"]
+        
+        # Send the message
+        await self.websocket.send(json.dumps(message))
+        
+        # Wait for response with timeout
+        timeout = 10  # seconds
+        start_time = asyncio.get_event_loop().time()
+        
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            try:
+                response = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
+                data = json.loads(response)
+                
+                if data.get("id") == msg_id:
+                    if data["type"] == "result":
+                        return data.get("result")
+                    elif data.get("error"):
+                        logger.error(f"Error response: {data['error']}")
+                        return None
+                        
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Error waiting for response: {e}")
+                return None
+                
+        logger.error(f"Timeout waiting for response to message {msg_id}")
+        return None
+    
     async def listen(self):
         """Main listener loop."""
         try:
@@ -892,14 +1003,39 @@ class HomeAssistantWebSocketClient:
                     logger.error("Failed to authenticate")
                     return
                     
+                # Initialize light controller with websocket client
+                self.light_controller = MultiProtocolController(self)
+                self.light_controller.add_controller(Protocol.ZIGBEE)
+                self.light_controller.add_controller(Protocol.HOMEASSISTANT)
+                logger.info("Initialized multi-protocol light controller")
+                    
                 # Get initial states to populate mappings and sun data
-                await self.get_states()
+                await self.request_states()
                 
-                # Get device registry to map devices to areas
-                await self.get_device_registry()
+                # Get device registry to map devices to areas (now waits for completion)
+                device_mapping = await self.get_device_registry()
                 
                 # Get Home Assistant configuration (lat/lng/tz)
                 await self.get_config()
+                
+                # Sync ZHA groups with areas that have switches
+                logger.info("Synchronizing ZHA groups with Home Assistant areas...")
+                try:
+                    zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
+                    if zigbee_controller:
+                        # Get areas that have switches from the device mapping
+                        areas_with_switches = set(self.device_to_area_mapping.values())
+                        if areas_with_switches:
+                            logger.info(f"Found {len(areas_with_switches)} areas with switches: {areas_with_switches}")
+                            await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
+                        else:
+                            logger.warning("No areas with switches found, skipping group creation")
+                        logger.info("ZHA group synchronization complete")
+                    else:
+                        logger.warning("ZigBee controller not found, skipping group sync")
+                except Exception as e:
+                    logger.error(f"Failed to sync ZHA groups: {e}")
+                    # Continue anyway - not critical for operation
                 
                 # Subscribe to all events
                 await self.subscribe_events()
