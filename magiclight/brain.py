@@ -43,8 +43,8 @@ DEFAULT_MIN_COLOR_TEMP = int(os.getenv("MIN_COLOR_TEMP", "500"))  # Warm white (
 DEFAULT_MAX_COLOR_TEMP = int(os.getenv("MAX_COLOR_TEMP", "6500"))  # Cool daylight
 
 # Default brightness range (percentage)
-DEFAULT_MIN_BRIGHTNESS = 1
-DEFAULT_MAX_BRIGHTNESS = 100
+DEFAULT_MIN_BRIGHTNESS = int(os.getenv("MIN_BRIGHTNESS", "1"))
+DEFAULT_MAX_BRIGHTNESS = int(os.getenv("MAX_BRIGHTNESS", "100"))
 
 # Default dimming steps (for arc-based dimming)
 DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "8"))
@@ -638,6 +638,10 @@ def calculate_dimming_step(
     longitude: Optional[float] = None,
     timezone: Optional[str] = None,
     max_steps: int = DEFAULT_MAX_DIM_STEPS,
+    min_color_temp: int = DEFAULT_MIN_COLOR_TEMP,
+    max_color_temp: int = DEFAULT_MAX_COLOR_TEMP,
+    min_brightness: int = DEFAULT_MIN_BRIGHTNESS,
+    max_brightness: int = DEFAULT_MAX_BRIGHTNESS,
     # Allow overriding curve parameters (optional)
     morning_bri_params: Optional[Dict[str, float]] = None,
     morning_cct_params: Optional[Dict[str, float]] = None,
@@ -653,6 +657,10 @@ def calculate_dimming_step(
         longitude: Location longitude
         timezone: Timezone string
         max_steps: Maximum number of steps in the dimming arc
+        min_color_temp: Minimum color temperature in Kelvin
+        max_color_temp: Maximum color temperature in Kelvin
+        min_brightness: Minimum brightness percentage
+        max_brightness: Maximum brightness percentage
         *_params: Optional curve parameter overrides
         
     Returns:
@@ -680,6 +688,10 @@ def calculate_dimming_step(
 
     # Prepare curve parameters
     kwargs = {
+        "min_color_temp": min_color_temp,
+        "max_color_temp": max_color_temp,
+        "min_brightness": min_brightness,
+        "max_brightness": max_brightness,
         "sunrise_time": solar_events["sunrise"],
         "sunset_time": solar_events["sunset"],
         "solar_noon": solar_noon,
@@ -723,6 +735,10 @@ def get_adaptive_lighting(
     longitude: Optional[float] = None,
     timezone: Optional[str] = None,
     current_time: Optional[datetime] = None,
+    min_color_temp: int = DEFAULT_MIN_COLOR_TEMP,
+    max_color_temp: int = DEFAULT_MAX_COLOR_TEMP,
+    min_brightness: int = DEFAULT_MIN_BRIGHTNESS,
+    max_brightness: int = DEFAULT_MAX_BRIGHTNESS,
     # Allow overriding curve parameters (optional)
     morning_bri_params: Optional[Dict[str, float]] = None,
     morning_cct_params: Optional[Dict[str, float]] = None,
@@ -735,6 +751,12 @@ def get_adaptive_lighting(
     to pull them from the conventional Home Assistant env-vars.  Failing that
     it falls back to the system local timezone, and raises if lat/lon remain
     undefined.
+    
+    Args:
+        min_color_temp: Minimum color temperature in Kelvin
+        max_color_temp: Maximum color temperature in Kelvin
+        min_brightness: Minimum brightness percentage
+        max_brightness: Maximum brightness percentage
     
     The optional curve parameter dicts can contain: mid, steep, decay, gain, offset
     """
@@ -763,6 +785,10 @@ def get_adaptive_lighting(
 
     # Prepare curve parameters (use provided or defaults)
     kwargs = {
+        "min_color_temp": min_color_temp,
+        "max_color_temp": max_color_temp,
+        "min_brightness": min_brightness,
+        "max_brightness": max_brightness,
         "sunrise_time": solar_events["sunrise"],
         "sunset_time": solar_events["sunset"],
         "solar_noon": solar_noon,

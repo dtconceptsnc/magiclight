@@ -1,5 +1,24 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.0
+
+- Adaptive lighting dimming improvements
+  - Fixed dimming buttons to respect min/max color temperature boundaries
+  - Fixed dimming buttons to respect min/max brightness boundaries
+  - Added support for configurable min/max values via environment variables
+  - Dimming step calculations now properly use user-configured limits
+
+- Time offset persistence
+  - Time offsets are now saved when lights are turned off
+  - Saved offsets are automatically restored when lights are turned on
+  - Offsets persist across addon restarts
+  - Each room maintains its own independent time offset preference
+
+- Code improvements
+  - Removed flash functionality from disable_magic_mode
+  - Consolidated data directory handling into single method
+  - Improved offset management for better user experience
+
 ## 2.2.2
 
 - Auto-sync ZHA groups when devices change areas

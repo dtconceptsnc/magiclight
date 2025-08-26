@@ -171,13 +171,13 @@ class SwitchCommandProcessor:
                 break
         
         if any_light_on:
-            # Turn off all lights in the area and disable magic mode (no flash when turning off)
+            # Turn off all lights in the area and disable magic mode (saves current offset)
             await self._turn_off_lights(area_id, device_id)
-            await self.client.disable_magic_mode(area_id, flash=False)
+            await self.client.disable_magic_mode(area_id)  # This saves the current offset
         else:
-            # Turn on all lights with adaptive lighting and enable magic mode
+            # Turn on all lights with adaptive lighting and enable magic mode (restores saved offset)
+            self.client.enable_magic_mode(area_id,True)  # This restores saved offset if available
             await self._turn_on_lights_adaptive(area_id, device_id)
-            self.client.enable_magic_mode(area_id)  # This will reset time offset to 0
             
     async def _handle_off_button_hold(self, device_id: str):
         """Handle the OFF button hold - simulate time moving forward by 1 hour.

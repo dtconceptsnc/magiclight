@@ -59,6 +59,7 @@ class HomeAssistantWebSocketClient:
         self.periodic_update_task = None  # Task for periodic light updates
         self.magic_mode_areas = set()  # Track which areas are in magic mode
         self.magic_mode_time_offsets = {}  # Track time offsets for dimming along curve
+        self.saved_time_offsets = {}  # Saved time offsets when lights are turned off
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         
@@ -78,6 +79,9 @@ class HomeAssistantWebSocketClient:
         
         # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py
         # The new curve system provides separate control for morning and evening transitions
+        
+        # Load saved time offsets on startup
+        self.load_saved_offsets()
         
     @property
     def websocket_url(self) -> str:
@@ -504,25 +508,78 @@ class HomeAssistantWebSocketClient:
         
         return list(areas_with_switches)
     
-    def enable_magic_mode(self, area_id: str):
+    def _get_data_directory(self) -> str:
+        """Get the appropriate data directory based on environment.
+        
+        Returns:
+            Path to the data directory
+        """
+        if os.path.exists("/data"):
+            # Running in Home Assistant
+            return "/data"
+        else:
+            # Running in development - use local .data directory
+            data_dir = os.path.join(os.path.dirname(__file__), ".data")
+            os.makedirs(data_dir, exist_ok=True)
+            return data_dir
+    
+    def load_saved_offsets(self):
+        """Load saved time offsets from disk."""
+        try:
+            data_dir = self._get_data_directory()
+            offsets_file = os.path.join(data_dir, "saved_offsets.json")
+            if os.path.exists(offsets_file):
+                with open(offsets_file, 'r') as f:
+                    self.saved_time_offsets = json.load(f)
+                    logger.info(f"Loaded saved time offsets: {self.saved_time_offsets}")
+            else:
+                logger.info("No saved time offsets found")
+        except Exception as e:
+            logger.warning(f"Failed to load saved time offsets: {e}")
+            
+    def save_offsets(self):
+        """Save time offsets to disk."""
+        try:
+            data_dir = self._get_data_directory()
+            offsets_file = os.path.join(data_dir, "saved_offsets.json")
+            with open(offsets_file, 'w') as f:
+                json.dump(self.saved_time_offsets, f)
+                logger.debug(f"Saved time offsets: {self.saved_time_offsets}")
+        except Exception as e:
+            logger.warning(f"Failed to save time offsets: {e}")
+    
+    def enable_magic_mode(self, area_id: str, restore_offset: bool = False):
         """Enable magic mode for an area.
         
         Args:
             area_id: The area ID to enable magic mode for
+            restore_offset: Whether to restore saved time offset if available
         """
         self.magic_mode_areas.add(area_id)
-        self.magic_mode_time_offsets[area_id] = 0  # Reset time offset
-        logger.info(f"Magic mode enabled for area {area_id}")
+        
+        # Restore saved offset if available, otherwise reset to 0
+        if restore_offset and area_id in self.saved_time_offsets:
+            self.magic_mode_time_offsets[area_id] = self.saved_time_offsets[area_id]
+            logger.info(f"Magic mode enabled for area {area_id}, restored offset: {self.saved_time_offsets[area_id]} minutes")
+        else:
+            self.magic_mode_time_offsets[area_id] = 0  # Reset time offset
+            logger.info(f"Magic mode enabled for area {area_id}, offset reset to 0")
     
-    async def disable_magic_mode(self, area_id: str, flash: bool = True):
-        """Disable magic mode for an area and optionally flash lights to indicate.
+    async def disable_magic_mode(self, area_id: str, save_offset: bool = True):
+        """Disable magic mode for an area.
         
         Args:
             area_id: The area ID to disable magic mode for
-            flash: Whether to flash lights to indicate magic mode is disabled
+            save_offset: Whether to save the current time offset for later restoration
         """
         # Check if magic mode was actually enabled
         was_enabled = area_id in self.magic_mode_areas
+        
+        # Save the current offset before removing it
+        if save_offset and area_id in self.magic_mode_time_offsets:
+            self.saved_time_offsets[area_id] = self.magic_mode_time_offsets[area_id]
+            logger.info(f"Saved time offset for area {area_id}: {self.saved_time_offsets[area_id]} minutes")
+            self.save_offsets()  # Persist to disk
         
         self.magic_mode_areas.discard(area_id)
         self.magic_mode_time_offsets.pop(area_id, None)  # Remove time offset
@@ -532,29 +589,6 @@ class HomeAssistantWebSocketClient:
             return
             
         logger.info(f"Magic mode disabled for area {area_id}")
-        
-        # Flash lights to indicate magic mode is off (if requested)
-        if flash:
-            lights_in_area = await self.get_lights_in_area(area_id)
-            any_light_on = any(light.get("state") == "on" for light in lights_in_area)
-            
-            if any_light_on:
-                logger.info(f"Flashing lights to indicate magic mode disabled for area {area_id}")
-                
-                # Quick dim to 30%
-                await self.call_service("light", "turn_on", {
-                    "brightness_pct": 30,
-                    "transition": 0.2
-                }, {"area_id": area_id})
-                
-                # Brief pause
-                await asyncio.sleep(0.3)
-                
-                # Back to full brightness
-                await self.call_service("light", "turn_on", {
-                    "brightness_pct": 100,
-                    "transition": 0.2
-                }, {"area_id": area_id})
     
     async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None, apply_time_offset: bool = True) -> Dict[str, Any]:
         """Get adaptive lighting values for a specific area.
@@ -589,16 +623,7 @@ class HomeAssistantWebSocketClient:
         curve_params = {}
         merged_config: Dict[str, Any] = {}
         
-        # Detect environment and set appropriate data directory
-        if os.path.exists("/data"):
-            # Running in Home Assistant
-            data_dir = "/data"
-        else:
-            # Running in development - use local .data directory
-            data_dir = os.path.join(os.path.dirname(__file__), ".data")
-            if not os.path.exists(data_dir):
-                os.makedirs(data_dir, exist_ok=True)
-                logger.info(f"Development mode: using {data_dir} for configuration")
+        data_dir = self._get_data_directory()
         
         # Load configs from appropriate directory
         for filename in ["options.json", "designer_config.json"]:
@@ -652,6 +677,28 @@ class HomeAssistantWebSocketClient:
                 curve_params["evening_cct_params"] = evening_cct_params
         except Exception as e:
             logger.debug(f"Could not parse curve parameters from merged config: {e}")
+        
+        # Add min/max values to curve parameters
+        # These can come from environment variables or the merged config
+        if 'min_color_temp' in merged_config:
+            curve_params['min_color_temp'] = int(merged_config['min_color_temp'])
+        elif os.getenv('MIN_COLOR_TEMP'):
+            curve_params['min_color_temp'] = int(os.getenv('MIN_COLOR_TEMP'))
+            
+        if 'max_color_temp' in merged_config:
+            curve_params['max_color_temp'] = int(merged_config['max_color_temp'])
+        elif os.getenv('MAX_COLOR_TEMP'):
+            curve_params['max_color_temp'] = int(os.getenv('MAX_COLOR_TEMP'))
+            
+        if 'min_brightness' in merged_config:
+            curve_params['min_brightness'] = int(merged_config['min_brightness'])
+        elif os.getenv('MIN_BRIGHTNESS'):
+            curve_params['min_brightness'] = int(os.getenv('MIN_BRIGHTNESS'))
+            
+        if 'max_brightness' in merged_config:
+            curve_params['max_brightness'] = int(merged_config['max_brightness'])
+        elif os.getenv('MAX_BRIGHTNESS'):
+            curve_params['max_brightness'] = int(os.getenv('MAX_BRIGHTNESS'))
         
         # Store curve parameters for use in switch dimming calculations
         self.curve_params = curve_params
