@@ -96,6 +96,59 @@ class HomeAssistantWebSocketClient:
         current_id = self.message_id
         self.message_id += 1
         return current_id
+    
+    def _update_zha_group_mapping(self, entity_id: str, friendly_name: str) -> None:
+        """Update the ZHA group mapping for a light entity if it matches the Glo_ pattern.
+        
+        Args:
+            entity_id: The entity ID
+            friendly_name: The friendly name of the entity
+        """
+        # Debug log all light entities during initial load
+        if entity_id.startswith("light."):
+            logger.debug(f"Checking light entity: {entity_id}, friendly_name: '{friendly_name}'")
+        
+        if "glo_" not in entity_id.lower() and "glo_" not in friendly_name.lower():
+            return
+        
+        # logger.info(f"Found potential ZHA group: entity_id='{entity_id}', friendly_name='{friendly_name}'")
+            
+        area_name = None
+        
+        # Try to extract from friendly_name first (preserving case)
+        if "Glo_" in friendly_name:
+            parts = friendly_name.split("Glo_")
+            if len(parts) >= 2:
+                area_name = parts[-1].strip()
+        elif "glo_" in friendly_name.lower():
+            # Fallback to case-insensitive extraction
+            idx = friendly_name.lower().index("glo_")
+            area_name = friendly_name[idx + 4:].strip()
+        
+        # If not found in friendly_name, try entity_id
+        if not area_name:
+            if "glo_" in entity_id.lower():
+                idx = entity_id.lower().index("glo_")
+                area_name = entity_id[idx + 4:]
+                # Remove "light." prefix if it leaked in
+                area_name = area_name.replace("light.", "")
+        
+        if area_name:
+            # Store multiple variations for flexible matching:
+            # 1. Exact area name as extracted
+            self.area_to_light_entity[area_name] = entity_id
+            # 2. Lowercase version
+            self.area_to_light_entity[area_name.lower()] = entity_id
+            # 3. With underscores replaced by spaces (common HA pattern)
+            area_with_spaces = area_name.replace("_", " ")
+            self.area_to_light_entity[area_with_spaces] = entity_id
+            self.area_to_light_entity[area_with_spaces.lower()] = entity_id
+            # 4. With spaces replaced by underscores (another common pattern)
+            area_with_underscores = area_name.replace(" ", "_")
+            self.area_to_light_entity[area_with_underscores] = entity_id
+            self.area_to_light_entity[area_with_underscores.lower()] = entity_id
+            
+            # logger.info(f"Mapped ZHA group '{entity_id}' (name: {friendly_name}) to area variations: {area_name}, {area_name.lower()}, {area_with_spaces}, {area_with_underscores}")
         
     async def authenticate(self) -> bool:
         """Authenticate with Home Assistant."""
@@ -182,9 +235,12 @@ class HomeAssistantWebSocketClient:
             # Try to find a ZHA group entity for this area
             light_entity = self.area_to_light_entity.get(area_id)
             if light_entity:
-                logger.info(f"Using ZHA group entity {light_entity} instead of area_id {area_id}")
+                logger.info(f"✓ Using ZHA group entity '{light_entity}' instead of area_id '{area_id}'")
                 # Replace area_id with entity_id
                 final_target = {"entity_id": light_entity}
+            else:
+                logger.warning(f"⚠ No ZHA group found for area_id '{area_id}'. Available mappings: {list(self.area_to_light_entity.keys())}")
+                logger.info(f"Falling back to area_id '{area_id}' (will control all lights in area)")
         
         service_msg = {
             "id": message_id,
@@ -250,7 +306,9 @@ class HomeAssistantWebSocketClient:
         Returns:
             List of entity states, or empty list if failed
         """
+        logger.info("Requesting all entity states...")
         result = await self.send_message_wait_response({"type": "get_states"})
+        
         if result and isinstance(result, list):
             # Update cache
             self.cached_states.clear()
@@ -258,7 +316,16 @@ class HomeAssistantWebSocketClient:
                 entity_id = state.get("entity_id", "")
                 if entity_id:
                     self.cached_states[entity_id] = state
+                    
+                    # Extract sun data while we're here
+                    if entity_id == "sun.sun":
+                        self.sun_data = state.get("attributes", {})
+                        logger.debug(f"Found sun data: elevation={self.sun_data.get('elevation')}")
+            
+            logger.info(f"✓ Loaded {len(result)} entity states")
             return result
+        
+        logger.error(f"Failed to get states or invalid response: {type(result)}")
         return list(self.cached_states.values()) if self.cached_states else []
     
     async def request_states(self) -> int:
@@ -314,23 +381,37 @@ class HomeAssistantWebSocketClient:
         
         return self.device_to_area_mapping
         
-    async def get_config(self) -> int:
-        """Get Home Assistant configuration.
+    async def get_config(self) -> bool:
+        """Get Home Assistant configuration and wait for response.
         
         Returns:
-            Message ID of the request
+            True if config was successfully loaded, False otherwise
         """
-        message_id = self._get_next_message_id()
+        logger.info("Requesting Home Assistant configuration...")
+        result = await self.send_message_wait_response({"type": "get_config"})
         
-        config_msg = {
-            "id": message_id,
-            "type": "get_config"
-        }
-        
-        await self.websocket.send(json.dumps(config_msg))
-        logger.info(f"Requested config (id: {message_id})")
-        
-        return message_id
+        if result and isinstance(result, dict):
+            if "latitude" in result and "longitude" in result:
+                self.latitude = result.get("latitude")
+                self.longitude = result.get("longitude")
+                self.timezone = result.get("time_zone")
+                logger.info(f"✓ Loaded HA location: lat={self.latitude}, lon={self.longitude}, tz={self.timezone}")
+                
+                # Set environment variables for brain.py to use as defaults
+                if self.latitude:
+                    os.environ["HASS_LATITUDE"] = str(self.latitude)
+                if self.longitude:
+                    os.environ["HASS_LONGITUDE"] = str(self.longitude)
+                if self.timezone:
+                    os.environ["HASS_TIME_ZONE"] = self.timezone
+                    
+                return True
+            else:
+                logger.warning(f"⚠ Config response missing location data: {result.keys()}")
+        else:
+            logger.error(f"Failed to get config or invalid response type: {type(result)}")
+            
+        return False
         
     async def get_lights_in_area(self, area_id: str) -> List[Dict[str, Any]]:
         """Get all light entities in a specific area with their current states.
@@ -773,27 +854,11 @@ class HomeAssistantWebSocketClient:
                 if entity_id and isinstance(new_state, dict):
                     self.cached_states[entity_id] = new_state
                     
-                    # Check if this is a ZHA group light entity
+                    # Check if this is a ZHA group light entity TODO: THIS IS VERY EXHAUSTIVE
                     if entity_id.startswith("light."):
                         attributes = new_state.get("attributes", {})
                         friendly_name = attributes.get("friendly_name", "")
-                        
-                        if "glo_" in entity_id.lower() or "glo_" in friendly_name.lower():
-                            area_name = None
-                            
-                            if "glo_" in entity_id.lower():
-                                parts = entity_id.lower().split("glo_")
-                                if len(parts) >= 2:
-                                    area_name = parts[-1]
-                            
-                            if not area_name and "glo_" in friendly_name.lower():
-                                parts = friendly_name.lower().split("glo_")
-                                if len(parts) >= 2:
-                                    area_name = parts[-1].strip()
-                            
-                            if area_name:
-                                self.area_to_light_entity[area_name] = entity_id
-                                logger.debug(f"Updated ZHA group mapping: {area_name} -> {entity_id}")
+                        self._update_zha_group_mapping(entity_id, friendly_name)
                 
                 # Update sun data if it's the sun entity
                 if entity_id == "sun.sun" and isinstance(new_state, dict):
@@ -838,7 +903,7 @@ class HomeAssistantWebSocketClient:
                         
                         if device_id and area_id and "switch" in name.lower():
                             self.device_to_area_mapping[device_id] = area_id
-                            logger.info(f"Mapped device {device_id} ({name}, {model}) to area {area_id}")
+                            logger.info(f"Mapped switch device {device_id} ({name}, {model}) to area '{area_id}'")
                     
                     # Log summary of discovered switches
                     if self.device_to_area_mapping:
@@ -851,6 +916,16 @@ class HomeAssistantWebSocketClient:
                         # Don't automatically enable magic mode - let it be controlled by switch presses
                         areas_with_switches = set(self.device_to_area_mapping.values())
                         logger.info(f"Found {len(areas_with_switches)} areas with switches")
+                        
+                        # Cross-reference with ZHA groups to verify mapping
+                        logger.info("=== Switch -> ZHA Group Mapping Verification ===")
+                        for area in areas_with_switches:
+                            if area in self.area_to_light_entity or area.lower() in self.area_to_light_entity:
+                                zha_group = self.area_to_light_entity.get(area) or self.area_to_light_entity.get(area.lower())
+                                logger.info(f"✓ Area '{area}' has ZHA group: {zha_group}")
+                            else:
+                                logger.warning(f"⚠ Area '{area}' has NO ZHA group (will use area_id)")
+                        logger.info("="*50)
                     else:
                         logger.warning("No switches found in device registry")
                 
@@ -877,26 +952,8 @@ class HomeAssistantWebSocketClient:
                             # Debug log all light entities
                             logger.debug(f"Light entity: {entity_id}, friendly_name: {friendly_name}")
                             
-                            # Check if Glo_ appears in either entity_id or friendly_name
-                            if "glo_" in entity_id.lower() or "glo_" in friendly_name.lower():
-                                # Try to extract area name
-                                area_name = None
-                                
-                                # First try from entity_id
-                                if "glo_" in entity_id.lower():
-                                    parts = entity_id.lower().split("glo_")
-                                    if len(parts) >= 2:
-                                        area_name = parts[-1]  # Get everything after last "glo_"
-                                
-                                # If not found, try from friendly_name
-                                if not area_name and "glo_" in friendly_name.lower():
-                                    parts = friendly_name.lower().split("glo_")
-                                    if len(parts) >= 2:
-                                        area_name = parts[-1].strip()
-                                
-                                if area_name:
-                                    self.area_to_light_entity[area_name] = entity_id
-                                    logger.info(f"Found ZHA group light entity: {entity_id} (name: {friendly_name}) for area: {area_name}")
+                            # Use the centralized method to update ZHA group mapping
+                            self._update_zha_group_mapping(entity_id, friendly_name)
                     
                     self.last_states_update = asyncio.get_event_loop().time()
                     logger.info(f"Cached {len(self.cached_states)} entity states")
@@ -917,9 +974,20 @@ class HomeAssistantWebSocketClient:
                     # Log discovered ZHA group entities
                     if self.area_to_light_entity:
                         logger.info("=== Discovered ZHA Group Light Entities ===")
+                        # Get unique entity mappings (since we store multiple area variations)
+                        unique_entities = {}
                         for area, entity in self.area_to_light_entity.items():
-                            logger.info(f"  - Area: {area} -> Entity: {entity}")
-                        logger.info("="*40)
+                            if entity not in unique_entities:
+                                unique_entities[entity] = []
+                            unique_entities[entity].append(area)
+                        
+                        for entity, areas in unique_entities.items():
+                            # Show primary area name (first non-lowercase one)
+                            primary_area = next((a for a in areas if not a.islower()), areas[0])
+                            logger.info(f"  - ZHA Group: {entity} -> Area: '{primary_area}' (+ {len(areas)-1} variations)")
+                        
+                        logger.info(f"Total: {len(unique_entities)} ZHA groups mapped to areas")
+                        logger.info("="*50)
                     else:
                         logger.warning("No ZHA group light entities found (looking for 'Glo_' pattern)")
             
@@ -1010,13 +1078,39 @@ class HomeAssistantWebSocketClient:
                 logger.info("Initialized multi-protocol light controller")
                     
                 # Get initial states to populate mappings and sun data
-                await self.request_states()
+                logger.info("Loading initial entity states...")
+                states = await self.get_states()
+                
+                if not states:
+                    logger.error("Failed to load initial states! No states returned.")
+                else:
+                    logger.info(f"Successfully loaded {len(states)} entity states")
+                    
+                    # Count light entities
+                    light_count = sum(1 for s in states if s.get("entity_id", "").startswith("light."))
+                    logger.info(f"Found {light_count} light entities")
+                    
+                    # Process states to extract ZHA group mappings
+                    for state in states:
+                        entity_id = state.get("entity_id", "")
+                        if entity_id.startswith("light."):
+                            attributes = state.get("attributes", {})
+                            friendly_name = attributes.get("friendly_name", "")
+                            self._update_zha_group_mapping(entity_id, friendly_name)
+                    
+                    unique_groups = len(set(self.area_to_light_entity.values()))
+                    if unique_groups > 0:
+                        logger.info(f"✓ Found {unique_groups} ZHA groups")
+                    else:
+                        logger.warning("⚠ No ZHA groups found (looking for 'Glo_' pattern in light names)")
                 
                 # Get device registry to map devices to areas (now waits for completion)
                 device_mapping = await self.get_device_registry()
                 
                 # Get Home Assistant configuration (lat/lng/tz)
-                await self.get_config()
+                config_loaded = await self.get_config()
+                if not config_loaded:
+                    logger.warning("⚠ Failed to load Home Assistant configuration - adaptive lighting may not work correctly")
                 
                 # Sync ZHA groups with areas that have switches
                 logger.info("Synchronizing ZHA groups with Home Assistant areas...")

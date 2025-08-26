@@ -1,5 +1,20 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.2.1
+
+- Fixed initialization and ZHA group mapping
+  - Fixed latitude/longitude data not loading (now properly waits for config response)
+  - Fixed ZHA group discovery (now loads states before device registry)
+  - Improved ZHA group to area mapping with multiple name variations
+  - Added random 16-bit group ID generation for new ZHA groups
+  - Enhanced logging for debugging group and location loading
+  - Removed duplicated ZHA group mapping code
+
+- Code refactoring
+  - Centralized ZHA group mapping logic into single method
+  - Converted async fire-and-forget methods to proper await patterns
+  - Added comprehensive debug logging with ✓/⚠ status indicators
+
 ## 2.2.0
 
 - Major refactor: Multi-protocol light controller architecture

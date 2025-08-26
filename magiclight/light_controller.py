@@ -6,6 +6,7 @@ Provides abstraction layer for ZigBee, Z-Wave, HomeAssistant, and other protocol
 import asyncio
 import json
 import logging
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
@@ -555,10 +556,13 @@ class ZigBeeController(LightController):
                     # Store mapping
                     self.area_to_group_id[area_name] = existing_group['group_id']
                 else:
-                    # Create new group
-                    logger.info(f"Creating new ZHA group '{group_name}' for area '{area_name}'")
+                    # Create new group with random 16-bit group ID
+                    # Generate random 16-bit integer (0-65535)
+                    random_group_id = random.randint(1, 65535)
+                    logger.info(f"Creating new ZHA group '{group_name}' for area '{area_name}' with ID {random_group_id}")
                     success = await self.create_group(GroupCommand(
                         name=group_name,
+                        group_id=random_group_id,
                         members=members
                     ))
                     
