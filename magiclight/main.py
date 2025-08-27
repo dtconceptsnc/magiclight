@@ -896,7 +896,10 @@ class HomeAssistantWebSocketClient:
     async def sync_zha_groups(self):
         """Helper method to sync ZHA groups with areas."""
         try:
-            logger.info("Syncing ZHA groups with Home Assistant areas...")
+            logger.info("=" * 60)
+            logger.info("Starting ZHA group sync process")
+            logger.info("=" * 60)
+            
             # Refresh device registry first
             await self.get_device_registry()
             
@@ -913,6 +916,10 @@ class HomeAssistantWebSocketClient:
                     logger.warning("No areas with switches found")
             else:
                 logger.warning("ZigBee controller not available for group sync")
+            
+            logger.info("=" * 60)
+            logger.info("ZHA group sync process complete")
+            logger.info("=" * 60)
         except Exception as e:
             logger.error(f"Failed to sync ZHA groups: {e}")
     
@@ -985,8 +992,7 @@ class HomeAssistantWebSocketClient:
                 
                 # Trigger resync if a device was added, removed, or updated
                 if action in ["create", "update", "remove"]:
-                    await self.sync_zha_groups()
-                    await self.refresh_area_parity_cache()
+                    await self.sync_zha_groups()  # This includes parity cache refresh
             
             # Handle area registry updates (when areas are added/removed/modified)
             elif event_type == "area_registry_updated":
@@ -996,8 +1002,7 @@ class HomeAssistantWebSocketClient:
                 logger.info(f"Area registry updated: action={action}, area_id={area_id}")
                 
                 # Always resync on area changes
-                await self.sync_zha_groups()
-                await self.refresh_area_parity_cache()
+                await self.sync_zha_groups()  # This includes parity cache refresh
             
             # Handle entity registry updates (when entities change areas)
             elif event_type == "entity_registry_updated":
@@ -1010,8 +1015,7 @@ class HomeAssistantWebSocketClient:
                     old_area = changes["area_id"].get("old_value")
                     new_area = changes["area_id"].get("new_value")
                     logger.info(f"Entity {entity_id} moved from area {old_area} to {new_area}")
-                    await self.sync_zha_groups()
-                    await self.refresh_area_parity_cache()
+                    await self.sync_zha_groups()  # This includes parity cache refresh
             
             # Handle state changes
             elif event_type == "state_changed":
@@ -1277,27 +1281,8 @@ class HomeAssistantWebSocketClient:
                 if not config_loaded:
                     logger.warning("⚠ Failed to load Home Assistant configuration - adaptive lighting may not work correctly")
                 
-                # Sync ZHA groups with areas that have switches
-                logger.info("Synchronizing ZHA groups with Home Assistant areas...")
-                try:
-                    zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
-                    if zigbee_controller:
-                        # Get areas that have switches from the device mapping
-                        areas_with_switches = set(self.device_to_area_mapping.values())
-                        if areas_with_switches:
-                            logger.info(f"Found {len(areas_with_switches)} areas with switches: {areas_with_switches}")
-                            await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
-                        else:
-                            logger.warning("No areas with switches found, skipping group creation")
-                        logger.info("ZHA group synchronization complete")
-                    else:
-                        logger.warning("ZigBee controller not found, skipping group sync")
-                except Exception as e:
-                    logger.error(f"Failed to sync ZHA groups: {e}")
-                    # Continue anyway - not critical for operation
-                
-                # Refresh area parity cache after syncing groups
-                await self.refresh_area_parity_cache()
+                # Sync ZHA groups with areas that have switches (includes parity cache refresh)
+                await self.sync_zha_groups()
                 
                 # Subscribe to all events
                 await self.subscribe_events()

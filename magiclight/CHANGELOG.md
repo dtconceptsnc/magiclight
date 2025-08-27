@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.4
+
+- Performance improvements
+  - Fixed duplicate ZHA group synchronization on startup
+  - Removed redundant parity cache refresh calls in event handlers
+  - Consolidated sync flow to prevent multiple unnecessary operations
+  - Added clearer logging with separators for sync operations
+
+- Area naming update
+  - Changed dedicated area name from "Glo" to "Glo_Zigbee_Groups" for clarity
+  - Better identifies the purpose of the organizational area
+
 ## 2.3.3
 
 - ZHA group organization improvements
