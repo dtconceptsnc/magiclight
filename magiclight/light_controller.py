@@ -313,7 +313,8 @@ class ZigBeeController(LightController):
                         'name': area_name,
                         'area_id': area_id,
                         'lights': [],
-                        'zha_lights': []
+                        'zha_lights': [],
+                        'non_zha_lights': []  # Track non-ZHA lights
                     }
             
             # Get device registry to map devices to entities
@@ -372,6 +373,7 @@ class ZigBeeController(LightController):
                         
                         # Check if it's a ZHA light
                         device_id = entity_to_device.get(entity_id)
+                        is_zha = False
                         if device_id and device_id in device_by_id:
                             ha_device = device_by_id[device_id]
                             
@@ -380,6 +382,7 @@ class ZigBeeController(LightController):
                             for identifier in ha_identifiers:
                                 if isinstance(identifier, list) and len(identifier) >= 2:
                                     if identifier[0] == 'zha':
+                                        is_zha = True
                                         # This is a ZHA device - identifier[1] is the IEEE
                                         zha_ieee = identifier[1].lower()  # Convert to lowercase
                                         
@@ -423,12 +426,59 @@ class ZigBeeController(LightController):
                                             })
                                             logger.info(f"Found ZHA light by identifier in area {area_name}: {entity_id} (IEEE: {zha_ieee}, endpoint: {endpoint_id}, manufacturer: '{manufacturer}', model: '{model}')")
                                         break
+                        
+                        # If not a ZHA light, add to non-ZHA lights list
+                        if not is_zha:
+                            areas[area_id]['non_zha_lights'].append(entity_id)
+                            logger.info(f"Found non-ZHA light in area {area_name}: {entity_id}")
             
             return areas
             
         except Exception as e:
             logger.error(f"Failed to get areas: {e}")
             return {}
+    
+    async def check_area_zha_parity(self, area_id: str) -> bool:
+        """Check if an area has Zigbee group parity (all lights are ZHA).
+        
+        Args:
+            area_id: The area ID to check
+            
+        Returns:
+            True if all lights in the area are ZHA lights (can use ZHA group),
+            False if there are any non-ZHA lights (should use area-based control)
+        """
+        try:
+            areas = await self.get_areas()
+            area_info = areas.get(area_id)
+            
+            if not area_info:
+                logger.warning(f"Area {area_id} not found")
+                return False
+            
+            zha_lights = area_info.get('zha_lights', [])
+            non_zha_lights = area_info.get('non_zha_lights', [])
+            
+            # Log the parity check
+            logger.info(f"Area '{area_info['name']}' parity check: {len(zha_lights)} ZHA lights, {len(non_zha_lights)} non-ZHA lights")
+            
+            # If there are no lights at all, return False (use area-based as fallback)
+            if not zha_lights and not non_zha_lights:
+                logger.info(f"Area '{area_info['name']}' has no lights, using area-based control")
+                return False
+            
+            # If there are any non-ZHA lights, we don't have parity
+            if non_zha_lights:
+                logger.info(f"Area '{area_info['name']}' has non-ZHA lights, using area-based control for full coverage")
+                return False
+            
+            # All lights are ZHA
+            logger.info(f"Area '{area_info['name']}' has ZHA parity, can use ZHA group control")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to check ZHA parity for area {area_id}: {e}")
+            return False
     
     async def sync_zha_groups_with_areas(self, areas_with_switches: set = None) -> bool:
         """Synchronize ZHA groups to match Home Assistant areas that have switches.
@@ -469,9 +519,15 @@ class ZigBeeController(LightController):
                 
                 area_name = area_info['name']
                 zha_lights = area_info.get('zha_lights', [])
+                non_zha_lights = area_info.get('non_zha_lights', [])
                 
                 if not zha_lights:
                     logger.debug(f"Area '{area_name}' has no ZHA lights, skipping group creation")
+                    continue
+                
+                # Skip areas that don't have ZHA parity (have non-ZHA lights)
+                if non_zha_lights:
+                    logger.info(f"Area '{area_name}' has {len(non_zha_lights)} non-ZHA lights, skipping ZHA group creation (will use area-based control)")
                     continue
                 
                 # Group name format: "Glo_<area_name>"

@@ -233,18 +233,9 @@ class HomeAssistantWebSocketClient:
         if "entity_id" in final_service_data:
             final_target["entity_id"] = final_service_data.pop("entity_id")
         
-        # If area_id is provided and we have a ZHA group entity for that area, use it instead
-        if "area_id" in final_target and domain == "light":
-            area_id = final_target["area_id"]
-            # Try to find a ZHA group entity for this area
-            light_entity = self.area_to_light_entity.get(area_id)
-            if light_entity:
-                logger.info(f"✓ Using ZHA group entity '{light_entity}' instead of area_id '{area_id}'")
-                # Replace area_id with entity_id
-                final_target = {"entity_id": light_entity}
-            else:
-                logger.warning(f"⚠ No ZHA group found for area_id '{area_id}'. Available mappings: {list(self.area_to_light_entity.keys())}")
-                logger.info(f"Falling back to area_id '{area_id}' (will control all lights in area)")
+        # Note: ZHA group vs area-based control is now handled in turn_on_lights_adaptive
+        # based on whether the area has ZHA parity (all lights are ZHA)
+        # This call_service method remains generic and doesn't auto-substitute
         
         service_msg = {
             "id": message_id,
@@ -272,6 +263,13 @@ class HomeAssistantWebSocketClient:
             adaptive_values: Adaptive lighting values from get_adaptive_lighting
             transition: Transition time in seconds (default 1)
         """
+        # Check for ZHA parity to decide control method
+        use_zha_group = False
+        if self.light_controller:
+            zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
+            if zigbee_controller:
+                use_zha_group = await zigbee_controller.check_area_zha_parity(area_id)
+        
         # Create light command - only set ONE color mode
         command = LightCommand(
             area=area_id,
@@ -285,8 +283,14 @@ class HomeAssistantWebSocketClient:
         
         # Use light controller to turn on lights
         if self.light_controller:
-            # Use ZigBee protocol for ZHA switches
-            await self.light_controller.turn_on_lights(command, protocol=Protocol.ZIGBEE)
+            if use_zha_group:
+                # Use ZigBee protocol for areas with only ZHA lights
+                logger.info(f"Using ZHA group control for area {area_id} (all lights are ZHA)")
+                await self.light_controller.turn_on_lights(command, protocol=Protocol.ZIGBEE)
+            else:
+                # Use HomeAssistant protocol for mixed light types
+                logger.info(f"Using area-based control for area {area_id} (contains non-ZHA lights)")
+                await self.light_controller.turn_on_lights(command, protocol=Protocol.HOMEASSISTANT)
         else:
             # Fallback to direct service call (legacy)
             service_data = {
@@ -1019,14 +1023,10 @@ class HomeAssistantWebSocketClient:
                         areas_with_switches = set(self.device_to_area_mapping.values())
                         logger.info(f"Found {len(areas_with_switches)} areas with switches")
                         
-                        # Cross-reference with ZHA groups to verify mapping
-                        logger.info("=== Switch -> ZHA Group Mapping Verification ===")
-                        for area in areas_with_switches:
-                            if area in self.area_to_light_entity or area.lower() in self.area_to_light_entity:
-                                zha_group = self.area_to_light_entity.get(area) or self.area_to_light_entity.get(area.lower())
-                                logger.info(f"✓ Area '{area}' has ZHA group: {zha_group}")
-                            else:
-                                logger.warning(f"⚠ Area '{area}' has NO ZHA group (will use area_id)")
+                        # Note: Parity checking now happens dynamically in turn_on_lights_adaptive
+                        logger.info("=== Switch -> Light Control Method ===")
+                        logger.info(f"Areas with switches will use either ZHA group (if all lights are ZHA)")
+                        logger.info(f"or area-based control (if any non-ZHA lights present)")
                         logger.info("="*50)
                     else:
                         logger.warning("No switches found in device registry")

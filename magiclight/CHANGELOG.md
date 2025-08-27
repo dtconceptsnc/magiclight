@@ -1,5 +1,19 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.1
+
+- Smart light control method selection
+  - Added ZHA parity checking to determine optimal control method per area
+  - Areas with only ZHA lights use efficient ZHA group control
+  - Areas with mixed light types (ZHA + WiFi/Matter/etc) use area-based control
+  - Automatically selects best method to ensure all lights are controlled
+  - Enhanced logging to show which control method is used and why
+
+- Improved light compatibility
+  - Better support for mixed-protocol rooms (ZHA, WiFi, Matter, Z-Wave, etc)
+  - ZHA groups only created for areas with 100% ZHA lights
+  - Non-ZHA light detection and tracking for proper control method selection
+
 ## 2.3.0
 
 - Adaptive lighting dimming improvements
