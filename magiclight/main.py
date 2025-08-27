@@ -850,10 +850,13 @@ class HomeAssistantWebSocketClient:
                 logger.error(f"Error in periodic light updater: {e}")
                 # Continue running even if there's an error
         
-    async def refresh_area_parity_cache(self):
+    async def refresh_area_parity_cache(self, areas_data: dict = None):
         """Refresh the cache of area ZHA parity status.
         
         This should be called during initialization and when areas/devices change.
+        
+        Args:
+            areas_data: Pre-loaded areas data to avoid duplicate queries (optional)
         """
         try:
             if not self.light_controller:
@@ -863,8 +866,12 @@ class HomeAssistantWebSocketClient:
             if not zigbee_controller:
                 return
             
-            # Get all areas with their light information
-            areas = await zigbee_controller.get_areas()
+            # Use provided areas data or fetch new
+            if areas_data:
+                areas = areas_data
+            else:
+                # Get all areas with their light information
+                areas = await zigbee_controller.get_areas()
             
             # Clear and rebuild the cache
             self.area_parity_cache.clear()
@@ -893,25 +900,32 @@ class HomeAssistantWebSocketClient:
         except Exception as e:
             logger.error(f"Failed to refresh area parity cache: {e}")
     
-    async def sync_zha_groups(self):
-        """Helper method to sync ZHA groups with areas."""
+    async def sync_zha_groups(self, refresh_devices: bool = True):
+        """Helper method to sync ZHA groups with areas.
+        
+        Args:
+            refresh_devices: Whether to refresh the device registry first (default True).
+                            Set to False during startup when registry was just loaded.
+        """
         try:
             logger.info("=" * 60)
             logger.info("Starting ZHA group sync process")
             logger.info("=" * 60)
             
-            # Refresh device registry first
-            await self.get_device_registry()
+            # Refresh device registry first (unless already done)
+            if refresh_devices:
+                await self.get_device_registry()
             
             zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
             if zigbee_controller:
                 areas_with_switches = set(self.device_to_area_mapping.values())
                 if areas_with_switches:
                     logger.info(f"Found {len(areas_with_switches)} areas with switches")
-                    await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
-                    logger.info("ZHA group sync completed")
-                    # Refresh parity cache after syncing
-                    await self.refresh_area_parity_cache()
+                    success, areas = await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
+                    if success:
+                        logger.info("ZHA group sync completed")
+                        # Refresh parity cache using the areas data we already have
+                        await self.refresh_area_parity_cache(areas_data=areas)
                 else:
                     logger.warning("No areas with switches found")
             else:
@@ -1282,7 +1296,8 @@ class HomeAssistantWebSocketClient:
                     logger.warning("⚠ Failed to load Home Assistant configuration - adaptive lighting may not work correctly")
                 
                 # Sync ZHA groups with areas that have switches (includes parity cache refresh)
-                await self.sync_zha_groups()
+                # Don't refresh devices since we just loaded them
+                await self.sync_zha_groups(refresh_devices=False)
                 
                 # Subscribe to all events
                 await self.subscribe_events()

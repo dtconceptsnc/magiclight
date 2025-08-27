@@ -299,6 +299,8 @@ class ZigBeeController(LightController):
     async def get_areas(self) -> Dict[str, Dict[str, Any]]:
         """Get all areas and their associated entities."""
         try:
+            logger.debug("Getting areas and their associated entities...")
+            
             # Get all areas
             areas_result = await self.ws_client.send_message_wait_response({"type": "config/area_registry/list"})
             if not areas_result:
@@ -596,7 +598,7 @@ class ZigBeeController(LightController):
             logger.error(f"Error moving entity {entity_id} to area: {e}")
             return False
     
-    async def sync_zha_groups_with_areas(self, areas_with_switches: set = None) -> bool:
+    async def sync_zha_groups_with_areas(self, areas_with_switches: set = None) -> tuple[bool, dict]:
         """Synchronize ZHA groups to match Home Assistant areas that have switches.
         
         Creates a ZHA group for each area that has both ZHA lights and switches,
@@ -604,6 +606,9 @@ class ZigBeeController(LightController):
         
         Args:
             areas_with_switches: Set of area IDs that have switches. If None, creates groups for all areas.
+            
+        Returns:
+            Tuple of (success, areas_dict) where areas_dict is the areas data for reuse
         """
         try:
             logger.info("Starting ZHA group synchronization with areas...")
@@ -791,11 +796,11 @@ class ZigBeeController(LightController):
                     ))
             
             logger.info("ZHA group synchronization completed")
-            return True
+            return True, areas
             
         except Exception as e:
             logger.error(f"Failed to sync ZHA groups: {e}")
-            return False
+            return False, {}
     
     async def create_group(self, command: GroupCommand) -> bool:
         """Create a ZHA group."""

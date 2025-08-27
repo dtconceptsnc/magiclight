@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.5
+
+- Startup optimization
+  - Eliminated redundant device registry loading during startup
+  - Reduced state queries from 3 to 2 during initialization  
+  - Areas data is now shared between sync and parity cache operations
+  - Added `refresh_devices` parameter to control when device registry is reloaded
+  - Faster startup with less duplicate work
+
 ## 2.3.4
 
 - Performance improvements
