@@ -441,6 +441,10 @@ class ZigBeeController(LightController):
     async def check_area_zha_parity(self, area_id: str) -> bool:
         """Check if an area has Zigbee group parity (all lights are ZHA).
         
+        NOTE: This method should only be called during initialization or when
+        refreshing the cache. During normal operation, use the cached value
+        in ws_client.area_parity_cache to avoid concurrent WebSocket calls.
+        
         Args:
             area_id: The area ID to check
             
@@ -448,6 +452,11 @@ class ZigBeeController(LightController):
             True if all lights in the area are ZHA lights (can use ZHA group),
             False if there are any non-ZHA lights (should use area-based control)
         """
+        # First check if we have a cached value (preferred during runtime)
+        if hasattr(self.ws_client, 'area_parity_cache') and area_id in self.ws_client.area_parity_cache:
+            return self.ws_client.area_parity_cache[area_id]
+        
+        # Otherwise do the full check (only during initialization)
         try:
             areas = await self.get_areas()
             area_info = areas.get(area_id)

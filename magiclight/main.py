@@ -62,6 +62,7 @@ class HomeAssistantWebSocketClient:
         self.saved_time_offsets = {}  # Saved time offsets when lights are turned off
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
+        self.area_parity_cache = {}  # Cache of area ZHA parity status
         
         # Color mode configuration - defaults to XY
         color_mode_str = os.getenv("COLOR_MODE", "xy").lower()
@@ -255,6 +256,39 @@ class HomeAssistantWebSocketClient:
         
         return message_id
         
+    async def determine_light_target(self, area_id: str) -> tuple[str, Any]:
+        """Determine the best target for controlling lights in an area.
+        
+        This consolidates the logic for deciding whether to use:
+        - ZHA group entity (if all lights are ZHA)
+        - Area-based control (if any non-ZHA lights exist)
+        
+        Args:
+            area_id: The area ID to control
+            
+        Returns:
+            Tuple of (target_type, target_value) where:
+            - target_type is "entity_id" or "area_id"
+            - target_value is the entity/area ID to use
+        """
+        # Check if we have a ZHA group entity for this area
+        light_entity = self.area_to_light_entity.get(area_id) or \
+                      self.area_to_light_entity.get(area_id.lower())
+        
+        # Check cached parity status
+        has_parity = self.area_parity_cache.get(area_id, False)
+        
+        # If we have a ZHA group entity and parity, use the group
+        if light_entity and has_parity:
+            logger.info(f"✓ Using ZHA group entity '{light_entity}' for area '{area_id}' (all lights are ZHA)")
+            return "entity_id", light_entity
+        elif light_entity and not has_parity:
+            logger.info(f"⚠ Area '{area_id}' has non-ZHA lights, using area-based control for full coverage")
+        
+        # Default to area-based control
+        logger.info(f"Using area-based control for area '{area_id}'")
+        return "area_id", area_id
+    
     async def turn_on_lights_adaptive(self, area_id: str, adaptive_values: Dict[str, Any], transition: int = 1) -> None:
         """Turn on lights with adaptive values using the light controller.
         
@@ -263,50 +297,31 @@ class HomeAssistantWebSocketClient:
             adaptive_values: Adaptive lighting values from get_adaptive_lighting
             transition: Transition time in seconds (default 1)
         """
-        # Check for ZHA parity to decide control method
-        use_zha_group = False
-        if self.light_controller:
-            zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
-            if zigbee_controller:
-                use_zha_group = await zigbee_controller.check_area_zha_parity(area_id)
+        # Determine the best target for this area
+        target_type, target_value = await self.determine_light_target(area_id)
         
-        # Create light command - only set ONE color mode
-        command = LightCommand(
-            area=area_id,
-            brightness=int(adaptive_values['brightness'] * 255 / 100),  # Convert to 0-255
-            color_temp=adaptive_values['kelvin'] if self.color_mode == ColorMode.KELVIN else None,
-            rgb_color=tuple(adaptive_values['rgb']) if self.color_mode == ColorMode.RGB else None,
-            xy_color=tuple(adaptive_values['xy']) if self.color_mode == ColorMode.XY else None,
-            transition=float(transition),
-            on=True
-        )
+        # Build service data
+        service_data = {
+            "transition": transition
+        }
         
-        # Use light controller to turn on lights
-        if self.light_controller:
-            if use_zha_group:
-                # Use ZigBee protocol for areas with only ZHA lights
-                logger.info(f"Using ZHA group control for area {area_id} (all lights are ZHA)")
-                await self.light_controller.turn_on_lights(command, protocol=Protocol.ZIGBEE)
-            else:
-                # Use HomeAssistant protocol for mixed light types
-                logger.info(f"Using area-based control for area {area_id} (contains non-ZHA lights)")
-                await self.light_controller.turn_on_lights(command, protocol=Protocol.HOMEASSISTANT)
-        else:
-            # Fallback to direct service call (legacy)
-            service_data = {
-                "brightness_pct": adaptive_values['brightness'],
-                "transition": transition
-            }
-            
-            # Add color data based on the configured color mode
-            if self.color_mode == ColorMode.KELVIN:
-                service_data["kelvin"] = adaptive_values['kelvin']
-            elif self.color_mode == ColorMode.RGB:
-                service_data["rgb_color"] = adaptive_values['rgb']
-            elif self.color_mode == ColorMode.XY:
-                service_data["xy_color"] = adaptive_values['xy']
-            
-            await self.call_service("light", "turn_on", service_data, {"area_id": area_id})
+        # Add brightness
+        if 'brightness' in adaptive_values:
+            service_data["brightness_pct"] = adaptive_values['brightness']
+        
+        # Add color data based on the configured color mode
+        if self.color_mode == ColorMode.KELVIN and 'kelvin' in adaptive_values:
+            service_data["kelvin"] = adaptive_values['kelvin']
+        elif self.color_mode == ColorMode.RGB and 'rgb' in adaptive_values:
+            service_data["rgb_color"] = adaptive_values['rgb']
+        elif self.color_mode == ColorMode.XY and 'xy' in adaptive_values:
+            service_data["xy_color"] = adaptive_values['xy']
+        
+        # Build target
+        target = {target_type: target_value}
+        
+        # Call the service
+        await self.call_service("light", "turn_on", service_data, target)
         
     async def get_states(self) -> List[Dict[str, Any]]:
         """Get all entity states.
@@ -835,6 +850,43 @@ class HomeAssistantWebSocketClient:
                 logger.error(f"Error in periodic light updater: {e}")
                 # Continue running even if there's an error
         
+    async def refresh_area_parity_cache(self):
+        """Refresh the cache of area ZHA parity status.
+        
+        This should be called during initialization and when areas/devices change.
+        """
+        try:
+            if not self.light_controller:
+                return
+                
+            zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
+            if not zigbee_controller:
+                return
+            
+            # Get all areas with their light information
+            areas = await zigbee_controller.get_areas()
+            
+            # Clear and rebuild the cache
+            self.area_parity_cache.clear()
+            
+            for area_id, area_info in areas.items():
+                zha_lights = area_info.get('zha_lights', [])
+                non_zha_lights = area_info.get('non_zha_lights', [])
+                
+                # Area has parity if it has ZHA lights and no non-ZHA lights
+                has_parity = len(zha_lights) > 0 and len(non_zha_lights) == 0
+                self.area_parity_cache[area_id] = has_parity
+                
+                if has_parity:
+                    logger.info(f"Area '{area_info['name']}' has ZHA parity ({len(zha_lights)} ZHA lights)")
+                elif non_zha_lights:
+                    logger.info(f"Area '{area_info['name']}' lacks ZHA parity ({len(zha_lights)} ZHA, {len(non_zha_lights)} non-ZHA)")
+                    
+            logger.info(f"Refreshed area parity cache for {len(self.area_parity_cache)} areas")
+            
+        except Exception as e:
+            logger.error(f"Failed to refresh area parity cache: {e}")
+    
     async def sync_zha_groups(self):
         """Helper method to sync ZHA groups with areas."""
         try:
@@ -849,6 +901,8 @@ class HomeAssistantWebSocketClient:
                     logger.info(f"Found {len(areas_with_switches)} areas with switches")
                     await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
                     logger.info("ZHA group sync completed")
+                    # Refresh parity cache after syncing
+                    await self.refresh_area_parity_cache()
                 else:
                     logger.warning("No areas with switches found")
             else:
@@ -926,6 +980,7 @@ class HomeAssistantWebSocketClient:
                 # Trigger resync if a device was added, removed, or updated
                 if action in ["create", "update", "remove"]:
                     await self.sync_zha_groups()
+                    await self.refresh_area_parity_cache()
             
             # Handle area registry updates (when areas are added/removed/modified)
             elif event_type == "area_registry_updated":
@@ -936,6 +991,7 @@ class HomeAssistantWebSocketClient:
                 
                 # Always resync on area changes
                 await self.sync_zha_groups()
+                await self.refresh_area_parity_cache()
             
             # Handle entity registry updates (when entities change areas)
             elif event_type == "entity_registry_updated":
@@ -949,6 +1005,7 @@ class HomeAssistantWebSocketClient:
                     new_area = changes["area_id"].get("new_value")
                     logger.info(f"Entity {entity_id} moved from area {old_area} to {new_area}")
                     await self.sync_zha_groups()
+                    await self.refresh_area_parity_cache()
             
             # Handle state changes
             elif event_type == "state_changed":
@@ -1232,6 +1289,9 @@ class HomeAssistantWebSocketClient:
                 except Exception as e:
                     logger.error(f"Failed to sync ZHA groups: {e}")
                     # Continue anyway - not critical for operation
+                
+                # Refresh area parity cache after syncing groups
+                await self.refresh_area_parity_cache()
                 
                 # Subscribe to all events
                 await self.subscribe_events()

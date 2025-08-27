@@ -1,5 +1,22 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.2
+
+- Fixed WebSocket concurrency issues
+  - Added area parity caching to prevent concurrent WebSocket calls during light control
+  - Cache is refreshed during initialization and when areas/devices change
+  - Eliminates "cannot call recv while another coroutine is already waiting" errors
+
+- Consolidated light control logic
+  - Single `determine_light_target` method decides between ZHA group or area control
+  - All light operations now use the same consistent logic
+  - Removed duplicate code across switch operations
+
+- Improved code structure
+  - Simplified switch.py by removing unused light controller code
+  - All light control now goes through unified service calls
+  - Better separation of concerns between parity checking and light control
+
 ## 2.3.1
 
 - Smart light control method selection

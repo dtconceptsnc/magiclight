@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import random
 
 from brain import calculate_dimming_step, DEFAULT_MAX_DIM_STEPS
-from light_controller import LightCommand, Protocol
+# Light controller imports removed - using consolidated determine_light_target instead
 
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,6 @@ class SwitchCommandProcessor:
         self.client = websocket_client
         self.simulated_time_offset = timedelta(hours=0)  # Track time simulation offset
         self.last_off_hold_time = 0  # Track last time off_hold was processed
-        # Default protocol for switches - can be overridden per switch
-        self.default_protocol = Protocol.ZIGBEE
         
     async def process_button_press(self, device_id: str, command: str, button: str):
         """Process a button press from a switch.
@@ -56,18 +54,6 @@ class SwitchCommandProcessor:
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
 
-    def get_protocol_for_device(self, device_id: str) -> Protocol:
-        """Determine the protocol for a given device.
-        
-        Args:
-            device_id: The device ID
-            
-        Returns:
-            The protocol to use for this device
-        """
-        # In the future, this could look up device info to determine protocol
-        # For now, return the default protocol
-        return self.default_protocol
 
     async def _handle_off_triple_press(self, device_id: str):
         """Handle the OFF button triple press - set random RGB color.
@@ -91,25 +77,17 @@ class SwitchCommandProcessor:
         # Disable magic mode
         await self.client.disable_magic_mode(area_id, False)
         
-        # Use light controller to set random color
-        if self.client.light_controller:
-            command = LightCommand(
-                area=area_id,
-                rgb_color=(r, g, b),
-                brightness=int(0.8 * 255),  # 80% brightness
-                transition=0.5,
-                on=True
-            )
-            protocol = self.get_protocol_for_device(device_id)
-            await self.client.light_controller.turn_on_lights(command, protocol=protocol)
-        else:
-            # Fallback to direct service call
-            service_data = {
-                "rgb_color": [r, g, b],
-                "brightness_pct": 80,
-                "transition": 0.5
-            }
-            await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+        # Use the consolidated logic to determine target
+        target_type, target_value = await self.client.determine_light_target(area_id)
+        
+        service_data = {
+            "rgb_color": [r, g, b],
+            "brightness_pct": 80,
+            "transition": 0.5
+        }
+        
+        target = {target_type: target_value}
+        await self.client.call_service("light", "turn_on", service_data, target)
         
         logger.info(f"Set lights in area {area_id} to random RGB color: ({r}, {g}, {b})")
     
@@ -273,19 +251,17 @@ class SwitchCommandProcessor:
         """
         logger.info(f"Turning all lights OFF in area {area_id}")
         
-        # Use light controller if available
-        if self.client.light_controller:
-            command = LightCommand(
-                area=area_id,
-                transition=1.0,
-                on=False
-            )
-            protocol = self.get_protocol_for_device(device_id)
-            await self.client.light_controller.turn_off_lights(command, protocol=protocol)
-        else:
-            # Fallback to direct service call
-            service_data = {"transition": 1}
-            await self.client.call_service("light", "turn_off", service_data, {"area_id": area_id})
+        # Use the consolidated logic to determine target
+        target_type, target_value = await self.client.determine_light_target(area_id)
+        
+        # Build service data
+        service_data = {"transition": 1}
+        
+        # Build target
+        target = {target_type: target_value}
+        
+        # Call the service
+        await self.client.call_service("light", "turn_off", service_data, target)
         
         logger.info(f"Turned off all lights in area {area_id}")
         
@@ -302,23 +278,17 @@ class SwitchCommandProcessor:
         if not self.client.sun_data:
             logger.warning("No sun data available for adaptive lighting")
             # Fall back to default white light
-            if self.client.light_controller:
-                command = LightCommand(
-                    area=area_id,
-                    color_temp=3500,  # Neutral white
-                    brightness=int(0.8 * 255),  # 80% brightness
-                    transition=1.0,
-                    on=True
-                )
-                protocol = self.get_protocol_for_device(device_id)
-                await self.client.light_controller.turn_on_lights(command, protocol=protocol)
-            else:
-                service_data = {
-                    "kelvin": 3500,
-                    "brightness_pct": 80,
-                    "transition": 1
-                }
-                await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+            # Use the consolidated logic to determine target
+            target_type, target_value = await self.client.determine_light_target(area_id)
+            
+            service_data = {
+                "kelvin": 3500,
+                "brightness_pct": 80,
+                "transition": 1
+            }
+            
+            target = {target_type: target_value}
+            await self.client.call_service("light", "turn_on", service_data, target)
         else:
             # Use centralized method to get adaptive lighting values
             adaptive_values = await self.client.get_adaptive_lighting_for_area(area_id)
@@ -409,21 +379,16 @@ class SwitchCommandProcessor:
                 return
             else:
                 # Increase brightness of lights that are on
-                if self.client.light_controller:
-                    # Use brightness step command via light controller
-                    # This requires getting current state and calculating new brightness
-                    # For now, use direct service call for brightness stepping
-                    service_data = {
-                        "brightness_step_pct": increment_pct,
-                        "transition": 1
-                    }
-                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
-                else:
-                    service_data = {
-                        "brightness_step_pct": increment_pct,
-                        "transition": 1
-                    }
-                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+                # Use the consolidated logic to determine target
+                target_type, target_value = await self.client.determine_light_target(area_id)
+                
+                service_data = {
+                    "brightness_step_pct": increment_pct,
+                    "transition": 1
+                }
+                
+                target = {target_type: target_value}
+                await self.client.call_service("light", "turn_on", service_data, target)
                 
                 logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
         
@@ -548,19 +513,16 @@ class SwitchCommandProcessor:
                 await self._turn_off_lights(area_id, device_id)
             else:
                 # Decrease brightness of lights that are on
-                if self.client.light_controller:
-                    # Use brightness step command via service call for now
-                    service_data = {
-                        "brightness_step_pct": -decrement_pct,  # Negative value to decrease
-                        "transition": 0.5
-                    }
-                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
-                else:
-                    service_data = {
-                        "brightness_step_pct": -decrement_pct,
-                        "transition": 0.5
-                    }
-                    await self.client.call_service("light", "turn_on", service_data, {"area_id": area_id})
+                # Use the consolidated logic to determine target
+                target_type, target_value = await self.client.determine_light_target(area_id)
+                
+                service_data = {
+                    "brightness_step_pct": -decrement_pct,  # Negative value to decrease
+                    "transition": 0.5
+                }
+                
+                target = {target_type: target_value}
+                await self.client.call_service("light", "turn_on", service_data, target)
                 
                 logger.info(f"Brightness decreased by {decrement_pct}% in area {area_id}")
             
