@@ -1,5 +1,19 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.3.3
+
+- ZHA group organization improvements
+  - Automatically creates a "Glo_Zigbee_Groups" area to organize all ZHA group entities
+  - Moves ZHA group entities to Glo_Zigbee_Groups area after creation to prevent random placement
+  - Moves existing group entities to Glo_Zigbee_Groups area during sync
+  - Excludes Glo_Zigbee_Groups area from parity checks and light control operations
+  - Prevents Home Assistant from placing groups in random areas
+
+- Better group entity management
+  - Finds and moves group entities using entity registry
+  - Ensures consistent organization of all Glo_ prefixed groups
+  - Properly updates entity area assignments after group creation
+
 ## 2.3.2
 
 - Fixed WebSocket concurrency issues

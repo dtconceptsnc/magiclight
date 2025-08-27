@@ -870,6 +870,12 @@ class HomeAssistantWebSocketClient:
             self.area_parity_cache.clear()
             
             for area_id, area_info in areas.items():
+                area_name = area_info.get('name', '')
+                
+                # Skip the Glo_Zigbee_Groups area - it's just for organizing group entities
+                if area_name == 'Glo_Zigbee_Groups':
+                    continue
+                    
                 zha_lights = area_info.get('zha_lights', [])
                 non_zha_lights = area_info.get('non_zha_lights', [])
                 

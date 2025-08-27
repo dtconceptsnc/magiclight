@@ -489,6 +489,113 @@ class ZigBeeController(LightController):
             logger.error(f"Failed to check ZHA parity for area {area_id}: {e}")
             return False
     
+    async def ensure_glo_area_exists(self) -> str:
+        """Ensure the 'Glo_Zigbee_Groups' area exists for storing ZHA group entities.
+        
+        Returns:
+            The area_id of the Glo_Zigbee_Groups area
+        """
+        try:
+            # Get current areas
+            areas_result = await self.ws_client.send_message_wait_response({"type": "config/area_registry/list"})
+            
+            # Check if Glo_Zigbee_Groups area exists
+            glo_area_id = None
+            if areas_result:
+                for area in areas_result:
+                    if area.get("name") == "Glo_Zigbee_Groups":
+                        glo_area_id = area.get("area_id")
+                        logger.info(f"Found existing Glo_Zigbee_Groups area with ID: {glo_area_id}")
+                        break
+            
+            # Create Glo_Zigbee_Groups area if it doesn't exist
+            if not glo_area_id:
+                logger.info("Creating Glo_Zigbee_Groups area for ZHA groups...")
+                result = await self.ws_client.send_message_wait_response({
+                    "type": "config/area_registry/create",
+                    "name": "Glo_Zigbee_Groups"
+                })
+                if result and "area_id" in result:
+                    glo_area_id = result["area_id"]
+                    logger.info(f"Created Glo_Zigbee_Groups area with ID: {glo_area_id}")
+                else:
+                    logger.error("Failed to create Glo_Zigbee_Groups area")
+            
+            return glo_area_id
+            
+        except Exception as e:
+            logger.error(f"Failed to ensure Glo_Zigbee_Groups area exists: {e}")
+            return None
+    
+    async def move_group_entity_to_glo_area(self, group_name: str, glo_area_id: str) -> bool:
+        """Find the entity_id for a ZHA group and move it to the Glo_Zigbee_Groups area.
+        
+        Args:
+            group_name: The name of the ZHA group (e.g., "Glo_Living_Room")
+            glo_area_id: The area_id of the Glo_Zigbee_Groups area
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Get entity registry to find the group entity
+            entity_registry = await self.ws_client.send_message_wait_response({"type": "config/entity_registry/list"})
+            
+            if entity_registry:
+                for entity in entity_registry:
+                    entity_id = entity.get("entity_id", "")
+                    # ZHA group entities typically have the group name in their entity_id
+                    # They're usually like light.glo_living_room or similar
+                    if entity_id.startswith("light.") and group_name.lower().replace("_", "") in entity_id.lower().replace("_", ""):
+                        # Found the group entity, move it to Glo area
+                        logger.info(f"Found group entity {entity_id} for group {group_name}")
+                        
+                        # Check current area
+                        current_area = entity.get("area_id")
+                        if current_area != glo_area_id:
+                            success = await self.move_entity_to_area(entity_id, glo_area_id)
+                            if success:
+                                logger.info(f"Moved ZHA group entity {entity_id} to Glo_Zigbee_Groups area")
+                            return success
+                        else:
+                            logger.info(f"Group entity {entity_id} already in Glo_Zigbee_Groups area")
+                            return True
+            
+            logger.warning(f"Could not find entity for ZHA group {group_name}")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Failed to move group entity to Glo_Zigbee_Groups area: {e}")
+            return False
+    
+    async def move_entity_to_area(self, entity_id: str, area_id: str) -> bool:
+        """Move an entity to a specific area.
+        
+        Args:
+            entity_id: The entity to move
+            area_id: The target area ID
+            
+        Returns:
+            True if successful
+        """
+        try:
+            result = await self.ws_client.send_message_wait_response({
+                "type": "config/entity_registry/update",
+                "entity_id": entity_id,
+                "area_id": area_id
+            })
+            
+            if result:
+                logger.info(f"Moved entity {entity_id} to area {area_id}")
+                return True
+            else:
+                logger.warning(f"Failed to move entity {entity_id} to area {area_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error moving entity {entity_id} to area: {e}")
+            return False
+    
     async def sync_zha_groups_with_areas(self, areas_with_switches: set = None) -> bool:
         """Synchronize ZHA groups to match Home Assistant areas that have switches.
         
@@ -500,6 +607,11 @@ class ZigBeeController(LightController):
         """
         try:
             logger.info("Starting ZHA group synchronization with areas...")
+            
+            # Ensure Glo_Zigbee_Groups area exists for our groups
+            glo_area_id = await self.ensure_glo_area_exists()
+            if not glo_area_id:
+                logger.warning("Could not ensure Glo_Zigbee_Groups area exists, groups may be placed in random areas")
             
             # Get current ZHA groups
             existing_groups = await self.list_zha_groups()
@@ -640,6 +752,10 @@ class ZigBeeController(LightController):
                     
                     # Store mapping
                     self.area_to_group_id[area_name] = existing_group['group_id']
+                    
+                    # Move existing group entity to Glo area if needed
+                    if glo_area_id:
+                        await self.move_group_entity_to_glo_area(group_name, glo_area_id)
                 else:
                     # Create new group with random 16-bit group ID
                     # Generate random 16-bit integer (0-65535)
@@ -657,6 +773,11 @@ class ZigBeeController(LightController):
                         for g in updated_groups:
                             if g.get('name') == group_name:
                                 self.area_to_group_id[area_name] = g['group_id']
+                                
+                                # Find the entity_id for this group and move it to Glo area
+                                if glo_area_id:
+                                    await self.move_group_entity_to_glo_area(group_name, glo_area_id)
+                                
                                 break
             
             # Delete groups for areas that no longer exist (only our Glo_ groups)
