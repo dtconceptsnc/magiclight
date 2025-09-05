@@ -1,6 +1,8 @@
 .env
 .data/
 __pycache__/
+tests/unit/__pycache__/
+tests/__pycache__/
 *.pyc
 *.pyo
 *.pyd
