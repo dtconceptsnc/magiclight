@@ -1,4 +1,4 @@
-# Testing HomeGlo
+# Testing IntuitiveLight
 
 ## Setup
 

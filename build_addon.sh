@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build script for MagicLight Home Assistant addon
+# Build script for Intuitive Light Home Assistant addon
 # Supports multiple architectures
 
 set -e
@@ -87,7 +87,7 @@ fi
 # Function to build for a single architecture
 build_arch() {
     local arch=$1
-    echo -e "${GREEN}Building MagicLight addon for ${arch}...${NC}"
+    echo -e "${GREEN}Building Intuitive Light addon for ${arch}...${NC}"
     
     docker run --rm -it --name builder --privileged \
         -v "$(pwd)/magiclight":/data \
@@ -112,7 +112,7 @@ build_arch() {
 # Main build process
 cd "$(dirname "$0")"
 
-echo -e "${GREEN}MagicLight Home Assistant Addon Builder${NC}"
+echo -e "${GREEN}Intuitive Light Home Assistant Addon Builder${NC}"
 echo "======================================"
 
 # Validate addon configuration

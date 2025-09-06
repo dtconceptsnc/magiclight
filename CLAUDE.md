@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
-MagicLight is a Home Assistant add-on that connects to the Home Assistant WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
+Intuitive Light is a Home Assistant add-on that connects to the Home Assistant WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
 
 ## Architecture
 

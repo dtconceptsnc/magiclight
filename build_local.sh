@@ -58,30 +58,30 @@ case $(uname -m) in
         ;;
 esac
 
-echo "Building MagicLight addon for $ARCH (no cache)..."
+echo "Building IntuitiveLight addon for $ARCH (no cache)..."
 
 docker run --rm -it --name builder --privileged \
-    -v "$(pwd)/magiclight":/data \
+    -v "$(pwd)/intuitivelight":/data \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     ghcr.io/home-assistant/amd64-builder \
     -t /data \
     --test \
     --${ARCH} \
-    -i magiclight-${ARCH} \
+    -i intuitivelight-${ARCH} \
     -d local
 
-echo "Build complete! Image: local/magiclight-${ARCH}:latest"
+echo "Build complete! Image: local/intuitivelight-${ARCH}:latest"
 
 # Run the container if requested
 if [ "$RUN_AFTER_BUILD" = true ]; then
     echo ""
-    echo "Running MagicLight container..."
+    echo "Running IntuitiveLight container..."
     echo "Press Ctrl+C to stop"
     echo ""
     
     # Check if .env file exists
-    if [ -f "magiclight/.env" ]; then
-        ENV_FILE="--env-file magiclight/.env"
+    if [ -f "intuitivelight/.env" ]; then
+        ENV_FILE="--env-file intuitivelight/.env"
         echo "Using .env file for configuration"
     else
         echo "Warning: No .env file found. Using environment variables."
@@ -93,7 +93,7 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
             echo "ERROR: HA_TOKEN environment variable is not set!"
             echo ""
             echo "Please either:"
-            echo "1. Create magiclight/.env file with HA_TOKEN=your_token_here"
+            echo "1. Create intuitivelight/.env file with HA_TOKEN=your_token_here"
             echo "2. Or set environment variable: export HA_TOKEN='your_token_here'"
             echo ""
             exit 1
@@ -102,10 +102,10 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
     
     # The builder creates images with 'local/' prefix
     docker run --rm -it \
-        --name magiclight-test \
+        --name intuitivelight-test \
         ${ENV_FILE} \
         -p "${HOST_PORT}:8099" \
-        local/magiclight-${ARCH}:latest
+        local/intuitivelight-${ARCH}:latest
     
     echo ""
     echo "Light Designer web UI should be available at: http://localhost:${HOST_PORT}"
