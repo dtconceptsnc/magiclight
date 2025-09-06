@@ -3,7 +3,7 @@ name: Intuitive Light
 version: "2.4.0"
 slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
-url: "https://github.com/intuitivelight/intuitivelight-ha-addon"
+url: "https://github.com/intuitivelight/intuitivelight-ha"
 arch:
   - armhf
   - armv7
@@ -17,7 +17,7 @@ ingress: true
 ingress_port: 8099
 ingress_entry: /
 panel_icon: mdi:lightbulb
-panel_title: Light Designer
+panel_title: Intuitive Light
 panel_admin: false
 options:
   color_mode: "xy"
