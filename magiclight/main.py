@@ -663,37 +663,29 @@ class HomeAssistantWebSocketClient:
             pass
 
         try:
-            # Extract curve parameters if present
-            morning_bri_params = {}
-            morning_cct_params = {}
-            evening_bri_params = {}
-            evening_cct_params = {}
-
-            for key in ["mid", "steep", "decay", "gain", "offset"]:
-                k = f"morning_bri_{key}"
-                if k in merged_config:
-                    morning_bri_params[key] = merged_config[k]
-            for key in ["mid", "steep", "decay", "gain", "offset"]:
-                k = f"morning_cct_{key}"
-                if k in merged_config:
-                    morning_cct_params[key] = merged_config[k]
-            for key in ["mid", "steep", "decay", "gain", "offset"]:
-                k = f"evening_bri_{key}"
-                if k in merged_config:
-                    evening_bri_params[key] = merged_config[k]
-            for key in ["mid", "steep", "decay", "gain", "offset"]:
-                k = f"evening_cct_{key}"
-                if k in merged_config:
-                    evening_cct_params[key] = merged_config[k]
-
-            if morning_bri_params:
-                curve_params["morning_bri_params"] = morning_bri_params
-            if morning_cct_params:
-                curve_params["morning_cct_params"] = morning_cct_params
-            if evening_bri_params:
-                curve_params["evening_bri_params"] = evening_bri_params
-            if evening_cct_params:
-                curve_params["evening_cct_params"] = evening_cct_params
+            # Extract simplified curve parameters if present
+            # Using the new parameter names from designer.html
+            config_params = {}
+            
+            # Morning parameters (up)
+            for key in ["mid_bri_up", "steep_bri_up", "mid_cct_up", "steep_cct_up"]:
+                if key in merged_config:
+                    config_params[key] = merged_config[key]
+            
+            # Evening parameters (dn)
+            for key in ["mid_bri_dn", "steep_bri_dn", "mid_cct_dn", "steep_cct_dn"]:
+                if key in merged_config:
+                    config_params[key] = merged_config[key]
+            
+            # Mirror and gamma parameters
+            for key in ["mirror_up", "mirror_dn", "gamma_ui", "max_dim_steps"]:
+                if key in merged_config:
+                    config_params[key] = merged_config[key]
+            
+            # Add config parameters to curve_params
+            if config_params:
+                curve_params["config"] = config_params
+                
         except Exception as e:
             logger.debug(f"Could not parse curve parameters from merged config: {e}")
         

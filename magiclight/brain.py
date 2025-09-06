@@ -3,14 +3,10 @@
 
 Key updates
 -----------
-* `get_adaptive_lighting()` no longer *requires* latitude / longitude / timezone.
-  If they’re omitted it pulls them from typical Home Assistant env-vars
-  (`HASS_LATITUDE`, `HASS_LONGITUDE`, `HASS_TIME_ZONE` or `TZ`).  If those
-  are missing it finally falls back to the local system timezone.
-* No other public API changes – `config` overrides still work.
-
-This keeps the module usable both inside a HA add-on and in standalone
-scripts/tests.
+* Simplified logistic curves without gain/offset/decay parameters
+* Added gamma-based perceptual brightness calculations for stepping
+* Arc-based stepping algorithm for smooth dim/brighten transitions
+* Direct parameter names matching JavaScript designer (mid_bri_up, steep_bri_up, etc.)
 """
 
 from __future__ import annotations
@@ -47,36 +43,35 @@ DEFAULT_MIN_BRIGHTNESS = int(os.getenv("MIN_BRIGHTNESS", "1"))
 DEFAULT_MAX_BRIGHTNESS = int(os.getenv("MAX_BRIGHTNESS", "100"))
 
 # Default dimming steps (for arc-based dimming)
-DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "8"))
+DEFAULT_MAX_DIM_STEPS = int(os.getenv("MAX_DIM_STEPS", "10"))
 
-# Morning curve parameters (defaults from HTML)
-DEFAULT_MORNING_BRI_MID = 6.0       # Midpoint hours from solar midnight
-DEFAULT_MORNING_BRI_STEEP = 1.0     # Steepness of curve
-DEFAULT_MORNING_BRI_DECAY = 0.02    # Decay around noon
-DEFAULT_MORNING_BRI_GAIN = 1.0      # Gain multiplier
-DEFAULT_MORNING_BRI_OFFSET = 0      # Brightness offset
+# Gamma for perceptual brightness (default 0.62)
+DEFAULT_GAMMA_UI = int(os.getenv("GAMMA_UI", "38"))  # UI value: 38 maps to gamma 0.62
 
-DEFAULT_MORNING_CCT_MID = 6.0       # Midpoint hours from solar midnight
-DEFAULT_MORNING_CCT_STEEP = 1.0     # Steepness of curve
-DEFAULT_MORNING_CCT_DECAY = 0.02    # Decay around noon
-DEFAULT_MORNING_CCT_GAIN = 1.0      # Gain multiplier
-DEFAULT_MORNING_CCT_OFFSET = 0      # Color temp offset
+# Morning curve parameters (simplified - only midpoint & steepness)
+DEFAULT_MID_BRI_UP = 6.0       # Midpoint hours from solar midnight
+DEFAULT_STEEP_BRI_UP = 1.5     # Steepness of curve
 
-# Evening curve parameters (defaults from HTML)
-DEFAULT_EVENING_BRI_MID = 6.0       # Midpoint hours from solar noon
-DEFAULT_EVENING_BRI_STEEP = 1.0     # Steepness of curve
-DEFAULT_EVENING_BRI_DECAY = 0.02    # Decay around noon
-DEFAULT_EVENING_BRI_GAIN = 1.0      # Gain multiplier
-DEFAULT_EVENING_BRI_OFFSET = 0      # Brightness offset
+DEFAULT_MID_CCT_UP = 6.0       # Midpoint hours from solar midnight  
+DEFAULT_STEEP_CCT_UP = 1.5     # Steepness of curve
 
-DEFAULT_EVENING_CCT_MID = 6.0       # Midpoint hours from solar noon
-DEFAULT_EVENING_CCT_STEEP = 1.0     # Steepness of curve
-DEFAULT_EVENING_CCT_DECAY = 0.02    # Decay around noon
-DEFAULT_EVENING_CCT_GAIN = 3.0      # Gain multiplier
-DEFAULT_EVENING_CCT_OFFSET = 0      # Color temp offset
+# Evening curve parameters (simplified - only midpoint & steepness)
+DEFAULT_MID_BRI_DN = 8.0       # Midpoint hours from solar noon
+DEFAULT_STEEP_BRI_DN = 1.3     # Steepness of curve
+
+DEFAULT_MID_CCT_DN = 8.0       # Midpoint hours from solar noon
+DEFAULT_STEEP_CCT_DN = 1.3     # Steepness of curve
+
+# Mirror flags (CCT follows brightness by default)
+DEFAULT_MIRROR_UP = True
+DEFAULT_MIRROR_DN = True
+
+# Perceptual weights for arc distance calculation
+WEIGHT_BRIGHTNESS = 1.0
+WEIGHT_COLOR = 0.6
 
 # ---------------------------------------------------------------------------
-# Adaptive-lighting math (unchanged)
+# Adaptive-lighting math (simplified)
 # ---------------------------------------------------------------------------
 
 class AdaptiveLighting:
@@ -94,30 +89,21 @@ class AdaptiveLighting:
         solar_noon: Optional[datetime] = None,
         solar_midnight: Optional[datetime] = None,
         color_mode: ColorMode = ColorMode.KELVIN,
-        # Morning brightness curve parameters
-        morning_bri_mid: float = DEFAULT_MORNING_BRI_MID,
-        morning_bri_steep: float = DEFAULT_MORNING_BRI_STEEP,
-        morning_bri_decay: float = DEFAULT_MORNING_BRI_DECAY,
-        morning_bri_gain: float = DEFAULT_MORNING_BRI_GAIN,
-        morning_bri_offset: float = DEFAULT_MORNING_BRI_OFFSET,
-        # Morning CCT curve parameters
-        morning_cct_mid: float = DEFAULT_MORNING_CCT_MID,
-        morning_cct_steep: float = DEFAULT_MORNING_CCT_STEEP,
-        morning_cct_decay: float = DEFAULT_MORNING_CCT_DECAY,
-        morning_cct_gain: float = DEFAULT_MORNING_CCT_GAIN,
-        morning_cct_offset: float = DEFAULT_MORNING_CCT_OFFSET,
-        # Evening brightness curve parameters
-        evening_bri_mid: float = DEFAULT_EVENING_BRI_MID,
-        evening_bri_steep: float = DEFAULT_EVENING_BRI_STEEP,
-        evening_bri_decay: float = DEFAULT_EVENING_BRI_DECAY,
-        evening_bri_gain: float = DEFAULT_EVENING_BRI_GAIN,
-        evening_bri_offset: float = DEFAULT_EVENING_BRI_OFFSET,
-        # Evening CCT curve parameters
-        evening_cct_mid: float = DEFAULT_EVENING_CCT_MID,
-        evening_cct_steep: float = DEFAULT_EVENING_CCT_STEEP,
-        evening_cct_decay: float = DEFAULT_EVENING_CCT_DECAY,
-        evening_cct_gain: float = DEFAULT_EVENING_CCT_GAIN,
-        evening_cct_offset: float = DEFAULT_EVENING_CCT_OFFSET,
+        # Simplified morning parameters
+        mid_bri_up: float = DEFAULT_MID_BRI_UP,
+        steep_bri_up: float = DEFAULT_STEEP_BRI_UP,
+        mid_cct_up: float = DEFAULT_MID_CCT_UP,
+        steep_cct_up: float = DEFAULT_STEEP_CCT_UP,
+        # Simplified evening parameters
+        mid_bri_dn: float = DEFAULT_MID_BRI_DN,
+        steep_bri_dn: float = DEFAULT_STEEP_BRI_DN,
+        mid_cct_dn: float = DEFAULT_MID_CCT_DN,
+        steep_cct_dn: float = DEFAULT_STEEP_CCT_DN,
+        # Mirror flags
+        mirror_up: bool = DEFAULT_MIRROR_UP,
+        mirror_dn: bool = DEFAULT_MIRROR_DN,
+        # Gamma for perceptual brightness
+        gamma_ui: int = DEFAULT_GAMMA_UI,
     ) -> None:
         self.min_color_temp = min_color_temp
         self.max_color_temp = max_color_temp
@@ -129,31 +115,24 @@ class AdaptiveLighting:
         self.solar_midnight = solar_midnight
         self.color_mode = color_mode
         
-        # Morning curve parameters
-        self.morning_bri_mid = morning_bri_mid
-        self.morning_bri_steep = morning_bri_steep
-        self.morning_bri_decay = morning_bri_decay
-        self.morning_bri_gain = morning_bri_gain
-        self.morning_bri_offset = morning_bri_offset
+        # Simplified morning parameters
+        self.mid_bri_up = mid_bri_up
+        self.steep_bri_up = steep_bri_up
+        self.mid_cct_up = mid_cct_up if not mirror_up else mid_bri_up
+        self.steep_cct_up = steep_cct_up if not mirror_up else steep_bri_up
         
-        self.morning_cct_mid = morning_cct_mid
-        self.morning_cct_steep = morning_cct_steep
-        self.morning_cct_decay = morning_cct_decay
-        self.morning_cct_gain = morning_cct_gain
-        self.morning_cct_offset = morning_cct_offset
+        # Simplified evening parameters
+        self.mid_bri_dn = mid_bri_dn
+        self.steep_bri_dn = steep_bri_dn
+        self.mid_cct_dn = mid_cct_dn if not mirror_dn else mid_bri_dn
+        self.steep_cct_dn = steep_cct_dn if not mirror_dn else steep_bri_dn
         
-        # Evening curve parameters
-        self.evening_bri_mid = evening_bri_mid
-        self.evening_bri_steep = evening_bri_steep
-        self.evening_bri_decay = evening_bri_decay
-        self.evening_bri_gain = evening_bri_gain
-        self.evening_bri_offset = evening_bri_offset
+        # Store mirror flags
+        self.mirror_up = mirror_up
+        self.mirror_dn = mirror_dn
         
-        self.evening_cct_mid = evening_cct_mid
-        self.evening_cct_steep = evening_cct_steep
-        self.evening_cct_decay = evening_cct_decay
-        self.evening_cct_gain = evening_cct_gain
-        self.evening_cct_offset = evening_cct_offset
+        # Calculate gamma from UI value (0-100 maps to 1.0-0.0)
+        self.gamma_b = (100 - gamma_ui) / 100.0
 
     def calculate_sun_position(self, now: datetime, elev_deg: float) -> float:
         """Calculate sun position using time-based cosine wave.
@@ -193,95 +172,93 @@ class AdaptiveLighting:
             # Fallback to regular time
             return now.hour + now.minute / 60
     
-    @staticmethod
-    def logistic_up(t: float, m: float, k: float) -> float:
-        """Logistic function for morning curves."""
-        return 1 / (1 + math.exp(-k * (t - m)))
+    def to_perceptual_brightness(self, brightness: float) -> float:
+        """Convert linear brightness to perceptual using gamma."""
+        normalized = max(0, min(100, brightness)) / 100.0
+        return math.pow(normalized, self.gamma_b)
+    
+    def to_mired(self, kelvin: float) -> float:
+        """Convert Kelvin to mireds for perceptual uniformity."""
+        return 1e6 / max(500, min(6500, kelvin))
     
     @staticmethod
-    def decay_around_noon(t: float, alpha: float) -> float:
-        """Decay function centered around solar noon (t=12)."""
-        return math.exp(-alpha * (t - 12) ** 2)
-    
-    def map_morning(self, t: float, m: float, k: float, alpha: float, gain: float, 
-                   offset: float, out_min: float, out_max: float) -> float:
-        """Map morning time to value using logistic curve with decay."""
-        base = self.logistic_up(t, m, k) * self.decay_around_noon(t, alpha)
-        scaled = max(0, min(1, base * gain))
-        y = out_min + (out_max - out_min) * scaled
-        y += offset
-        return y
-    
-    def map_evening(self, t: float, m: float, k: float, alpha: float, gain: float,
-                   offset: float, out_min: float, out_max: float) -> float:
-        """Map evening time to value using inverted logistic curve with decay."""
-        te = t - 12  # Shift time for evening calculation
-        base = (1 - self.logistic_up(te, m, k)) * self.decay_around_noon(t, alpha)
-        scaled = max(0, min(1, base * gain))
-        y = out_min + (out_max - out_min) * scaled
-        y += offset
-        return y
+    def map_half(t: float, m: float, k: float, out_min: float, out_max: float, direction: int) -> float:
+        """Simplified logistic mapping for morning/evening curves.
+        
+        Args:
+            t: Time in solar hours (0-12 for morning, 12-24 for evening)
+            m: Midpoint of the curve
+            k: Steepness of the curve
+            out_min: Minimum output value
+            out_max: Maximum output value
+            direction: +1 for morning (rises), -1 for evening (falls)
+        """
+        # Adjust time for evening calculation
+        te = t if direction > 0 else (t - 12)
+        
+        # Calculate base logistic
+        if direction > 0:
+            # Morning: standard logistic
+            base = 1 / (1 + math.exp(-k * (te - m)))
+        else:
+            # Evening: inverted logistic
+            base = 1 - 1 / (1 + math.exp(-k * (te - m)))
+        
+        # Map to output range
+        span = out_max - out_min
+        return max(out_min, min(out_max, out_min + span * base))
 
-    # colour / brightness ------------------------------------------------
     def calculate_color_temperature(self, now: datetime) -> int:
-        """Calculate color temperature using morning/evening curves based on solar time."""
+        """Calculate color temperature using simplified morning/evening curves."""
         solar_time = self.get_solar_time(now)
         
         if solar_time < 12:
             # Morning: use morning curve (solar midnight to solar noon)
-            value = self.map_morning(
+            value = self.map_half(
                 solar_time,
-                self.morning_cct_mid,
-                self.morning_cct_steep,
-                self.morning_cct_decay,
-                self.morning_cct_gain,
-                self.morning_cct_offset,
+                self.mid_cct_up,
+                self.steep_cct_up,
                 self.min_color_temp,
-                self.max_color_temp
+                self.max_color_temp,
+                direction=+1
             )
         else:
             # Evening: use evening curve (solar noon to solar midnight)
-            value = self.map_evening(
+            value = self.map_half(
                 solar_time,
-                self.evening_cct_mid,
-                self.evening_cct_steep,
-                self.evening_cct_decay,
-                self.evening_cct_gain,
-                self.evening_cct_offset,
+                self.mid_cct_dn,
+                self.steep_cct_dn,
                 self.min_color_temp,
-                self.max_color_temp
+                self.max_color_temp,
+                direction=-1
             )
         
         # Clamp to valid range
         return int(max(self.min_color_temp, min(self.max_color_temp, value)))
 
     def calculate_brightness(self, now: datetime) -> int:
-        """Calculate brightness using morning/evening curves based on solar time."""
+        """Calculate brightness using simplified morning/evening curves."""
         solar_time = self.get_solar_time(now)
         
         if solar_time < 12:
             # Morning: use morning curve (solar midnight to solar noon)
-            value = self.map_morning(
+            value = self.map_half(
                 solar_time,
-                self.morning_bri_mid,
-                self.morning_bri_steep,
-                self.morning_bri_decay,
-                self.morning_bri_gain,
-                self.morning_bri_offset,
+                self.mid_bri_up,
+                self.steep_bri_up,
                 self.min_brightness,
-                self.max_brightness
+                self.max_brightness,
+                direction=+1
             )
         else:
             # Evening: use evening curve (solar noon to solar midnight)
-            value = self.map_evening(
+            value = self.map_half(
                 solar_time,
-                self.evening_bri_mid,
-                self.evening_bri_steep,
-                self.evening_bri_decay,
-                self.evening_bri_gain,
-                self.evening_bri_offset,
+                self.mid_bri_dn,
+                self.steep_bri_dn,
                 self.min_brightness,
-                self.max_brightness
+                self.max_brightness,
+                direction=-1
             )
         
         # Clamp to valid range
@@ -395,24 +372,20 @@ class AdaptiveLighting:
         """Calculate target time and lighting values for dim/brighten step.
         
         This implements the arc-based stepping algorithm from the designer:
-        - Builds an arc through the day's lighting curve
+        - Builds a perceptual arc through the lighting curve
         - Steps along this arc maintaining perceptual consistency
         - Ensures smooth transitions that feel natural
         
         Args:
             now: Current time
             action: 'brighten' or 'dim'
-            max_steps: Maximum number of steps in the arc (default 15)
+            max_steps: Maximum number of steps in the arc
             
         Returns:
             Tuple of (target_datetime, lighting_values_dict)
         """
         solar_time = self.get_solar_time(now)
         is_morning = solar_time < 12
-        
-        # Calculate arc for the current half-day
-        # Morning: solar midnight to solar noon
-        # Evening: solar noon to solar midnight
         
         # Sample the curve to build arc
         samples = []
@@ -423,15 +396,13 @@ class AdaptiveLighting:
             for t in [i * sample_step for i in range(int(12 / sample_step) + 1)]:
                 samples.append({
                     'solar_time': t,
-                    'brightness': self.map_morning(
-                        t, self.morning_bri_mid, self.morning_bri_steep,
-                        self.morning_bri_decay, self.morning_bri_gain,
-                        self.morning_bri_offset, self.min_brightness, self.max_brightness
+                    'brightness': self.map_half(
+                        t, self.mid_bri_up, self.steep_bri_up,
+                        self.min_brightness, self.max_brightness, direction=+1
                     ),
-                    'kelvin': self.map_morning(
-                        t, self.morning_cct_mid, self.morning_cct_steep,
-                        self.morning_cct_decay, self.morning_cct_gain,
-                        self.morning_cct_offset, self.min_color_temp, self.max_color_temp
+                    'kelvin': self.map_half(
+                        t, self.mid_cct_up, self.steep_cct_up,
+                        self.min_color_temp, self.max_color_temp, direction=+1
                     )
                 })
         else:
@@ -439,47 +410,38 @@ class AdaptiveLighting:
             for t in [12 + i * sample_step for i in range(int(12 / sample_step) + 1)]:
                 samples.append({
                     'solar_time': t,
-                    'brightness': self.map_evening(
-                        t, self.evening_bri_mid, self.evening_bri_steep,
-                        self.evening_bri_decay, self.evening_bri_gain,
-                        self.evening_bri_offset, self.min_brightness, self.max_brightness
+                    'brightness': self.map_half(
+                        t, self.mid_bri_dn, self.steep_bri_dn,
+                        self.min_brightness, self.max_brightness, direction=-1
                     ),
-                    'kelvin': self.map_evening(
-                        t, self.evening_cct_mid, self.evening_cct_steep,
-                        self.evening_cct_decay, self.evening_cct_gain,
-                        self.evening_cct_offset, self.min_color_temp, self.max_color_temp
+                    'kelvin': self.map_half(
+                        t, self.mid_cct_dn, self.steep_cct_dn,
+                        self.min_color_temp, self.max_color_temp, direction=-1
                     )
                 })
         
-        # Build arc with weighted distances
-        # Normalize values for distance calculation
-        bmin, bmax = self.min_brightness, self.max_brightness
-        kmin, kmax = self.min_color_temp, self.max_color_temp
-        
-        # Convert kelvin to mireds for perceptual uniformity
-        def to_mired(k):
-            return 1e6 / k if k > 0 else 0
-        
-        mired_min = to_mired(kmax)
-        mired_max = to_mired(kmin)
-        
-        # Build arc distances
+        # Build arc with perceptual distances
         arc_distances = [0]
         for i in range(1, len(samples)):
-            # Normalized brightness difference
-            b_norm_prev = (samples[i-1]['brightness'] - bmin) / max(1e-9, bmax - bmin)
-            b_norm_curr = (samples[i]['brightness'] - bmin) / max(1e-9, bmax - bmin)
-            db = b_norm_curr - b_norm_prev
+            # Convert to perceptual space
+            pb_prev = self.to_perceptual_brightness(samples[i-1]['brightness'])
+            pb_curr = self.to_perceptual_brightness(samples[i]['brightness'])
             
-            # Normalized mired difference
-            m_prev = to_mired(samples[i-1]['kelvin'])
-            m_curr = to_mired(samples[i]['kelvin'])
-            m_norm_prev = (m_prev - mired_min) / max(1e-9, mired_max - mired_min)
-            m_norm_curr = (m_curr - mired_min) / max(1e-9, mired_max - mired_min)
-            dm = m_norm_curr - m_norm_prev
+            # Convert kelvin to mireds for perceptual uniformity
+            mired_min = self.to_mired(self.max_color_temp)
+            mired_max = self.to_mired(self.min_color_temp)
             
-            # Weighted distance (brightness weight = 1.0, color weight = 0.6)
-            distance = math.sqrt(1.0 * db**2 + 0.6 * dm**2)
+            m_prev = self.to_mired(samples[i-1]['kelvin'])
+            m_curr = self.to_mired(samples[i]['kelvin'])
+            
+            # Normalize to [0, 1]
+            pc_prev = (m_prev - mired_min) / max(1e-9, mired_max - mired_min)
+            pc_curr = (m_curr - mired_min) / max(1e-9, mired_max - mired_min)
+            
+            # Calculate weighted distance
+            db = pb_curr - pb_prev
+            dc = pc_curr - pc_prev
+            distance = math.sqrt(WEIGHT_BRIGHTNESS * db**2 + WEIGHT_COLOR * dc**2)
             arc_distances.append(arc_distances[-1] + distance)
         
         total_arc_length = arc_distances[-1]
@@ -507,7 +469,7 @@ class AdaptiveLighting:
             current_arc_pos = arc_distances[current_idx]
         
         # Calculate step size
-        step_size = total_arc_length / max_steps if max_steps > 0 else total_arc_length / 15
+        step_size = total_arc_length / max_steps if max_steps > 0 else total_arc_length / 10
         
         # Determine step direction
         # Morning: brighten = forward (toward noon), dim = backward (toward midnight)
@@ -521,14 +483,14 @@ class AdaptiveLighting:
         target_arc_pos = current_arc_pos + step_dir
         target_arc_pos = max(0, min(total_arc_length, target_arc_pos))
         
-        # Find target sample index and interpolation
+        # Find target sample index
         target_idx = 0
         for i in range(len(arc_distances) - 1):
             if arc_distances[i] <= target_arc_pos <= arc_distances[i + 1]:
                 target_idx = i
                 break
         
-        # Interpolate to find target solar time, then recalculate values from curves
+        # Interpolate to find target solar time
         if target_idx < len(samples) - 1 and arc_distances[target_idx + 1] > arc_distances[target_idx]:
             interp = (target_arc_pos - arc_distances[target_idx]) / \
                     (arc_distances[target_idx + 1] - arc_distances[target_idx])
@@ -543,34 +505,25 @@ class AdaptiveLighting:
         logger.debug(f"Step size={step_size:.3f}, direction={'forward' if step_dir > 0 else 'backward'}")
         
         # Recalculate brightness and kelvin from the actual curves at target_solar_time
-        # This ensures smooth transitions without interpolation artifacts
         if target_solar_time < 12:
             # Morning: use morning curves
-            logger.debug(f"Morning brightness params: mid={self.morning_bri_mid}, steep={self.morning_bri_steep}, "
-                        f"decay={self.morning_bri_decay}, gain={self.morning_bri_gain}, offset={self.morning_bri_offset}")
-            target_brightness = self.map_morning(
-                target_solar_time, self.morning_bri_mid, self.morning_bri_steep,
-                self.morning_bri_decay, self.morning_bri_gain,
-                self.morning_bri_offset, self.min_brightness, self.max_brightness
+            target_brightness = self.map_half(
+                target_solar_time, self.mid_bri_up, self.steep_bri_up,
+                self.min_brightness, self.max_brightness, direction=+1
             )
-            target_kelvin = self.map_morning(
-                target_solar_time, self.morning_cct_mid, self.morning_cct_steep,
-                self.morning_cct_decay, self.morning_cct_gain,
-                self.morning_cct_offset, self.min_color_temp, self.max_color_temp
+            target_kelvin = self.map_half(
+                target_solar_time, self.mid_cct_up, self.steep_cct_up,
+                self.min_color_temp, self.max_color_temp, direction=+1
             )
         else:
             # Evening: use evening curves
-            logger.debug(f"Evening brightness params: mid={self.evening_bri_mid}, steep={self.evening_bri_steep}, "
-                        f"decay={self.evening_bri_decay}, gain={self.evening_bri_gain}, offset={self.evening_bri_offset}")
-            target_brightness = self.map_evening(
-                target_solar_time, self.evening_bri_mid, self.evening_bri_steep,
-                self.evening_bri_decay, self.evening_bri_gain,
-                self.evening_bri_offset, self.min_brightness, self.max_brightness
+            target_brightness = self.map_half(
+                target_solar_time, self.mid_bri_dn, self.steep_bri_dn,
+                self.min_brightness, self.max_brightness, direction=-1
             )
-            target_kelvin = self.map_evening(
-                target_solar_time, self.evening_cct_mid, self.evening_cct_steep,
-                self.evening_cct_decay, self.evening_cct_gain,
-                self.evening_cct_offset, self.min_color_temp, self.max_color_temp
+            target_kelvin = self.map_half(
+                target_solar_time, self.mid_cct_dn, self.steep_cct_dn,
+                self.min_color_temp, self.max_color_temp, direction=-1
             )
         
         # Convert solar time back to real datetime
@@ -582,7 +535,6 @@ class AdaptiveLighting:
         target_brightness = int(max(self.min_brightness, min(self.max_brightness, target_brightness)))
         
         logger.debug(f"Final target values: brightness={target_brightness}%, kelvin={target_kelvin}K")
-        logger.debug(f"Brightness bounds: min={self.min_brightness}, max={self.max_brightness}")
         
         rgb = self.color_temperature_to_rgb(target_kelvin)
         xy = self.color_temperature_to_xy(target_kelvin)
@@ -642,11 +594,8 @@ def calculate_dimming_step(
     max_color_temp: int = DEFAULT_MAX_COLOR_TEMP,
     min_brightness: int = DEFAULT_MIN_BRIGHTNESS,
     max_brightness: int = DEFAULT_MAX_BRIGHTNESS,
-    # Allow overriding curve parameters (optional)
-    morning_bri_params: Optional[Dict[str, float]] = None,
-    morning_cct_params: Optional[Dict[str, float]] = None,
-    evening_bri_params: Optional[Dict[str, float]] = None,
-    evening_cct_params: Optional[Dict[str, float]] = None
+    # Simplified curve parameters (optional)
+    config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Calculate the next dimming step along the adaptive curve.
     
@@ -661,7 +610,7 @@ def calculate_dimming_step(
         max_color_temp: Maximum color temperature in Kelvin
         min_brightness: Minimum brightness percentage
         max_brightness: Maximum brightness percentage
-        *_params: Optional curve parameter overrides
+        config: Optional configuration dict with curve parameters
         
     Returns:
         Dict with target lighting values and time offset
@@ -686,7 +635,7 @@ def calculate_dimming_step(
     solar_noon = solar_events["noon"]
     solar_midnight = solar_noon - timedelta(hours=12) if solar_noon.hour >= 12 else solar_noon + timedelta(hours=12)
 
-    # Prepare curve parameters
+    # Prepare curve parameters from config
     kwargs = {
         "min_color_temp": min_color_temp,
         "max_color_temp": max_color_temp,
@@ -698,19 +647,13 @@ def calculate_dimming_step(
         "solar_midnight": solar_midnight,
     }
     
-    # Add curve parameters if provided
-    if morning_bri_params:
-        kwargs.update({f"morning_bri_{k}": v for k, v in morning_bri_params.items()
-                      if k in ["mid", "steep", "decay", "gain", "offset"]})
-    if morning_cct_params:
-        kwargs.update({f"morning_cct_{k}": v for k, v in morning_cct_params.items()
-                      if k in ["mid", "steep", "decay", "gain", "offset"]})
-    if evening_bri_params:
-        kwargs.update({f"evening_bri_{k}": v for k, v in evening_bri_params.items()
-                      if k in ["mid", "steep", "decay", "gain", "offset"]})
-    if evening_cct_params:
-        kwargs.update({f"evening_cct_{k}": v for k, v in evening_cct_params.items()
-                      if k in ["mid", "steep", "decay", "gain", "offset"]})
+    # Add simplified curve parameters from config if provided
+    if config:
+        for key in ["mid_bri_up", "steep_bri_up", "mid_cct_up", "steep_cct_up",
+                   "mid_bri_dn", "steep_bri_dn", "mid_cct_dn", "steep_cct_dn",
+                   "mirror_up", "mirror_dn", "gamma_ui"]:
+            if key in config:
+                kwargs[key] = config[key]
 
     al = AdaptiveLighting(**kwargs)
     
@@ -739,13 +682,10 @@ def get_adaptive_lighting(
     max_color_temp: int = DEFAULT_MAX_COLOR_TEMP,
     min_brightness: int = DEFAULT_MIN_BRIGHTNESS,
     max_brightness: int = DEFAULT_MAX_BRIGHTNESS,
-    # Allow overriding curve parameters (optional)
-    morning_bri_params: Optional[Dict[str, float]] = None,
-    morning_cct_params: Optional[Dict[str, float]] = None,
-    evening_bri_params: Optional[Dict[str, float]] = None,
-    evening_cct_params: Optional[Dict[str, float]] = None
+    # Optional config with simplified curve parameters
+    config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """Compute adaptive-lighting values using morning/evening curves.
+    """Compute adaptive-lighting values using simplified morning/evening curves.
 
     If *latitude*, *longitude* or *timezone* are omitted the function will try
     to pull them from the conventional Home Assistant env-vars.  Failing that
@@ -757,8 +697,11 @@ def get_adaptive_lighting(
         max_color_temp: Maximum color temperature in Kelvin
         min_brightness: Minimum brightness percentage
         max_brightness: Maximum brightness percentage
+        config: Optional dict with curve parameters
     
-    The optional curve parameter dicts can contain: mid, steep, decay, gain, offset
+    The config dict can contain: mid_bri_up, steep_bri_up, mid_cct_up, steep_cct_up,
+                                 mid_bri_dn, steep_bri_dn, mid_cct_dn, steep_cct_dn,
+                                 mirror_up, mirror_dn, gamma_ui
     """
     latitude, longitude, timezone = _auto_location(latitude, longitude, timezone)
     if latitude is None or longitude is None:
@@ -783,7 +726,7 @@ def get_adaptive_lighting(
     solar_noon = solar_events["noon"]
     solar_midnight = solar_noon - timedelta(hours=12) if solar_noon.hour >= 12 else solar_noon + timedelta(hours=12)
 
-    # Prepare curve parameters (use provided or defaults)
+    # Prepare curve parameters (use provided config or defaults)
     kwargs = {
         "min_color_temp": min_color_temp,
         "max_color_temp": max_color_temp,
@@ -795,40 +738,20 @@ def get_adaptive_lighting(
         "solar_midnight": solar_midnight,
     }
     
-    # Add morning brightness parameters if provided
-    if morning_bri_params:
-        kwargs.update({
-            f"morning_bri_{k}": v for k, v in morning_bri_params.items()
-            if k in ["mid", "steep", "decay", "gain", "offset"]
-        })
-    
-    # Add morning CCT parameters if provided
-    if morning_cct_params:
-        kwargs.update({
-            f"morning_cct_{k}": v for k, v in morning_cct_params.items()
-            if k in ["mid", "steep", "decay", "gain", "offset"]
-        })
-    
-    # Add evening brightness parameters if provided
-    if evening_bri_params:
-        kwargs.update({
-            f"evening_bri_{k}": v for k, v in evening_bri_params.items()
-            if k in ["mid", "steep", "decay", "gain", "offset"]
-        })
-    
-    # Add evening CCT parameters if provided
-    if evening_cct_params:
-        kwargs.update({
-            f"evening_cct_{k}": v for k, v in evening_cct_params.items()
-            if k in ["mid", "steep", "decay", "gain", "offset"]
-        })
+    # Add simplified parameters from config if provided
+    if config:
+        for key in ["mid_bri_up", "steep_bri_up", "mid_cct_up", "steep_cct_up",
+                   "mid_bri_dn", "steep_bri_dn", "mid_cct_dn", "steep_cct_dn",
+                   "mirror_up", "mirror_dn", "gamma_ui"]:
+            if key in config:
+                kwargs[key] = config[key]
 
     al = AdaptiveLighting(**kwargs)
 
     sun_pos = al.calculate_sun_position(now, elev)
     solar_time = al.get_solar_time(now)
     
-    # Use new morning/evening curve methods (they take datetime now)
+    # Use simplified curve methods
     cct = al.calculate_color_temperature(now)
     bri = al.calculate_brightness(now)
     

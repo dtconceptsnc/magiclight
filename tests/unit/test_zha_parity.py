@@ -188,15 +188,20 @@ class TestZHAParity:
         # 5. list_zha_groups() again after creation
         
         mock_ws_client.send_message_wait_response.side_effect = [
-            # First call: list existing ZHA groups (empty)
+            # First call: Get area registry for ensure_glo_area_exists
+            [],  # No existing areas
+            # Second call: Create Glo_Zigbee_Groups area
+            {"area_id": "glo_area"},
+            # Third call: list existing ZHA groups (empty)
             [],
             # get_areas() calls start here:
-            # 1. Get area registry
+            # 4. Get area registry
             [
                 {"area_id": "room1", "name": "Room 1"},
-                {"area_id": "room2", "name": "Room 2"}
+                {"area_id": "room2", "name": "Room 2"},
+                {"area_id": "glo_area", "name": "Glo_Zigbee_Groups"}
             ],
-            # 2. Get device registry
+            # 5. Get device registry
             [
                 {
                     "id": "dev1",
@@ -214,26 +219,26 @@ class TestZHAParity:
                     "identifiers": [["wifi", "AA:BB:CC:DD:EE:FF"]]
                 }
             ],
-            # 3. Get entity registry
+            # 6. Get entity registry
             [
                 {"entity_id": "light.room1_light", "device_id": "dev1"},
                 {"entity_id": "light.room2_zha", "device_id": "dev2"},
                 {"entity_id": "light.room2_wifi", "device_id": "dev3"}
             ],
-            # 4. List ZHA devices (for get_areas)
+            # 7. List ZHA devices (for get_areas)
             [
                 {"device_id": "dev1", "ieee": "00:11:22:33:44:55:66:77", "name": "Light 1"},
                 {"device_id": "dev2", "ieee": "00:11:22:33:44:55:66:88", "name": "Light 2"}
             ],
             # Back to sync_zha_groups_with_areas:
-            # 5. List ZHA devices again (for member lookup)
+            # 8. List ZHA devices again (for member lookup)
             [
                 {"device_id": "dev1", "ieee": "00:11:22:33:44:55:66:77", "name": "Light 1"},
                 {"device_id": "dev2", "ieee": "00:11:22:33:44:55:66:88", "name": "Light 2"}
             ],
-            # 6. Create group response for room1 (has parity)
+            # 9. Create group response for room1 (has parity)
             {"success": True},
-            # 7. List groups after creation
+            # 10. List groups after creation
             [{"name": "Glo_Room_1", "group_id": 1001}]
         ]
         
@@ -254,7 +259,7 @@ class TestZHAParity:
         
         # Run sync
         areas_with_switches = {"room1", "room2"}
-        success = await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
+        success, areas_dict = await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
         
         assert success is True
         # Verify that only room1 got a group (has ZHA parity)

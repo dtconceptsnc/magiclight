@@ -1,5 +1,29 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.4.0
+
+- New simplified adaptive lighting algorithm
+  - Replaced complex logistic curves with simplified midpoint/steepness parameters
+  - Removed gain/offset/decay parameters for cleaner configuration
+  - Added arc-based stepping for perceptually uniform dim/brighten transitions
+  - Added gamma-based brightness perception (controlled via "Prioritize dim steps" slider)
+  - Smoother and more predictable lighting transitions
+
+- Designer improvements
+  - Save Configuration button moved to top for better visibility
+  - Added "Prioritize dim steps" control for customizing step behavior
+  - Visual hash marks on sliders showing default values
+  - Location parameters (lat/lon/timezone) now display-only from Home Assistant
+  - Test month selector no longer saved (always defaults to current month)
+  - Sun power curve visually dimmed for better contrast
+  - Fixed midpoint labels to refresh when sun position changes
+
+- Testing improvements
+  - Added comprehensive pytest test suite
+  - Tests organized in tests/unit/ directory
+  - Added TESTING.md documentation
+  - Fixed async test issues
+
 ## 2.3.5
 
 - Startup optimization
