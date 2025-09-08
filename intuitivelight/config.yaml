@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Intuitive Light
-version: "2.5.0"
+version: "2.5.1"
 slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/intuitivelight/intuitivelight-ha"
@@ -20,7 +20,7 @@ panel_icon: mdi:lightbulb
 panel_title: Intuitive Light
 panel_admin: false
 options:
-  color_mode: "xy"
+  color_mode: "kelvin"
   min_color_temp: 500
   max_color_temp: 6500
 schema:

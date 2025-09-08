@@ -1,10 +1,21 @@
-# Home Assistant Add-on: Example add-on
+# Intuitive Light Add-on Documentation
 
-## How to use
+## Configuration Options
 
-This add-on really does nothing. It is just an example.
+### color_mode
+Specifies how the add-on sends color information to lights. Options:
+- `kelvin` (default) - Uses color temperature in Kelvin. Most compatible with various bulb types.
+- `rgb` - Uses RGB color values
+- `xy` - Uses CIE xy color coordinates
 
-When started it will print the configured message or "Hello world" in the log.
+### min_color_temp
+Minimum color temperature in Kelvin (warmest/most orange). Default: 500K
 
-It will also print "All done!" in `/share/example_addon_output.txt` to show
-simple example of the usage of `map` in addon config.
+### max_color_temp  
+Maximum color temperature in Kelvin (coolest/most blue). Default: 6500K
+
+## How It Works
+
+This add-on connects to Home Assistant's WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
+
+The adaptive lighting adjusts both brightness and color temperature throughout the day to provide natural, comfortable lighting.

@@ -64,8 +64,8 @@ class HomeAssistantWebSocketClient:
         self.last_states_update = None  # Timestamp of last states update
         self.area_parity_cache = {}  # Cache of area ZHA parity status
         
-        # Color mode configuration - defaults to XY
-        color_mode_str = os.getenv("COLOR_MODE", "xy").lower()
+        # Color mode configuration - defaults to KELVIN (CT)
+        color_mode_str = os.getenv("COLOR_MODE", "kelvin").lower()
         try:
             # Try to get by value (lowercase) first
             self.color_mode = ColorMode(color_mode_str)
@@ -74,8 +74,8 @@ class HomeAssistantWebSocketClient:
             try:
                 self.color_mode = ColorMode[color_mode_str.upper()]
             except KeyError:
-                logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to XY")
-                self.color_mode = ColorMode.XY
+                logger.warning(f"Invalid COLOR_MODE '{color_mode_str}', defaulting to KELVIN")
+                self.color_mode = ColorMode.KELVIN
         logger.info(f"Using color mode: {self.color_mode.value}")
         
         # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py

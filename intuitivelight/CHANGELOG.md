@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.5.1
+
+- Changed default color mode to Kelvin (CT) for better bulb compatibility
+  - Most bulbs support color temperature (CT) mode
+  - Previous default was XY which some bulbs don't support well
+  - Updated configuration defaults and documentation
+
 ## 2.5.0
 
 - Simplified brightness stepping algorithm
