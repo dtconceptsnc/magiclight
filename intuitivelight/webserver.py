@@ -129,35 +129,24 @@ class LightDesignerServer:
         """
         # Defaults used by UI when nothing saved yet
         config: dict = {
-            "color_mode": "rgb",
+            "color_mode": "kelvin",
             "min_color_temp": 500,
             "max_color_temp": 6500,
             "min_brightness": 1,
             "max_brightness": 100,
-            # Morning brightness
-            "morning_bri_mid": 6.0,
-            "morning_bri_steep": 1.0,
-            "morning_bri_decay": 0.02,
-            "morning_bri_gain": 1.0,
-            "morning_bri_offset": 0,
-            # Morning CCT
-            "morning_cct_mid": 6.0,
-            "morning_cct_steep": 1.0,
-            "morning_cct_decay": 0.02,
-            "morning_cct_gain": 1.0,
-            "morning_cct_offset": 0,
-            # Evening brightness
-            "evening_bri_mid": 6.0,
-            "evening_bri_steep": 1.0,
-            "evening_bri_decay": 0.02,
-            "evening_bri_gain": 1.0,
-            "evening_bri_offset": 0,
-            # Evening CCT
-            "evening_cct_mid": 6.0,
-            "evening_cct_steep": 1.0,
-            "evening_cct_decay": 0.02,
-            "evening_cct_gain": 1.0,
-            "evening_cct_offset": 0,
+            # Morning (up) parameters - simplified, no gain/offset/decay
+            "mid_bri_up": 6.0,
+            "steep_bri_up": 1.5,
+            "mid_cct_up": 6.0,
+            "steep_cct_up": 1.5,
+            # Evening (down) parameters - simplified, no gain/offset/decay
+            "mid_bri_dn": 8.0,
+            "steep_bri_dn": 1.3,
+            "mid_cct_dn": 8.0,
+            "steep_cct_dn": 1.3,
+            # Mirror flags (default ON)
+            "mirror_up": True,
+            "mirror_dn": True,
             # Dimming steps
             "max_dim_steps": DEFAULT_MAX_DIM_STEPS,
             # Location settings (UI preview only)
