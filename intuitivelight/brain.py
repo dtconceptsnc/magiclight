@@ -4,9 +4,9 @@
 Key updates
 -----------
 * Simplified logistic curves without gain/offset/decay parameters
-* Added gamma-based perceptual brightness calculations for stepping
-* Arc-based stepping algorithm for smooth dim/brighten transitions
+* Simplified brightness-based stepping matching JavaScript designer.html
 * Direct parameter names matching JavaScript designer (mid_bri_up, steep_bri_up, etc.)
+* Percentage-based stepping: step_size = (max - min) / steps
 """
 
 from __future__ import annotations
@@ -65,10 +65,6 @@ DEFAULT_STEEP_CCT_DN = 1.3     # Steepness of curve
 # Mirror flags (CCT follows brightness by default)
 DEFAULT_MIRROR_UP = True
 DEFAULT_MIRROR_DN = True
-
-# Perceptual weights for arc distance calculation
-WEIGHT_BRIGHTNESS = 1.0
-WEIGHT_COLOR = 0.6
 
 # ---------------------------------------------------------------------------
 # Adaptive-lighting math (simplified)
@@ -371,15 +367,15 @@ class AdaptiveLighting:
                             max_steps: int = DEFAULT_MAX_DIM_STEPS) -> Tuple[datetime, Dict[str, Any]]:
         """Calculate target time and lighting values for dim/brighten step.
         
-        This implements the arc-based stepping algorithm from the designer:
-        - Builds a perceptual arc through the lighting curve
-        - Steps along this arc maintaining perceptual consistency
-        - Ensures smooth transitions that feel natural
+        This implements the simplified brightness-based stepping from designer.html:
+        - Calculates step size as (max_brightness - min_brightness) / steps
+        - Adds/subtracts step from current brightness
+        - Finds the solar time that produces that brightness on the curve
         
         Args:
             now: Current time
             action: 'brighten' or 'dim'
-            max_steps: Maximum number of steps in the arc
+            max_steps: Maximum number of steps from min to max brightness
             
         Returns:
             Tuple of (target_datetime, lighting_values_dict)
@@ -387,140 +383,50 @@ class AdaptiveLighting:
         solar_time = self.get_solar_time(now)
         is_morning = solar_time < 12
         
-        # Sample the curve to build arc
-        samples = []
-        sample_step = 0.1  # Sample every 0.1 solar hours
+        # Get current brightness
+        current_brightness = self.calculate_brightness(now)
         
-        if is_morning:
-            # Sample from midnight to noon
-            for t in [i * sample_step for i in range(int(12 / sample_step) + 1)]:
-                samples.append({
-                    'solar_time': t,
-                    'brightness': self.map_half(
-                        t, self.mid_bri_up, self.steep_bri_up,
-                        self.min_brightness, self.max_brightness, direction=+1
-                    ),
-                    'kelvin': self.map_half(
-                        t, self.mid_cct_up, self.steep_cct_up,
-                        self.min_color_temp, self.max_color_temp, direction=+1
-                    )
-                })
-        else:
-            # Sample from noon to midnight
-            for t in [12 + i * sample_step for i in range(int(12 / sample_step) + 1)]:
-                samples.append({
-                    'solar_time': t,
-                    'brightness': self.map_half(
-                        t, self.mid_bri_dn, self.steep_bri_dn,
-                        self.min_brightness, self.max_brightness, direction=-1
-                    ),
-                    'kelvin': self.map_half(
-                        t, self.mid_cct_dn, self.steep_cct_dn,
-                        self.min_color_temp, self.max_color_temp, direction=-1
-                    )
-                })
+        # Calculate step size (matches JavaScript: brightnessStepSize function)
+        step_size = (self.max_brightness - self.min_brightness) / max(1, min(500, max_steps))
         
-        # Build arc with perceptual distances
-        arc_distances = [0]
-        for i in range(1, len(samples)):
-            # Convert to perceptual space
-            pb_prev = self.to_perceptual_brightness(samples[i-1]['brightness'])
-            pb_curr = self.to_perceptual_brightness(samples[i]['brightness'])
-            
-            # Convert kelvin to mireds for perceptual uniformity
-            mired_min = self.to_mired(self.max_color_temp)
-            mired_max = self.to_mired(self.min_color_temp)
-            
-            m_prev = self.to_mired(samples[i-1]['kelvin'])
-            m_curr = self.to_mired(samples[i]['kelvin'])
-            
-            # Normalize to [0, 1]
-            pc_prev = (m_prev - mired_min) / max(1e-9, mired_max - mired_min)
-            pc_curr = (m_curr - mired_min) / max(1e-9, mired_max - mired_min)
-            
-            # Calculate weighted distance
-            db = pb_curr - pb_prev
-            dc = pc_curr - pc_prev
-            distance = math.sqrt(WEIGHT_BRIGHTNESS * db**2 + WEIGHT_COLOR * dc**2)
-            arc_distances.append(arc_distances[-1] + distance)
+        # Determine direction
+        direction = 1 if action == 'brighten' else -1
         
-        total_arc_length = arc_distances[-1]
+        # Calculate target brightness
+        target_brightness = current_brightness + (direction * step_size)
         
-        # Find current position on arc
-        current_idx = 0
-        min_diff = float('inf')
-        for i, sample in enumerate(samples):
-            diff = abs(sample['solar_time'] - solar_time)
-            if diff < min_diff:
-                min_diff = diff
-                current_idx = i
+        # Check boundaries
+        if (direction > 0 and current_brightness >= self.max_brightness - 1e-9) or \
+           (direction < 0 and current_brightness <= self.min_brightness + 1e-9):
+            # Already at boundary
+            logger.debug(f"Already at brightness boundary: {current_brightness}%")
+            return now, {
+                'kelvin': self.calculate_color_temperature(now),
+                'brightness': int(current_brightness),
+                'rgb': self.color_temperature_to_rgb(self.calculate_color_temperature(now)),
+                'xy': self.color_temperature_to_xy(self.calculate_color_temperature(now)),
+                'solar_time': solar_time
+            }
         
-        # Interpolate to get exact arc position
-        if current_idx < len(samples) - 1:
-            t_curr = samples[current_idx]['solar_time']
-            t_next = samples[current_idx + 1]['solar_time']
-            if t_next > t_curr:
-                interp = (solar_time - t_curr) / (t_next - t_curr)
-                current_arc_pos = arc_distances[current_idx] + \
-                    interp * (arc_distances[current_idx + 1] - arc_distances[current_idx])
-            else:
-                current_arc_pos = arc_distances[current_idx]
-        else:
-            current_arc_pos = arc_distances[current_idx]
+        # Clamp target brightness to valid range
+        target_brightness = max(self.min_brightness, min(self.max_brightness, target_brightness))
         
-        # Calculate step size
-        step_size = total_arc_length / max_steps if max_steps > 0 else total_arc_length / 10
+        # Find solar time that produces this brightness (matches findHourForBrightnessOnHalf)
+        target_solar_time = self._find_solar_time_for_brightness(target_brightness, is_morning)
         
-        # Determine step direction
-        # Morning: brighten = forward (toward noon), dim = backward (toward midnight)
-        # Evening: brighten = backward (toward noon), dim = forward (toward midnight)
-        if is_morning:
-            step_dir = step_size if action == 'brighten' else -step_size
-        else:
-            step_dir = -step_size if action == 'brighten' else step_size
+        if target_solar_time is None:
+            # Couldn't find matching time, use current
+            target_solar_time = solar_time
         
-        # Calculate target arc position
-        target_arc_pos = current_arc_pos + step_dir
-        target_arc_pos = max(0, min(total_arc_length, target_arc_pos))
-        
-        # Find target sample index
-        target_idx = 0
-        for i in range(len(arc_distances) - 1):
-            if arc_distances[i] <= target_arc_pos <= arc_distances[i + 1]:
-                target_idx = i
-                break
-        
-        # Interpolate to find target solar time
-        if target_idx < len(samples) - 1 and arc_distances[target_idx + 1] > arc_distances[target_idx]:
-            interp = (target_arc_pos - arc_distances[target_idx]) / \
-                    (arc_distances[target_idx + 1] - arc_distances[target_idx])
-            target_solar_time = samples[target_idx]['solar_time'] + \
-                interp * (samples[target_idx + 1]['solar_time'] - samples[target_idx]['solar_time'])
-        else:
-            target_solar_time = samples[target_idx]['solar_time']
-        
-        # Debug logging
-        logger.debug(f"Arc stepping: current_solar_time={solar_time:.2f}, target_solar_time={target_solar_time:.2f}")
-        logger.debug(f"Arc position: current={current_arc_pos:.3f}, target={target_arc_pos:.3f}, total_length={total_arc_length:.3f}")
-        logger.debug(f"Step size={step_size:.3f}, direction={'forward' if step_dir > 0 else 'backward'}")
-        
-        # Recalculate brightness and kelvin from the actual curves at target_solar_time
+        # Calculate color temperature at target time
         if target_solar_time < 12:
-            # Morning: use morning curves
-            target_brightness = self.map_half(
-                target_solar_time, self.mid_bri_up, self.steep_bri_up,
-                self.min_brightness, self.max_brightness, direction=+1
-            )
+            # Morning: use morning curve
             target_kelvin = self.map_half(
                 target_solar_time, self.mid_cct_up, self.steep_cct_up,
                 self.min_color_temp, self.max_color_temp, direction=+1
             )
         else:
-            # Evening: use evening curves
-            target_brightness = self.map_half(
-                target_solar_time, self.mid_bri_dn, self.steep_bri_dn,
-                self.min_brightness, self.max_brightness, direction=-1
-            )
+            # Evening: use evening curve
             target_kelvin = self.map_half(
                 target_solar_time, self.mid_cct_dn, self.steep_cct_dn,
                 self.min_color_temp, self.max_color_temp, direction=-1
@@ -534,7 +440,9 @@ class AdaptiveLighting:
         target_kelvin = int(max(self.min_color_temp, min(self.max_color_temp, target_kelvin)))
         target_brightness = int(max(self.min_brightness, min(self.max_brightness, target_brightness)))
         
-        logger.debug(f"Final target values: brightness={target_brightness}%, kelvin={target_kelvin}K")
+        logger.debug(f"Step calculation: current_brightness={current_brightness:.1f}%, target_brightness={target_brightness:.1f}%")
+        logger.debug(f"Solar times: current={solar_time:.2f}h, target={target_solar_time:.2f}h")
+        logger.debug(f"Final values: brightness={target_brightness}%, kelvin={target_kelvin}K")
         
         rgb = self.color_temperature_to_rgb(target_kelvin)
         xy = self.color_temperature_to_xy(target_kelvin)
@@ -546,6 +454,60 @@ class AdaptiveLighting:
             'xy': xy,
             'solar_time': target_solar_time
         }
+    
+    def _find_solar_time_for_brightness(self, target_brightness: float, is_morning: bool) -> Optional[float]:
+        """Find the solar time that produces the target brightness.
+        
+        This matches the JavaScript findHourForBrightnessOnHalf function.
+        
+        Args:
+            target_brightness: Target brightness percentage
+            is_morning: Whether to search morning (True) or evening (False) curve
+            
+        Returns:
+            Solar time (0-24) that produces the target brightness, or None if not found
+        """
+        # Sample the appropriate curve
+        samples = []
+        sample_step = 0.05  # Fine sampling for accuracy
+        
+        if is_morning:
+            # Sample morning curve (0 to 12)
+            for t in [i * sample_step for i in range(int(12 / sample_step) + 1)]:
+                brightness = self.map_half(
+                    t, self.mid_bri_up, self.steep_bri_up,
+                    self.min_brightness, self.max_brightness, direction=+1
+                )
+                samples.append((t, brightness))
+        else:
+            # Sample evening curve (12 to 24)
+            for t in [12 + i * sample_step for i in range(int(12 / sample_step) + 1)]:
+                brightness = self.map_half(
+                    t, self.mid_bri_dn, self.steep_bri_dn,
+                    self.min_brightness, self.max_brightness, direction=-1
+                )
+                samples.append((t, brightness))
+        
+        # Find the segment containing target brightness
+        for i in range(1, len(samples)):
+            t0, b0 = samples[i-1]
+            t1, b1 = samples[i]
+            
+            # Check if target is between these two samples
+            between = (b0 <= b1 and b0 <= target_brightness <= b1) or \
+                     (b0 > b1 and b1 <= target_brightness <= b0)
+            
+            if between and abs(b1 - b0) > 1e-9:
+                # Interpolate to find exact solar time
+                interp = (target_brightness - b0) / (b1 - b0)
+                target_time = t0 + interp * (t1 - t0)
+                return target_time
+        
+        # If not found in curve, return closest endpoint
+        if abs(target_brightness - samples[0][1]) < abs(target_brightness - samples[-1][1]):
+            return samples[0][0]
+        else:
+            return samples[-1][0]
 
     @staticmethod
     def rgb_to_xy(rgb: Tuple[int, int, int]) -> Tuple[float, float]:

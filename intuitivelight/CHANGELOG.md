@@ -1,5 +1,27 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 2.5.0
+
+- Simplified brightness stepping algorithm
+  - Replaced complex arc-based perceptual stepping with straightforward percentage-based approach
+  - Step size now calculated as (max_brightness - min_brightness) / steps
+  - Removed gamma/perceptual brightness adjustments for more predictable behavior
+  - Python implementation now matches JavaScript designer exactly
+  - Stepping behavior is now linear and intuitive
+
+- Designer interface improvements
+  - Added "Show steps" checkbox to visualize step markers on the graph
+  - Step markers show where each button press will land with proper color coding
+  - Enhanced click precision using correct plot area detection
+  - Fixed graph rendering issues
+  - Removed "Prioritize dim steps" control (no longer needed with simplified algorithm)
+
+- Code simplification
+  - Removed perceptual weight constants and calculations
+  - Eliminated complex arc distance computations
+  - Cleaner, more maintainable codebase
+  - Better alignment between Python and JavaScript implementations
+
 ## 2.4.0
 
 - New simplified adaptive lighting algorithm

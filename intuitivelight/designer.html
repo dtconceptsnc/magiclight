@@ -50,15 +50,6 @@
   .mirror-chip{display:inline-flex;align-items:center;gap:6px;font-size:.85rem;color:#c9cfd6}
   .mirror-chip input{transform:translateY(1px)}
   
-  /* Center and narrow the gamma control row */
-  #control-gamma{
-    display:flex;
-    justify-content:center;
-    padding:0 24px;
-  }
-  #control-gamma .controls-row{
-    width:min(520px, 100%);
-  }
 
   /* Default value hash marks on sliders */
   .track-wrap{position:relative;width:100%}
@@ -108,17 +99,21 @@
       <div class="ctrl-side">
         <button id="left-btn" class="btn">Step down</button>
       </div>
-      <div class="ctrl-side">
-        <label for="step-count">Steps</label>
-        <input id="step-count" type="number" min="1" max="500" step="1" value="10" />
+      <div class="ctrl-side" style="gap:14px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <label for="step-count">Steps</label>
+          <input id="step-count" type="number" min="1" max="500" step="1" value="10" />
+        </div>
+        <!-- Show steps checkbox -->
+        <label class="mirror-chip" style="gap:8px">
+          <input type="checkbox" id="show-steps">
+          Show steps
+        </label>
       </div>
       <div class="ctrl-side">
         <button id="right-btn" class="btn">Step up</button>
       </div>
     </div>
-
-    <!-- Gamma slider row -->
-    <div id="control-gamma"></div>
   </div>
 
   <div class="grid-2">
@@ -246,11 +241,10 @@ const SUN_LINE = { width: 0.6, alpha: 0.35, dash: 'dot' }; // dimmed sun curve
 
 const UI = { sliders: {} };
 
-/* perceptual weights (brightness gamma is user-controlled via slider) */
-let GAMMA_B = 0.62; // initialized; will be overwritten by control slider at boot
-function toPerceptualBriPercent(b){ const n=Math.max(0,Math.min(100,b))/100; return Math.pow(n, GAMMA_B); }
-function toMired(k){ return 1e6/Math.max(500,Math.min(6500,k)); }
-let W_B = 1.0, W_C = 0.6;
+
+/* trace indices for callout markers */
+let CALL_UP_IDX = -1;   // "step up → beginning" path
+let CALL_DN_IDX = -1;   // "step down → end" path
 
 function detectHalfSticky(h, prev){
   const { solarNoon, solarMidnight } = getSolarTimes();
@@ -300,17 +294,11 @@ const defaults = {
   month: new Date().getMonth()+1,
   latitude: 35.0, longitude: -78.6, timezone: 'US/Eastern',
   use12Hour: true,
-  // Control: gamma UI raw (0..100). Gamma_B = (100 - gamma_ui)/100, default 0.62 => 38
-  gamma_ui: 38,
   // Max dim steps for saving
   max_dim_steps: 10
 };
 const params = JSON.parse(JSON.stringify(defaults));
 
-/* helper maps slider → GAMMA_B */
-function updateGammaFromUI(){
-  GAMMA_B = (100 - params.gamma_ui)/100; // maps 0..100 → 1.00..0.00
-}
 
 /* =========================
    Solar helpers + caching
@@ -447,17 +435,12 @@ let morningArc=null, eveningArc=null;
 
 function buildHalfArc(half){
   const H=half.hours, B=half.bris, K=half.ccts;
-  const PB=B.map(toPerceptualBriPercent);
-  const mMin=toMired(params.max_color_temp), mMax=toMired(params.min_color_temp);
-  const PC=K.map(k=> (toMired(k)-mMin)/Math.max(1e-9,(mMax-mMin)));
-
   const S=[0];
   for(let i=1;i<H.length;i++){
     let span=H[i]-H[i-1];
     if(span<-12) span+=24;
     if(span>12)  span-=24;
-    const dB=PB[i]-PB[i-1], dC=PC[i]-PC[i-1];
-    S.push(S[i-1] + Math.hypot(W_B*dB, W_C*dC));
+    S.push(S[i-1] + Math.abs(span));
   }
   const total=S[S.length-1];
 
@@ -512,65 +495,103 @@ function rebuildHalfArcCaches(morn, eve){
 }
 
 /* =========================
-   Stepper (uniform perceptual ticks)
+   Stepper (simplified brightness-based)
 ========================= */
+function brightnessStepSize(){
+  const steps = Math.max(1, Math.min(500,
+    parseInt(document.getElementById('step-count')?.value || '10', 10)
+  ));
+  return (params.max_brightness - params.min_brightness) / steps;
+}
+
+function findHourForBrightnessOnHalf(targetBri, half){
+  const ref = (half === 'morning') ? morningArc : eveningArc;
+  if (!ref) return null;
+  const H = ref.hours, B = ref.bris;
+
+  for (let i=1; i<H.length; i++){
+    const b0 = B[i-1], b1 = B[i];
+    const between = (b0 <= b1)
+      ? (targetBri >= b0 && targetBri <= b1)
+      : (targetBri <= b0 && targetBri >= b1);
+    if (between && b1 !== b0){
+      const t = (targetBri - b0) / (b1 - b0);
+      const h = H[i-1] + t * (H[i] - H[i-1]);
+      return clampToHalf(h, half);
+    }
+  }
+  const end = (Math.abs(targetBri - B[0]) < Math.abs(targetBri - B[B.length-1])) ? 0 : B.length-1;
+  return clampToHalf(H[end], half);
+}
+
 function computeActionTarget(action){
   if (!morningArc || !eveningArc) return null;
+  const half = activeHalf || detectHalfSticky(selectedHour, activeHalf);
 
-  let half   = activeHalf || detectHalfSticky(selectedHour, activeHalf);
-  let arcRef = (half === 'morning') ? morningArc : eveningArc;
+  const minB = params.min_brightness;
+  const maxB = params.max_brightness;
+  const step = brightnessStepSize();
 
-  const stepCount = Math.max(1, Math.min(500, parseInt(document.getElementById('step-count')?.value || '15', 10)));
-  const { pitch, ticks } = arcRef.makeGrid(stepCount);
+  const bNow = interpAtHour(arc.hours, arc.bris, selectedHour);
+  const dir  = (action === 'brighten') ? +1 : -1;
 
-  const minIdx = 0, maxIdx = ticks.length - 1;
-  const sStart = 0, sEnd = arcRef.total;
-  if (!(sEnd > 0)) return null;
+  if ((dir > 0 && bNow >= maxB - 1e-9) || (dir < 0 && bNow <= minB + 1e-9)) return null;
 
-  let sNow = arcRef.sAtHour(selectedHour);
-  if (sNow < sStart) sNow = sStart;
-  if (sNow > sEnd)   sNow = sEnd;
-
-  const sDir = (half === 'morning')
-    ? (action === 'brighten' ? +1 : -1)
-    : (action === 'brighten' ? -1 : +1);
-
-  const iBelow = Math.floor((sNow + 1e-12) / pitch);
-  const iAbove = Math.ceil ((sNow - 1e-12) / pitch);
-
-  let candidateIdx = (sDir > 0)
-    ? Math.min(maxIdx, iBelow + 1)
-    : Math.max(minIdx, iAbove - 1);
-
-  const EPS_S = Math.max(1e-9, pitch * 1e-3);
-  const atStart = Math.abs(sNow - ticks[minIdx]) <= EPS_S;
-  const atEnd   = Math.abs(sNow - ticks[maxIdx]) <= EPS_S;
-
-  if ((atEnd && sDir > 0) || (atStart && sDir < 0)) return null;
-
-  const b0   = interpAtHour(arc.hours, arc.bris, selectedHour);
-  const want = (action === 'brighten') ? +1 : -1;
-  const EPSB = 0.1;
-  function briAtIdx(i){
-    const h = arcRef.hourAtS(ticks[i]);
-    return interpAtHour(arc.hours, arc.bris, h);
-    }
-  let chosenIdx = candidateIdx;
-  for (let tries=0; tries<3; tries++){
-    const dB = briAtIdx(chosenIdx) - b0;
-    if ((want > 0 && dB >= EPSB) || (want < 0 && dB <= -EPSB)) break;
-    const n = chosenIdx + sDir;
-    if (n < minIdx || n > maxIdx) break;
-    chosenIdx = n;
-  }
-const h = arcRef.hourAtS(ticks[chosenIdx]);
-return clampToHalf(h, half);
+  let bTgt = bNow + dir * step;
+  bTgt = Math.max(minB, Math.min(maxB, bTgt));
+  return findHourForBrightnessOnHalf(bTgt, half);
 }
 
 function stepArc(action){
   const hTarget=computeActionTarget(action);
   if(hTarget==null) return;
   setCursorRef(hTarget);
+}
+
+/* boundaries + sequences for callouts */
+function getHalfBounds(half){
+  const { solarNoon, solarMidnight } = getSolarTimes();
+  if (half === 'morning'){
+    const startHour = solarMidnight + 1e-3;
+    const endHour   = solarNoon - 1e-3;
+    return {
+      startHour: clampToHalf(startHour,'morning'),
+      endHour:   clampToHalf(endHour,'morning'),
+      startBri: interpAtHour(arc.hours, arc.bris, startHour),
+      endBri:   interpAtHour(arc.hours, arc.bris, endHour)
+    };
+  } else {
+    const startHour = solarNoon + 1e-3;
+    const endHour   = (solarMidnight + 24 - 1e-3) % 24;
+    return {
+      startHour: clampToHalf(startHour,'evening'),
+      endHour:   clampToHalf(endHour,'evening'),
+      startBri: interpAtHour(arc.hours, arc.bris, startHour),
+      endBri:   interpAtHour(arc.hours, arc.bris, endHour)
+    };
+  }
+}
+
+/* simulate pressing step repeatedly toward a boundary brightness */
+function sequenceTowardBoundary(currentBri, boundaryBri, half){
+  const step = brightnessStepSize();
+  const dir  = (boundaryBri >= currentBri) ? +1 : -1;
+  const xs=[], ys=[];
+  let b = currentBri;
+  let guard = 0;
+  while (guard++ < 1000){
+    let next = b + dir*step;
+    if ((dir > 0 && next > boundaryBri) || (dir < 0 && next < boundaryBri)) next = boundaryBri;
+    if (Math.abs(next - b) < 1e-9) break;
+    const h = findHourForBrightnessOnHalf(next, half);
+    if (h == null) break;
+    xs.push(h);
+    ys.push(next);
+    b = next;
+    if (Math.abs(b - boundaryBri) < 1e-9) break;
+    if (xs.length > 600) break;
+  }
+  return { x: xs, y: ys };
 }
 
 /* =========================
@@ -602,6 +623,20 @@ function lineColorForCCT(k){
   const blue=[150,200,255]; const t=0.6*f;
   const [r,g,b]=blend(base,blue,t); return `rgb(${r},${g},${b})`;
 }
+
+/* compute a color array for markers at given hours */
+function calloutFillColors(hoursArr){
+  return hoursArr.map(h => {
+    const k = interpAtHour(arc.hours, arc.ccts, h);
+    return cctToRGB(k);
+  });
+}
+
+/* check "Show steps" toggle */
+function calloutsVisible(){
+  const el = document.getElementById('show-steps');
+  return !el || !!el.checked;
+}
 function fmtSigned(n,unit){
   const sign=n>0?'+':(n<0?'−':'±'); const abs=Math.abs(Math.round(n));
   return `${sign}${abs}${unit}`;
@@ -616,6 +651,74 @@ function fmtTimeDelta(hNew,hOld){
 /* =========================
    Plot rendering
 ========================= */
+/* build callout traces for both directions */
+function buildStepCalloutsTraces(currentHour){
+  const half = activeHalf || detectHalfSticky(currentHour, activeHalf);
+  const bNow = interpAtHour(arc.hours, arc.bris, currentHour);
+  const bounds = getHalfBounds(half);
+
+  const upSeq = sequenceTowardBoundary(bNow, bounds.startBri, half);
+  const dnSeq = sequenceTowardBoundary(bNow, bounds.endBri,   half);
+
+  // Per-point marker colors from curve
+  const upColors = calloutFillColors(upSeq.x);
+  const dnColors = calloutFillColors(dnSeq.x);
+
+  // Build per-point labels ("step up 2x", time string, CCT)
+  const buildMeta = (xs, ys, dir) => {
+    const labels = xs.map((_, i) => {
+      const base = (dir === 'up') ? 'step up' : 'step down';
+      return i === 0 ? base : `${base} ${i+1}x`;
+    });
+    const times = xs.map(h => formatTime(h, params.use12Hour));
+    const ccts  = xs.map(h => Math.round(interpAtHour(arc.hours, arc.ccts, h)));
+    const texts = xs.map((_, i) => {
+      const pct = Math.round(ys[i]);
+      return `${labels[i]}<br>${times[i]} • ${pct}% • ${ccts[i]} K`;
+    });
+    return { labels, times, ccts, texts };
+  };
+
+  const upMeta = buildMeta(upSeq.x, upSeq.y, 'up');
+  const dnMeta = buildMeta(dnSeq.x, dnSeq.y, 'dn');
+
+  const upTrace = {
+    type:'scatter', mode:'markers',
+    x: upSeq.x, y: upSeq.y,
+    name:'step-up path',
+    text: upMeta.texts,                              // per-point hover text
+    hovertemplate: '%{text}<extra></extra>',         // show our formatted text
+    marker:{
+      size:10,
+      color: upColors,
+      line:{ width:3, color: upColors },
+      symbol:'circle'
+    },
+    hoverlabel: { bgcolor: upColors },               // hover box uses curve color
+    showlegend:false,
+    visible: calloutsVisible()
+  };
+
+  const dnTrace = {
+    type:'scatter', mode:'markers',
+    x: dnSeq.x, y: dnSeq.y,
+    name:'step-down path',
+    text: dnMeta.texts,
+    hovertemplate: '%{text}<extra></extra>',
+    marker:{
+      size:10,
+      color: dnColors,
+      line:{ width:3, color: dnColors },
+      symbol:'circle'
+    },
+    hoverlabel: { bgcolor: dnColors },
+    showlegend:false,
+    visible: calloutsVisible()
+  };
+
+  return { upTrace, dnTrace };
+}
+
 function buildIntuitiveLightColored(x,bri,cct){
   const segs=[];
   for(let i=1;i<x.length;i++){
@@ -697,7 +800,9 @@ function renderPlot(series){
     marker:{size:12,color:cctToRGB(selCCT),line:{width:2,color:'#fff'}},hoverinfo:'skip',showlegend:false };
   const cursorShape={type:'line',xref:'x',x0:selectedHour,x1:selectedHour,yref:'paper',y0:0,y1:1,line:{color:'#1e90ff',width:2}};
 
-  const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, nowMarker, selectionMarker];
+  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+
+  const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, nowMarker, selectionMarker, upTrace, dnTrace];
 
   const layout={
     dragmode:'pan', hovermode:'closest',
@@ -743,25 +848,91 @@ function renderPlot(series){
     // if we crossed morning/evening boundary, swap the button roles/labels
     if (activeHalf !== prevHalf) updateStepButtons();
 
+    refreshCallouts(); // always refresh callouts on cursor changes
   }
   setCursorRef=setCursor;
 
-  if(plotDivRef){ Plotly.react(plotDivRef,data,layout,config); }
+  if(plotDivRef){
+    Plotly.react(plotDivRef,data,layout,config).then(() => {
+      CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
+      CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
+      refreshCallouts(); // make sure first paint uses the new per-point colors
+    });
+  }
   else{
     Plotly.newPlot('plot',data,layout,config).then(div=>{
-      plotDivRef=div; bindInteractionsOnce();
+      plotDivRef=div;
+      bindInteractionsOnce();
+      CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
+      CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
+      refreshCallouts(); // first paint
     });
+  }
+}
+
+/* recompute/paint the callouts */
+function refreshCallouts(){
+  if(!plotDivRef) return;
+
+  // Resolve indices once if needed
+  if (CALL_UP_IDX === -1 || CALL_DN_IDX === -1) {
+    CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
+    CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
+  }
+
+  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+  const vis = calloutsVisible();
+
+  if (CALL_UP_IDX !== -1){
+    Plotly.restyle(plotDivRef, {
+      x:[upTrace.x],
+      y:[upTrace.y],
+      text:[upTrace.text],                         // new
+      'marker.color':[upTrace.marker.color],
+      'marker.line.color':[upTrace.marker.line.color],
+      'hoverlabel.bgcolor':[upTrace.hoverlabel.bgcolor],  // new
+      visible: vis
+    }, CALL_UP_IDX);
+  }
+  if (CALL_DN_IDX !== -1){
+    Plotly.restyle(plotDivRef, {
+      x:[dnTrace.x],
+      y:[dnTrace.y],
+      text:[dnTrace.text],                         // new
+      'marker.color':[dnTrace.marker.color],
+      'marker.line.color':[dnTrace.marker.line.color],
+      'hoverlabel.bgcolor':[dnTrace.hoverlabel.bgcolor],  // new
+      visible: vis
+    }, CALL_DN_IDX);
   }
 }
 
 /* =========================
    Interactions (buttons)
 ========================= */
+function toggleCalloutsVisibility(){
+  if(!plotDivRef) return;
+  const vis = calloutsVisible();
+  if (CALL_UP_IDX !== -1) Plotly.restyle(plotDivRef, { visible: vis }, CALL_UP_IDX);
+  if (CALL_DN_IDX !== -1) Plotly.restyle(plotDivRef, { visible: vis }, CALL_DN_IDX);
+}
+
 function bindInteractionsOnce(){
   if(listenersBound||!plotDivRef) return;
 
-  const getPlotArea=()=> plotDivRef.querySelector('.cartesianlayer .plot')||plotDivRef;
-  const mapClientXToHour=(x)=>{ const r=getPlotArea().getBoundingClientRect(); const t=(x-r.left)/r.width; return Math.max(0,Math.min(24,24*t)); };
+  // Use the true data-drag rectangle Plotly overlays on the plotting area
+  const getPlotArea = () => plotDivRef.querySelector('.nsewdrag') || plotDivRef;
+
+  // Map a clientX to hour using the actual plot area width and current x-range
+  const mapClientXToHour = (clientX) => {
+    const el = getPlotArea();
+    const r = el.getBoundingClientRect();
+    const t = (clientX - r.left) / r.width;
+    // Use the actual axis range (still 0..24 in your layout, but future-proof)
+    const xr = (plotDivRef._fullLayout?.xaxis?.range) || [0, 24];
+    const x = xr[0] + t * (xr[1] - xr[0]);
+    return Math.max(0, Math.min(24, x));
+  };
 
   let dragging=false;
   const tick=()=>{ if(lastClientX==null){rafId=0;return;} setCursorRef(mapClientXToHour(lastClientX)); rafId=0; };
@@ -774,7 +945,10 @@ function bindInteractionsOnce(){
   area.addEventListener('pointerdown', onPointerDown, {passive:true});
   window.addEventListener('pointermove', onPointerMove, {passive:true});
   window.addEventListener('pointerup', onPointerUp, {passive:true});
-  area.addEventListener('click', onClick, {passive:true});
+  plotDivRef.on('plotly_click', (ev) => {
+    const x = ev?.points?.[0]?.x;
+    if (typeof x === 'number') setCursorRef(x);
+  });
 
   plotDivRef.on('plotly_relayout', ev=>{
     if(('xaxis.range[0]' in ev)||('xaxis.range[1]' in ev)||('yaxis.range[0]' in ev)||('yaxis.range[1]' in ev)){
@@ -782,11 +956,15 @@ function bindInteractionsOnce(){
     }
   });
 
-  // Steps preview labels removed, so only wire the actions + button texts
+  // Wire up step buttons
   updateStepButtons();
 
-  // Keep this for live changes to step count
-  document.getElementById('step-count').addEventListener('input', ()=>{ /* no-op needed */ });
+  // Wire up step count changes to refresh callouts
+  document.getElementById('step-count').addEventListener('input', ()=>{ refreshCallouts(); });
+  
+  // Wire up show steps checkbox
+  const showSteps = document.getElementById('show-steps');
+  if (showSteps) showSteps.addEventListener('change', toggleCalloutsVisibility);
 
   listenersBound=true;
 }
@@ -819,7 +997,6 @@ function resetSlider(key){
   params[key] = def;
   ui.input.value = def;
   ui.val.textContent = ui.format ? ui.format(def) : def;
-  if (key === 'gamma_ui') updateGammaFromUI();
   maybeMirrorParam(key);
   draw();
 }
@@ -853,7 +1030,6 @@ function addSliderRow(parent,{ label, key, min, max, step, format, def }){
 
   const apply = (v)=>{
     params[key]=v; val.textContent = fmt(v);
-    if (key === 'gamma_ui') updateGammaFromUI();
     maybeMirrorParam(key);
     draw();
   };
@@ -980,19 +1156,6 @@ function addMorningEveningUI() {
   if (dnChk) { dnChk.checked = params.mirror_dn; dnChk.onchange = (e)=>{ params.mirror_dn = e.target.checked; setCCTMirrorUI('dn', params.mirror_dn); draw(); }; setCCTMirrorUI('dn', params.mirror_dn); }
 }
 
-function addControlGammaUI(){
-  // clear and rebuild control gamma container
-  const holder = document.getElementById('control-gamma');
-  holder.innerHTML = '';
-  addSliderRow(holder, {
-    label: 'Prioritize dim steps',
-    key: 'gamma_ui',
-    min: 0, max: 100, step: 1,
-    def: defaults.gamma_ui,
-    // display the mapped GAMMA_B to two decimals
-    format: (v)=> Math.round(v)
-  });
-}
 
 /* =========================
    Ranges & Sun UI
@@ -1003,6 +1166,12 @@ function addRangesUI(){
   const tempFill=document.getElementById('temp-fill'), intFill=document.getElementById('intensity-fill');
   const minTVal=document.getElementById('min-temp-value'), maxTVal=document.getElementById('max-temp-value');
   const minIVal=document.getElementById('min-intensity-value'), maxIVal=document.getElementById('max-intensity-value');
+
+  // Set slider values from loaded params before setting up event handlers
+  minT.value = params.min_color_temp || defaults.min_color_temp;
+  maxT.value = params.max_color_temp || defaults.max_color_temp;
+  minI.value = params.min_brightness || defaults.min_brightness;
+  maxI.value = params.max_brightness || defaults.max_brightness;
 
   function updateTempFill(){ const left=((+minT.value-500)/(6500-500))*100, width=((+maxT.value-+minT.value)/(6500-500))*100; tempFill.style.left=`${left}%`; tempFill.style.width=`${width}%`; }
   function updateIntFill(){ const left=((+minI.value)/100)*100, width=((+maxI.value-+minI.value)/100)*100; intFill.style.left=`${left}%`; intFill.style.width=`${width}%`; }
@@ -1076,7 +1245,6 @@ async function saveConfiguration() {
       steep_cct_dn: params.steep_cct_dn,
       mirror_up: params.mirror_up,
       mirror_dn: params.mirror_dn,
-      gamma_ui: params.gamma_ui,
       max_dim_steps: parseInt(document.getElementById('step-count')?.value || params.max_dim_steps)
     };
     
@@ -1134,16 +1302,10 @@ async function loadConfiguration() {
         stepInput.value = params.max_dim_steps || defaults.max_dim_steps;
       }
       
-      // Update gamma from loaded UI value
-      if (params.gamma_ui !== undefined) {
-        updateGammaFromUI();
-      }
-      
       // Rebuild UI with new values
       addMorningEveningUI();
       addRangesUI();
       addSunUI();
-      addControlGammaUI();
       updateLocationDisplay();
       draw();
     }
@@ -1159,7 +1321,6 @@ async function loadConfiguration() {
     addMorningEveningUI();
     addRangesUI();
     addSunUI();
-    addControlGammaUI();
     draw();
   }
 }
@@ -1176,10 +1337,8 @@ function resetAll(){
   addMorningEveningUI();
   addRangesUI();
   addSunUI();
-  addControlGammaUI();
 
   document.getElementById('step-count').value='10';
-  updateGammaFromUI(); // ensure GAMMA_B matches reset default
   updateLocationDisplay();
   draw();
   refreshFormattedSliderValues();  
