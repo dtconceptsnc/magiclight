@@ -1,46 +1,124 @@
-# Example Home Assistant add-on repository
+# Intuitive Light for Home Assistant
 
-This repository can be used as a "blueprint" for add-on development to help you get started.
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Add-on documentation: <https://developers.home-assistant.io/docs/add-ons>
+Intuitive Light provides adaptive lighting control for Home Assistant, automatically adjusting brightness and color temperature based on the sun's position.
 
-[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhome-assistant%2Faddons-example)
+## Components
 
-## Add-ons
+This repository contains two components:
 
-This repository contains the following add-ons
+### 1. Intuitive Light Addon (`addon/`)
+A Home Assistant addon that:
+- Connects to Home Assistant via WebSocket API
+- Listens for ZHA switch events
+- Provides adaptive lighting based on sun position
+- Includes a Light Designer web interface for curve customization
 
-### [Example add-on](./example)
+### 2. Intuitive Light Integration (`custom_components/intuitivelight/`)
+A Home Assistant custom component that:
+- Exposes services for controlling lights via automations
+- Works with any trigger (not just ZHA switches)
+- Communicates with the addon via WebSocket events
 
-![Supports aarch64 Architecture][aarch64-shield]
-![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield]
-![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
+## Installation
 
-_Example add-on to use as a blueprint for new add-ons._
+### Installing the Addon
 
-<!--
+1. Add this repository to your Home Assistant addon store
+2. Install the "Intuitive Light" addon
+3. Start the addon
+4. Access the Light Designer through the Home Assistant sidebar
 
-Notes to developers after forking or using the github template feature:
-- While developing comment out the 'image' key from 'example/config.yaml' to make the supervisor build the addon
-  - Remember to put this back when pushing up your changes.
-- When you merge to the 'main' branch of your repository a new build will be triggered.
-  - Make sure you adjust the 'version' key in 'example/config.yaml' when you do that.
-  - Make sure you update 'example/CHANGELOG.md' when you do that.
-  - The first time this runs you might need to adjust the image configuration on github container registry to make it public
-  - You may also need to adjust the github Actions configuration (Settings > Actions > General > Workflow > Read & Write)
-- Adjust the 'image' key in 'example/config.yaml' so it points to your username instead of 'home-assistant'.
-  - This is where the build images will be published to.
-- Rename the example directory.
-  - The 'slug' key in 'example/config.yaml' should match the directory name.
-- Adjust all keys/url's that points to 'home-assistant' to now point to your user/fork.
-- Share your repository on the forums https://community.home-assistant.io/c/projects/9
-- Do awesome stuff!
- -->
+### Installing the Integration
 
-[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
-[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
+#### Via HACS (Recommended)
+1. Open HACS
+2. Click on Integrations
+3. Click the three dots menu and select "Custom repositories"
+4. Add this repository URL with category "Integration"
+5. Search for "Intuitive Light" and install
+6. Restart Home Assistant
+7. Go to Settings → Integrations → Add Integration → Search for "Intuitive Light"
+
+#### Manual Installation
+1. Copy the `custom_components/intuitivelight` folder to your Home Assistant `custom_components` directory
+2. Restart Home Assistant
+3. Go to Settings → Integrations → Add Integration → Search for "Intuitive Light"
+
+## Services
+
+The integration provides the following services:
+
+### `intuitivelight.step_up`
+Increase brightness by one step along the adaptive lighting curve.
+
+**Parameters:**
+- `area_id` (optional): The area to control
+- `device_id` (optional): The device that triggered the command
+
+### `intuitivelight.step_down`
+Decrease brightness by one step along the adaptive lighting curve.
+
+**Parameters:**
+- `area_id` (optional): The area to control
+- `device_id` (optional): The device that triggered the command
+
+## Example Automations
+
+### Control lights with a Zigbee button
+```yaml
+automation:
+  - alias: "Living Room - Brightness Up"
+    trigger:
+      - platform: device
+        device_id: YOUR_DEVICE_ID
+        domain: zha
+        type: remote_button_short_press
+        subtype: dim_up
+    action:
+      - service: intuitivelight.step_up
+        data:
+          area_id: living_room
+
+  - alias: "Living Room - Brightness Down"
+    trigger:
+      - platform: device
+        device_id: YOUR_DEVICE_ID
+        domain: zha
+        type: remote_button_short_press
+        subtype: dim_down
+    action:
+      - service: intuitivelight.step_down
+        data:
+          area_id: living_room
+```
+
+### Control with time-based automation
+```yaml
+automation:
+  - alias: "Gradual Morning Brightening"
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+    condition:
+      - condition: time
+        after: "06:00:00"
+        before: "08:00:00"
+    action:
+      - service: intuitivelight.step_up
+        data:
+          area_id: bedroom
+```
+
+## Configuration
+
+The adaptive lighting curves can be customized using the Light Designer interface accessible through the Home Assistant sidebar when the addon is running.
+
+## Support
+
+For issues, feature requests, or questions, please visit the [GitHub repository](https://github.com/intuitivelight/intuitivelight-ha).
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
