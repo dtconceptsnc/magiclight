@@ -1,0 +1,37 @@
+step_up:
+  name: Step Up
+  description: Increase brightness by one step along the adaptive lighting curve
+  fields:
+    area_id:
+      name: Area
+      description: The area to control
+      required: false
+      example: "living_room"
+      selector:
+        area:
+    device_id:
+      name: Device
+      description: The device that triggered the command
+      required: false
+      example: "abc123def456"
+      selector:
+        device:
+
+step_down:
+  name: Step Down
+  description: Decrease brightness by one step along the adaptive lighting curve
+  fields:
+    area_id:
+      name: Area
+      description: The area to control
+      required: false
+      example: "living_room"
+      selector:
+        area:
+    device_id:
+      name: Device
+      description: The device that triggered the command
+      required: false
+      example: "abc123def456"
+      selector:
+        device:

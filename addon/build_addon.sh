@@ -90,7 +90,7 @@ build_arch() {
     echo -e "${GREEN}Building Intuitive Light addon for ${arch}...${NC}"
     
     docker run --rm -it --name builder --privileged \
-        -v "$(pwd)/magiclight":/data \
+        -v "$(pwd)":/data \
         -v /var/run/docker.sock:/var/run/docker.sock:ro \
         ghcr.io/home-assistant/amd64-builder \
         -t /data \
@@ -116,8 +116,8 @@ echo -e "${GREEN}Intuitive Light Home Assistant Addon Builder${NC}"
 echo "======================================"
 
 # Validate addon configuration
-if [ ! -f "magiclight/config.yaml" ]; then
-    echo -e "${RED}Error: config.yaml not found in magiclight directory${NC}"
+if [ ! -f "config.yaml" ]; then
+    echo -e "${RED}Error: config.yaml not found in addon directory${NC}"
     exit 1
 fi
 

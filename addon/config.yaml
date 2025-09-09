@@ -1,7 +1,7 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: Intuitive Light
 version: "2.5.1"
-slug: magiclight
+slug: intuitivelight
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/intuitivelight/intuitivelight-ha"
 arch:

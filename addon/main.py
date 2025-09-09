@@ -957,8 +957,35 @@ class HomeAssistantWebSocketClient:
             
             logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
             
+            # Handle custom intuitivelight service calls
+            if event_type == "call_service" and event_data.get("domain") == "intuitivelight":
+                service = event_data.get("service")
+                service_data = event_data.get("service_data", {})
+                
+                if service == "step_up":
+                    area_id = service_data.get("area_id")
+                    device_id = service_data.get("device_id")
+                    logger.info(f"Received step_up service call for area: {area_id}, device: {device_id}")
+                    
+                    # Call the existing dim_up functionality
+                    if area_id:
+                        await self.switch_processor.dim_up(area_id, device_id or "service_call")
+                    else:
+                        logger.warning("step_up called without area_id")
+                        
+                elif service == "step_down":
+                    area_id = service_data.get("area_id")
+                    device_id = service_data.get("device_id")
+                    logger.info(f"Received step_down service call for area: {area_id}, device: {device_id}")
+                    
+                    # Call the existing dim_down functionality
+                    if area_id:
+                        await self.switch_processor.dim_down(area_id, device_id or "service_call")
+                    else:
+                        logger.warning("step_down called without area_id")
+            
             # Handle ZHA events
-            if event_type == "zha_event":
+            elif event_type == "zha_event":
                 #logger.info("=== ZHA Event Received ===")
                 #logger.info(f"Device ID: {event_data.get('device_id')}")
                 #logger.info(f"Device IEEE: {event_data.get('device_ieee')}")

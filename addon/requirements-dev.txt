@@ -1,4 +1,4 @@
--r magiclight/requirements.txt
+-r requirements.txt
 
 # Testing
 pytest>=7.4
