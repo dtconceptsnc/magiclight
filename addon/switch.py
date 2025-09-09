@@ -50,7 +50,8 @@ class SwitchCommandProcessor:
         elif button == "up" and command == "up_press":
             await self._handle_up_button_press(device_id)
         elif button == "down" and command == "down_press":
-            await self._handle_down_button_press(device_id)
+            # Step down is now handled via the intuitivelight custom component service
+            logger.info(f"Down button press on device {device_id} - use intuitivelight.step_down service instead")
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
 
@@ -225,22 +226,23 @@ class SwitchCommandProcessor:
         # Increase brightness
         await self.dim_up(area_id, device_id)
         
-    async def _handle_down_button_press(self, device_id: str):
-        """Handle the DOWN button press for dimming down.
-        
-        Args:
-            device_id: The device ID that triggered the event
-        """
-        logger.info(f"Down button pressed on device: {device_id}")
-        
-        # Get area for this device
-        area_id = self.client.device_to_area_mapping.get(device_id)
-        if not area_id:
-            logger.warning(f"No area mapping found for device: {device_id}")
-            return
-        
-        # Decrease brightness
-        await self.dim_down(area_id, device_id)
+    # Commented out - step_down is now handled via the intuitivelight custom component service
+    # async def _handle_down_button_press(self, device_id: str):
+    #     """Handle the DOWN button press for dimming down.
+    #     
+    #     Args:
+    #         device_id: The device ID that triggered the event
+    #     """
+    #     logger.info(f"Down button pressed on device: {device_id}")
+    #     
+    #     # Get area for this device
+    #     area_id = self.client.device_to_area_mapping.get(device_id)
+    #     if not area_id:
+    #         logger.warning(f"No area mapping found for device: {device_id}")
+    #         return
+    #     
+    #     # Decrease brightness
+    #     await self.dim_down(area_id, device_id)
         
     async def _turn_off_lights(self, area_id: str, device_id: str):
         """Turn off all lights in an area.

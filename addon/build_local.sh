@@ -61,7 +61,7 @@ esac
 echo "Building IntuitiveLight addon for $ARCH (no cache)..."
 
 docker run --rm -it --name builder --privileged \
-    -v "$(pwd)/intuitivelight":/data \
+    -v "$(pwd)":/data \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     ghcr.io/home-assistant/amd64-builder \
     -t /data \
@@ -80,8 +80,8 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
     echo ""
     
     # Check if .env file exists
-    if [ -f "intuitivelight/.env" ]; then
-        ENV_FILE="--env-file intuitivelight/.env"
+    if [ -f ".env" ]; then
+        ENV_FILE="--env-file .env"
         echo "Using .env file for configuration"
     else
         echo "Warning: No .env file found. Using environment variables."
@@ -93,7 +93,7 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
             echo "ERROR: HA_TOKEN environment variable is not set!"
             echo ""
             echo "Please either:"
-            echo "1. Create intuitivelight/.env file with HA_TOKEN=your_token_here"
+            echo "1. Create .env file with HA_TOKEN=your_token_here"
             echo "2. Or set environment variable: export HA_TOKEN='your_token_here'"
             echo ""
             exit 1

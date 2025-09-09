@@ -1,0 +1,48 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Intuitive Light Services",
+        "description": "This integration provides services to control Intuitive Light. Make sure the Intuitive Light addon is installed and running before proceeding.",
+        "data": {}
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to addon",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Integration is already configured"
+    }
+  },
+  "services": {
+    "step_up": {
+      "name": "Step Up",
+      "description": "Increase brightness by one step along the adaptive lighting curve",
+      "fields": {
+        "area_id": {
+          "name": "Area",
+          "description": "The area to control"
+        },
+        "device_id": {
+          "name": "Device",
+          "description": "The device that triggered the command"
+        }
+      }
+    },
+    "step_down": {
+      "name": "Step Down",
+      "description": "Decrease brightness by one step along the adaptive lighting curve",
+      "fields": {
+        "area_id": {
+          "name": "Area",
+          "description": "The area to control"
+        },
+        "device_id": {
+          "name": "Device",
+          "description": "The device that triggered the command"
+        }
+      }
+    }
+  }
+}
