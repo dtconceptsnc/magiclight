@@ -24,6 +24,13 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Intuitive Light component."""
     hass.data.setdefault(DOMAIN, {})
+    
+    # Register services globally (not per config entry)
+    # This ensures services are available even before adding the integration
+    if DOMAIN not in hass.data or "services_registered" not in hass.data[DOMAIN]:
+        await _register_services(hass)
+        hass.data[DOMAIN]["services_registered"] = True
+    
     return True
 
 
@@ -35,8 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
     
-    # Register services
-    await _register_services(hass)
+    # Services are already registered in async_setup
     
     return True
 
@@ -87,12 +93,17 @@ async def _register_services(hass: HomeAssistant) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    # Unregister services
-    hass.services.async_remove(DOMAIN, SERVICE_STEP_UP)
-    hass.services.async_remove(DOMAIN, SERVICE_STEP_DOWN)
-    
     # Remove config entry from domain
-    hass.data[DOMAIN].pop(entry.entry_id)
+    if entry.entry_id in hass.data[DOMAIN]:
+        hass.data[DOMAIN].pop(entry.entry_id)
+    
+    # Check if this is the last config entry
+    config_entries = [key for key in hass.data[DOMAIN].keys() if key != "services_registered"]
+    if not config_entries:
+        # Unregister services only if no config entries remain
+        hass.services.async_remove(DOMAIN, SERVICE_STEP_UP)
+        hass.services.async_remove(DOMAIN, SERVICE_STEP_DOWN)
+        hass.data[DOMAIN].pop("services_registered", None)
     
     return True
 
