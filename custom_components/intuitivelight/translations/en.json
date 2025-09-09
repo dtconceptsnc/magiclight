@@ -1,0 +1,18 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Intuitive Light Services",
+        "description": "This integration provides services to control Intuitive Light. Make sure the Intuitive Light addon is installed and running before proceeding.",
+        "data": {}
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to addon",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Integration is already configured"
+    }
+  }
+}
