@@ -136,21 +136,15 @@ action:
           - condition: trigger
             id: up_press
         sequence:
-          - repeat:
-              for_each: "{{ areas if areas is list else [areas] }}"
-              sequence:
-                - service: homeglo.step_up
-                  data:
-                    area_id: "{{ repeat.item }}"
+          - service: homeglo.step_up
+            data:
+              area_id: "{{ areas }}"
       
       # DOWN button: Step down
       - conditions:
           - condition: trigger
             id: down_press
         sequence:
-          - repeat:
-              for_each: "{{ areas if areas is list else [areas] }}"
-              sequence:
-                - service: homeglo.step_down
-                  data:
-                    area_id: "{{ repeat.item }}"
+          - service: homeglo.step_down
+            data:
+              area_id: "{{ areas }}"
