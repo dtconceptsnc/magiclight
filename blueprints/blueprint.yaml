@@ -1,0 +1,126 @@
+blueprint:
+  name: HomeGlo Smart Switch Control
+  description: >
+    Control lights with HomeGlo adaptive lighting using ZHA switch events.
+    Maps switch button presses to HomeGlo primitives.
+    
+    Button mappings:
+    - ON button single press: Toggle HomeGlo on/off based on light state
+    - OFF button single press: Reset to current time and enable HomeGlo
+    - UP button single press: Step up brightness along adaptive curve
+    - DOWN button single press: Step down brightness along adaptive curve
+  domain: automation
+  input:
+    switch_device:
+      name: ZHA Switch Device
+      description: The ZHA switch device to use for controlling lights
+      selector:
+        device:
+          integration: zha
+    target_area:
+      name: Target Area
+      description: The area to control when buttons are pressed
+      selector:
+        area:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  # ON button single press
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input switch_device
+      command: "on_press"
+    id: on_press
+  
+  # OFF button single press
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input switch_device
+      command: "off_press"
+    id: off_press
+  
+  # UP button single press
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input switch_device
+      command: "up_press"
+    id: up_press
+  
+  # DOWN button single press
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input switch_device
+      command: "down_press"
+    id: down_press
+
+variables:
+  area: !input target_area
+
+action:
+  - choose:
+      # ON button: Toggle HomeGlo based on light state
+      - conditions:
+          - condition: trigger
+            id: on_press
+        sequence:
+          - choose:
+              # If any lights are on in the area, turn them off and disable HomeGlo
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {% set area_name = area %}
+                      {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
+                      {{ lights | selectattr('state', 'eq', 'on') | list | length > 0 }}
+                sequence:
+                  - service: light.turn_off
+                    data:
+                      transition: 1
+                    target:
+                      area_id: "{{ area }}"
+                  - service: homeglo.homeglo_off
+                    data:
+                      area_id: "{{ area }}"
+              # If all lights are off, enable HomeGlo (which turns them on with adaptive lighting)
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {% set area_name = area %}
+                      {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
+                      {{ lights | selectattr('state', 'eq', 'on') | list | length == 0 }}
+                sequence:
+                  - service: homeglo.homeglo_on
+                    data:
+                      area_id: "{{ area }}"
+      
+      # OFF button: Reset
+      - conditions:
+          - condition: trigger
+            id: off_press
+        sequence:
+          - service: homeglo.reset
+            data:
+              area_id: "{{ area }}"
+      
+      # UP button: Step up
+      - conditions:
+          - condition: trigger
+            id: up_press
+        sequence:
+          - service: homeglo.step_up
+            data:
+              area_id: "{{ area }}"
+      
+      # DOWN button: Step down
+      - conditions:
+          - condition: trigger
+            id: down_press
+        sequence:
+          - service: homeglo.step_down
+            data:
+              area_id: "{{ area }}"
