@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up Intuitive Light Services",
-        "description": "This integration provides services to control Intuitive Light. Make sure the Intuitive Light addon is installed and running before proceeding.",
+        "title": "Set up HomeGlo Services",
+        "description": "This integration provides services to control HomeGlo. Make sure the HomeGlo addon is installed and running before proceeding.",
         "data": {}
       }
     },
