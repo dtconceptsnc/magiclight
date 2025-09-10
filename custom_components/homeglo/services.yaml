@@ -4,18 +4,12 @@ step_up:
   fields:
     area_id:
       name: Area
-      description: The area to control
-      required: false
-      example: "living_room"
+      description: The area(s) to control
+      required: true
+      example: ["living_room", "kitchen"]
       selector:
         area:
-    device_id:
-      name: Device
-      description: The device that triggered the command
-      required: false
-      example: "abc123def456"
-      selector:
-        device:
+          multiple: true
 
 step_down:
   name: Step Down
@@ -23,15 +17,9 @@ step_down:
   fields:
     area_id:
       name: Area
-      description: The area to control
-      required: false
-      example: "living_room"
+      description: The area(s) to control
+      required: true
+      example: ["living_room", "kitchen"]
       selector:
         area:
-    device_id:
-      name: Device
-      description: The device that triggered the command
-      required: false
-      example: "abc123def456"
-      selector:
-        device:
+          multiple: true
