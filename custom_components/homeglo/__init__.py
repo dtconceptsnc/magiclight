@@ -15,7 +15,6 @@ from .const import (
     SERVICE_STEP_UP,
     SERVICE_STEP_DOWN,
     ATTR_AREA_ID,
-    ATTR_DEVICE_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,9 +69,8 @@ async def _register_services(hass: HomeAssistant) -> None:
         so we don't need to make any API calls here.
         """
         area_id = call.data.get(ATTR_AREA_ID)
-        device_id = call.data.get(ATTR_DEVICE_ID)
         
-        _LOGGER.info("[%s] step_up called: area_id=%s device_id=%s", DOMAIN, area_id, device_id)
+        _LOGGER.info("[%s] step_up called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
     async def handle_step_down(call: ServiceCall) -> None:
@@ -82,24 +80,22 @@ async def _register_services(hass: HomeAssistant) -> None:
         so we don't need to make any API calls here.
         """
         area_id = call.data.get(ATTR_AREA_ID)
-        device_id = call.data.get(ATTR_DEVICE_ID)
         
-        _LOGGER.info("[%s] step_down called: area_id=%s device_id=%s", DOMAIN, area_id, device_id)
+        _LOGGER.info("[%s] step_down called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
-    # Schema for services that require area_id or device_id
-    area_device_schema = vol.Schema({
-        vol.Optional(ATTR_AREA_ID): cv.string,
-        vol.Optional(ATTR_DEVICE_ID): cv.string,
+    # Schema for services - area_id can be a string or list of strings
+    area_schema = vol.Schema({
+        vol.Required(ATTR_AREA_ID): vol.Any(cv.string, [cv.string]),
     })
     
     # Register services
     hass.services.async_register(
-        DOMAIN, SERVICE_STEP_UP, handle_step_up, schema=area_device_schema
+        DOMAIN, SERVICE_STEP_UP, handle_step_up, schema=area_schema
     )
     _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_STEP_UP)
     hass.services.async_register(
-        DOMAIN, SERVICE_STEP_DOWN, handle_step_down, schema=area_device_schema
+        DOMAIN, SERVICE_STEP_DOWN, handle_step_down, schema=area_schema
     )
     _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_STEP_DOWN)
 
