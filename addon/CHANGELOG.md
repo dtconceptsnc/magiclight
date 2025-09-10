@@ -1,5 +1,23 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 3.0.0
+- **HomeGlo Primitives System**: Complete restructure of service calls into primitive actions
+  - `homeglo_on`: Enable HomeGlo mode and turn on lights with adaptive lighting
+  - `homeglo_off`: Turn off lights and disable HomeGlo mode  
+  - `homeglo_deactivate`: Disable HomeGlo mode without changing light state
+  - `step_up`/`step_down`: Adjust brightness along the glo curve
+  - `reset`: Reset to current time and enable HomeGlo
+- **Blueprint Automation**: Home Assistant blueprint for ZHA switch control
+  - Multiple switch device support
+  - Multiple area targeting
+  - ON button: Smart toggle (lights on → homeglo_off, lights off → homeglo_on)
+  - OFF button: Reset to current time
+  - UP/DOWN buttons: Step along glo curve
+- **Custom Integration**: HACS-installable Home Assistant integration
+  - Service registration and validation
+  - Multi-area support for all services
+  - Proper internationalization strings
+
 ## 2.5.1
 
 - Changed default color mode to Kelvin (CT) for better bulb compatibility

@@ -73,7 +73,7 @@ action:
             id: on_press
         sequence:
           - choose:
-              # If any lights are on in the area, turn them off and disable HomeGlo
+              # If any lights are on in the area, use homeglo_off (turns lights off and disables HomeGlo)
               - conditions:
                   - condition: template
                     value_template: >
@@ -87,17 +87,9 @@ action:
                       {% endfor %}
                       {{ ns.lights_on }}
                 sequence:
-                  - repeat:
-                      for_each: "{{ areas if areas is list else [areas] }}"
-                      sequence:
-                        - service: light.turn_off
-                          data:
-                            transition: 1
-                          target:
-                            area_id: "{{ repeat.item }}"
-                        - service: homeglo.homeglo_off
-                          data:
-                            area_id: "{{ repeat.item }}"
+                  - service: homeglo.homeglo_off
+                    data:
+                      area_id: "{{ areas }}"
               # If all lights are off, enable HomeGlo (which turns them on with adaptive lighting)
               - conditions:
                   - condition: template
@@ -112,24 +104,18 @@ action:
                       {% endfor %}
                       {{ ns.all_lights_off }}
                 sequence:
-                  - repeat:
-                      for_each: "{{ areas if areas is list else [areas] }}"
-                      sequence:
-                        - service: homeglo.homeglo_on
-                          data:
-                            area_id: "{{ repeat.item }}"
+                  - service: homeglo.homeglo_on
+                    data:
+                      area_id: "{{ areas }}"
       
       # OFF button: Reset
       - conditions:
           - condition: trigger
             id: off_press
         sequence:
-          - repeat:
-              for_each: "{{ areas if areas is list else [areas] }}"
-              sequence:
-                - service: homeglo.reset
-                  data:
-                    area_id: "{{ repeat.item }}"
+          - service: homeglo.reset
+            data:
+              area_id: "{{ areas }}"
       
       # UP button: Step up
       - conditions:

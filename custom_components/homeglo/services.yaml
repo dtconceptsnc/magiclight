@@ -1,6 +1,6 @@
 step_up:
   name: Step Up
-  description: Increase brightness by one step along the adaptive lighting curve
+  description: Increase brightness by one step along the glo curve
   icon: mdi:brightness-5
   fields:
     area_id:
@@ -14,7 +14,7 @@ step_up:
 
 step_down:
   name: Step Down
-  description: Decrease brightness by one step along the adaptive lighting curve
+  description: Decrease brightness by one step along the glo curve
   icon: mdi:brightness-4
   fields:
     area_id:
@@ -28,7 +28,7 @@ step_down:
 
 reset:
   name: Reset
-  description: Reset area to current time, enable HomeGlo, and apply adaptive lighting
+  description: Turn on lights to glo of current time, enable HomeGlo
   icon: mdi:restore
   fields:
     area_id:
@@ -42,7 +42,7 @@ reset:
 
 homeglo_on:
   name: HomeGlo On
-  description: Enable HomeGlo adaptive lighting mode for an area
+  description: Turn on lights to last state and enable HomeGlo glo mode for an area
   icon: mdi:lightbulb-on
   fields:
     area_id:
@@ -56,12 +56,26 @@ homeglo_on:
 
 homeglo_off:
   name: HomeGlo Off
-  description: Disable HomeGlo adaptive lighting mode for an area (lights remain in current state)
+  description: Turn off lights and disable HomeGlo for an area
   icon: mdi:lightbulb-off
   fields:
     area_id:
       name: Area
-      description: The area(s) to disable HomeGlo for
+      description: The area(s) to turn off and disable HomeGlo for
+      required: true
+      example: ["living_room", "kitchen"]
+      selector:
+        area:
+          multiple: true
+
+homeglo_deactivate:
+  name: HomeGlo Deactivate
+  description: Disable HomeGlo for an area (lights remain in current state)
+  icon: mdi:lightbulb-off-outline
+  fields:
+    area_id:
+      name: Area
+      description: The area(s) to deactivate HomeGlo for (lights remain unchanged)
       required: true
       example: ["living_room", "kitchen"]
       selector:

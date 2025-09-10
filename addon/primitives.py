@@ -262,11 +262,11 @@ class HomeGloPrimitives:
             logger.info(f"HomeGlo enabled for area {area_id} with TimeLocation offset {offset} minutes")
     
     async def homeglo_off(self, area_id: str, source: str = "service_call"):
-        """HomeGlo Off - Disable HomeGlo mode (lights remain in current state).
+        """HomeGlo Off - Turn off lights and disable HomeGlo mode.
         
         When HomeGlo is disabled:
+        - All lights in the area are turned off
         - The area exits "magic mode" and stops tracking solar time
-        - Lights remain in their current state (no change)
         - The current TimeLocation is saved for later restoration
         - Automatic minute-by-minute updates stop
         
@@ -274,11 +274,48 @@ class HomeGloPrimitives:
             area_id: The area ID to control
             source: Source of the action
         """
-        logger.info(f"[{source}] Disabling HomeGlo for area {area_id}")
+        logger.info(f"[{source}] Disabling HomeGlo and turning off lights for area {area_id}")
         
         # Check if actually enabled
         if area_id not in self.client.magic_mode_areas:
-            logger.info(f"HomeGlo was already disabled for area {area_id}")
+            logger.info(f"HomeGlo was already disabled for area {area_id}, turning off lights")
+        else:
+            # Get current offset before disabling (for logging)
+            current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
+            
+            # Disable magic mode (sets HomeGlo = false, preserves TimeLocation)
+            # save_offset=True means it will save current TimeLocation for later restoration
+            await self.client.disable_magic_mode(area_id, save_offset=True)
+            
+            logger.info(f"HomeGlo disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved")
+        
+        # Turn off all lights in the area
+        target_type, target_value = await self.client.determine_light_target(area_id)
+        service_data = {"transition": 1}
+        target = {target_type: target_value}
+        await self.client.call_service("light", "turn_off", service_data, target)
+        logger.info(f"Turned off lights in area {area_id}")
+    
+    async def homeglo_deactivate(self, area_id: str, source: str = "service_call"):
+        """HomeGlo Deactivate - Disable HomeGlo mode without changing light state.
+        
+        When HomeGlo is deactivated:
+        - The area exits "magic mode" and stops tracking solar time
+        - Lights remain in their current state (no change)
+        - The current TimeLocation is saved for later restoration
+        - Automatic minute-by-minute updates stop
+        
+        This is useful when you want to stop adaptive lighting but keep lights as they are.
+        
+        Args:
+            area_id: The area ID to control
+            source: Source of the action
+        """
+        logger.info(f"[{source}] Deactivating HomeGlo for area {area_id} (lights unchanged)")
+        
+        # Check if actually enabled
+        if area_id not in self.client.magic_mode_areas:
+            logger.info(f"HomeGlo was already deactivated for area {area_id}")
             return
         
         # Get current offset before disabling (for logging)
@@ -288,7 +325,7 @@ class HomeGloPrimitives:
         # save_offset=True means it will save current TimeLocation for later restoration
         await self.client.disable_magic_mode(area_id, save_offset=True)
         
-        logger.info(f"HomeGlo disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved")
+        logger.info(f"HomeGlo deactivated for area {area_id}, TimeLocation offset {current_offset} minutes saved, lights unchanged")
     
     async def reset(self, area_id: str, source: str = "service_call"):
         """Reset - Set TimeLocation to current time (offset 0), enable HomeGlo, and unfreeze.
