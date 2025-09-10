@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Switch command processing module for Intuitive Light."""
+"""Switch command processing module for HomeGlo."""
 
 import logging
 from typing import Dict, Any, List, Optional
@@ -50,8 +50,8 @@ class SwitchCommandProcessor:
         elif button == "up" and command == "up_press":
             await self._handle_up_button_press(device_id)
         elif button == "down" and command == "down_press":
-            # Step down is now handled via the intuitivelight custom component service
-            logger.info(f"Down button press on device {device_id} - use intuitivelight.step_down service instead")
+            # Step down is now handled via the HomeGlo custom component service
+            logger.info(f"Down button press on device {device_id} - use homeglo.step_down service instead")
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
 
@@ -226,7 +226,7 @@ class SwitchCommandProcessor:
         # Increase brightness
         await self.dim_up(area_id, device_id)
         
-    # Commented out - step_down is now handled via the intuitivelight custom component service
+    # Commented out - step_down is now handled via the HomeGlo custom component service
     # async def _handle_down_button_press(self, device_id: str):
     #     """Handle the DOWN button press for dimming down.
     #     
