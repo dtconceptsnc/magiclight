@@ -12,11 +12,11 @@ blueprint:
   domain: automation
   input:
     switch_device:
-      name: ZHA Switch Device
-      description: The ZHA switch device to use for controlling lights
+      name: Switch Device(s)
+      description: The switch device(s) to use for controlling lights
       selector:
         device:
-          integration: zha
+          multiple: true
     target_areas:
       name: Target Areas
       description: The area(s) to control when buttons are pressed
@@ -28,42 +28,44 @@ mode: restart
 max_exceeded: silent
 
 trigger:
-  # ON button single press
+  # ON button single press from any switch
   - platform: event
     event_type: zha_event
     event_data:
-      device_id: !input switch_device
       command: "on_press"
     id: on_press
   
-  # OFF button single press
+  # OFF button single press from any switch
   - platform: event
     event_type: zha_event
     event_data:
-      device_id: !input switch_device
       command: "off_press"
     id: off_press
   
-  # UP button single press
+  # UP button single press from any switch
   - platform: event
     event_type: zha_event
     event_data:
-      device_id: !input switch_device
       command: "up_press"
     id: up_press
   
-  # DOWN button single press
+  # DOWN button single press from any switch
   - platform: event
     event_type: zha_event
     event_data:
-      device_id: !input switch_device
       command: "down_press"
     id: down_press
 
 variables:
   areas: !input target_areas
+  switches: !input switch_device
 
 action:
+  # Only proceed if the event came from one of our configured switches
+  - condition: template
+    value_template: >
+      {% set switch_list = switches if switches is list else [switches] %}
+      {{ trigger.event.data.device_id in switch_list }}
   - choose:
       # ON button: Toggle HomeGlo based on light state
       - conditions:
