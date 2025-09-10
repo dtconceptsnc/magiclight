@@ -1,6 +1,6 @@
 {
   "domain": "homeglo",
-  "name": "HomeGlo",
+  "name": "HomeGlo Integration",
   "codeowners": ["@tkthundr"],
   "config_flow": true,
   "dependencies": ["light"],
@@ -8,5 +8,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/intuitivelight/intuitivelight-ha/issues",
   "requirements": ["ulid-transform"],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
