@@ -1,7 +1,7 @@
-"""Constants for the Intuitive Light integration."""
+"""Constants for the HomeGlo integration."""
 from typing import Final
 
-DOMAIN: Final = "intuitivelight"
+DOMAIN: Final = "homeglo"
 
 # Service names
 SERVICE_STEP_UP: Final = "step_up"

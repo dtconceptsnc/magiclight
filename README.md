@@ -15,7 +15,7 @@ A Home Assistant addon that:
 - Provides adaptive lighting based on sun position
 - Includes a Light Designer web interface for curve customization
 
-### 2. Intuitive Light Integration (`custom_components/intuitivelight/`)
+### 2. HomeGlo Integration (`custom_components/homeglo/`)
 A Home Assistant custom component that:
 - Exposes services for controlling lights via automations
 - Works with any trigger (not just ZHA switches)
@@ -37,27 +37,27 @@ A Home Assistant custom component that:
 2. Click on Integrations
 3. Click the three dots menu and select "Custom repositories"
 4. Add this repository URL with category "Integration"
-5. Search for "Intuitive Light" and install
+5. Search for "HomeGlo" and install
 6. Restart Home Assistant
-7. Go to Settings → Integrations → Add Integration → Search for "Intuitive Light"
+7. Go to Settings → Integrations → Add Integration → Search for "HomeGlo"
 
 #### Manual Installation
-1. Copy the `custom_components/intuitivelight` folder to your Home Assistant `custom_components` directory
+1. Copy the `custom_components/homeglo` folder to your Home Assistant `custom_components` directory
 2. Restart Home Assistant
-3. Go to Settings → Integrations → Add Integration → Search for "Intuitive Light"
+3. Go to Settings → Integrations → Add Integration → Search for "HomeGlo"
 
 ## Services
 
 The integration provides the following services:
 
-### `intuitivelight.step_up`
+### `homeglo.step_up`
 Increase brightness by one step along the adaptive lighting curve.
 
 **Parameters:**
 - `area_id` (optional): The area to control
 - `device_id` (optional): The device that triggered the command
 
-### `intuitivelight.step_down`
+### `homeglo.step_down`
 Decrease brightness by one step along the adaptive lighting curve.
 
 **Parameters:**
@@ -77,7 +77,7 @@ automation:
         type: remote_button_short_press
         subtype: dim_up
     action:
-      - service: intuitivelight.step_up
+      - service: homeglo.step_up
         data:
           area_id: living_room
 
@@ -89,7 +89,7 @@ automation:
         type: remote_button_short_press
         subtype: dim_down
     action:
-      - service: intuitivelight.step_down
+      - service: homeglo.step_down
         data:
           area_id: living_room
 ```
@@ -106,7 +106,7 @@ automation:
         after: "06:00:00"
         before: "08:00:00"
     action:
-      - service: intuitivelight.step_up
+      - service: homeglo.step_up
         data:
           area_id: bedroom
 ```
