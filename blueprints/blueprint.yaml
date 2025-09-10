@@ -17,11 +17,12 @@ blueprint:
       selector:
         device:
           integration: zha
-    target_area:
-      name: Target Area
-      description: The area to control when buttons are pressed
+    target_areas:
+      name: Target Areas
+      description: The area(s) to control when buttons are pressed
       selector:
         area:
+          multiple: true
 
 mode: restart
 max_exceeded: silent
@@ -60,7 +61,7 @@ trigger:
     id: down_press
 
 variables:
-  area: !input target_area
+  areas: !input target_areas
 
 action:
   - choose:
@@ -74,53 +75,80 @@ action:
               - conditions:
                   - condition: template
                     value_template: >
-                      {% set area_name = area %}
-                      {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
-                      {{ lights | selectattr('state', 'eq', 'on') | list | length > 0 }}
+                      {% set area_list = areas if areas is list else [areas] %}
+                      {% set ns = namespace(lights_on = false) %}
+                      {% for area_name in area_list %}
+                        {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
+                        {% if lights | selectattr('state', 'eq', 'on') | list | length > 0 %}
+                          {% set ns.lights_on = true %}
+                        {% endif %}
+                      {% endfor %}
+                      {{ ns.lights_on }}
                 sequence:
-                  - service: light.turn_off
-                    data:
-                      transition: 1
-                    target:
-                      area_id: "{{ area }}"
-                  - service: homeglo.homeglo_off
-                    data:
-                      area_id: "{{ area }}"
+                  - repeat:
+                      for_each: "{{ areas if areas is list else [areas] }}"
+                      sequence:
+                        - service: light.turn_off
+                          data:
+                            transition: 1
+                          target:
+                            area_id: "{{ repeat.item }}"
+                        - service: homeglo.homeglo_off
+                          data:
+                            area_id: "{{ repeat.item }}"
               # If all lights are off, enable HomeGlo (which turns them on with adaptive lighting)
               - conditions:
                   - condition: template
                     value_template: >
-                      {% set area_name = area %}
-                      {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
-                      {{ lights | selectattr('state', 'eq', 'on') | list | length == 0 }}
+                      {% set area_list = areas if areas is list else [areas] %}
+                      {% set ns = namespace(all_lights_off = true) %}
+                      {% for area_name in area_list %}
+                        {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
+                        {% if lights | selectattr('state', 'eq', 'on') | list | length > 0 %}
+                          {% set ns.all_lights_off = false %}
+                        {% endif %}
+                      {% endfor %}
+                      {{ ns.all_lights_off }}
                 sequence:
-                  - service: homeglo.homeglo_on
-                    data:
-                      area_id: "{{ area }}"
+                  - repeat:
+                      for_each: "{{ areas if areas is list else [areas] }}"
+                      sequence:
+                        - service: homeglo.homeglo_on
+                          data:
+                            area_id: "{{ repeat.item }}"
       
       # OFF button: Reset
       - conditions:
           - condition: trigger
             id: off_press
         sequence:
-          - service: homeglo.reset
-            data:
-              area_id: "{{ area }}"
+          - repeat:
+              for_each: "{{ areas if areas is list else [areas] }}"
+              sequence:
+                - service: homeglo.reset
+                  data:
+                    area_id: "{{ repeat.item }}"
       
       # UP button: Step up
       - conditions:
           - condition: trigger
             id: up_press
         sequence:
-          - service: homeglo.step_up
-            data:
-              area_id: "{{ area }}"
+          - repeat:
+              for_each: "{{ areas if areas is list else [areas] }}"
+              sequence:
+                - service: homeglo.step_up
+                  data:
+                    area_id: "{{ repeat.item }}"
       
       # DOWN button: Step down
       - conditions:
           - condition: trigger
             id: down_press
         sequence:
-          - service: homeglo.step_down
-            data:
-              area_id: "{{ area }}"
+          - repeat:
+              for_each: "{{ areas if areas is list else [areas] }}"
+              sequence:
+                - service: homeglo.step_down
+                  data:
+                    area_id: "{{ repeat.item }}"

@@ -4,9 +4,9 @@
   "codeowners": ["@tkthundr"],
   "config_flow": true,
   "dependencies": ["light"],
-  "documentation": "https://github.com/intuitivelight/intuitivelight-ha",
+  "documentation": "https://github.com/intuitivelight/homeglo-ha",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/intuitivelight/intuitivelight-ha/issues",
+  "issue_tracker": "https://github.com/intuitivelight/homeglo-ha/issues",
   "requirements": ["ulid-transform"],
   "version": "1.0.1"
 }
