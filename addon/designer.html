@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>IntuitiveLight Designer</title>
+<title>HomeGlo Designer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
@@ -85,7 +85,7 @@
 </head>
 <body>
 <div class="container">
-  <h2>IntuitiveLight Designer</h2>
+  <h2>HomeGlo Designer</h2>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px">
     <button id="save-config" class="btn" style="background:var(--accent);color:#fff">Save Configuration</button>
   </div>
@@ -719,13 +719,13 @@ function buildStepCalloutsTraces(currentHour){
   return { upTrace, dnTrace };
 }
 
-function buildIntuitiveLightColored(x,bri,cct){
+function buildHomeGloColored(x,bri,cct){
   const segs=[];
   for(let i=1;i<x.length;i++){
     if(x[i]-x[i-1]>1.5) continue;
     const midC=0.5*(cct[i-1]+cct[i]);
     segs.push({type:'scatter',mode:'lines',x:[x[i-1],x[i]],y:[bri[i-1],bri[i]],
-      line:{width:4,color:lineColorForCCT(midC)},name:'IntuitiveLight',yaxis:'y',hoverinfo:'skip',showlegend:false});
+      line:{width:4,color:lineColorForCCT(midC)},name:'HomeGlo',yaxis:'y',hoverinfo:'skip',showlegend:false});
   }
   return segs;
 }
@@ -755,18 +755,18 @@ function renderPlot(series){
   arc.ccts=ccts.slice();
   arc.sun=sunPower.slice();
 
-  const segs=buildIntuitiveLightColored(hours,bris.map(v=>Math.round(v)),ccts);
+  const segs=buildHomeGloColored(hours,bris.map(v=>Math.round(v)),ccts);
   const sunSegs=buildSunColored(hours,sunPower);
 
   // Legend entries (dummy)
-  const homeLegend={type:'scatter',mode:'lines',x:[null],y:[null],name:'IntuitiveLight',
+  const homeLegend={type:'scatter',mode:'lines',x:[null],y:[null],name:'HomeGlo',
     line:{width:4,color:'#fff'},hoverinfo:'skip',showlegend:true,yaxis:'y'};
   const sunLegend={type:'scatter',mode:'lines',x:[null],y:[null],name:'Sun power',
     line:{width:SUN_LINE.width,color:'rgba(255,255,255,0.35)',dash:SUN_LINE.dash},hoverinfo:'skip',showlegend:true,yaxis:'y'};
 
-  const hoverProxy={type:'scatter',mode:'lines',x:hours,y:bris,name:'IntuitiveLight (hover)',
+  const hoverProxy={type:'scatter',mode:'lines',x:hours,y:bris,name:'HomeGlo (hover)',
     line:{width:14,color:'rgba(0,0,0,0)'},
-    hovertemplate:'%{text}<br>Home Glo %{y:.0f}%<br>color temperature %{customdata:.0f} K<extra></extra>',
+    hovertemplate:'%{text}<br>HomeGlo %{y:.0f}%<br>color temperature %{customdata:.0f} K<extra></extra>',
     text:hours.map(h=>formatTime(h,params.use12Hour)), customdata:ccts, yaxis:'y', showlegend:false};
 
   const now=new Date(); const nowHour=now.getHours()+now.getMinutes()/60;

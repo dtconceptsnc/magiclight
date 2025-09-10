@@ -1,9 +1,9 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
-name: Intuitive Light
+name: HomeGlo
 version: "2.5.1"
-slug: intuitivelight
+slug: homeglo
 description: Connects to Home Assistant WebSocket API and listens for switch events
-url: "https://github.com/intuitivelight/intuitivelight-ha"
+url: "https://github.com/intuitivelight/homeglo-ha"
 arch:
   - armhf
   - armv7
@@ -17,7 +17,7 @@ ingress: true
 ingress_port: 8099
 ingress_entry: /
 panel_icon: mdi:lightbulb
-panel_title: Intuitive Light
+panel_title: HomeGlo
 panel_admin: false
 options:
   color_mode: "kelvin"
