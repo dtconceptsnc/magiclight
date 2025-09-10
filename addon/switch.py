@@ -36,7 +36,7 @@ class SwitchCommandProcessor:
             button: The button identifier (e.g., 'on', 'off', 'up', 'down')
         """
         # Handle different button/command combinations
-        if button == "on" and command == "on_press":
+        """if button == "on" and command == "on_press":
             await self._handle_on_button_press(device_id)
         elif button == "off" and command == "off_press":
             await self._handle_off_button_press(device_id)
@@ -52,7 +52,7 @@ class SwitchCommandProcessor:
             await self._handle_down_button_press(device_id)
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
-
+        """
 
     async def _handle_off_triple_press(self, device_id: str):
         """Handle the OFF button triple press - set random RGB color.
