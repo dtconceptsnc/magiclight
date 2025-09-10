@@ -48,7 +48,7 @@
     },
     "homeglo_on": {
       "name": "HomeGlo On",
-      "description": "Turn on lights to last state and enable HomeGlo glo mode for an area",
+      "description": "Turn on lights and enable HomeGlo mode for an area",
       "fields": {
         "area_id": {
           "name": "Area",
@@ -58,21 +58,21 @@
     },
     "homeglo_off": {
       "name": "HomeGlo Off",
-      "description": "Turn off lights and disable HomeGlo for an area",
+      "description": "Disable HomeGlo mode for an area (lights remain unchanged)",
       "fields": {
         "area_id": {
           "name": "Area",
-          "description": "The area(s) to turn off and disable HomeGlo for"
+          "description": "The area(s) to disable HomeGlo for"
         }
       }
     },
-    "homeglo_deactivate": {
-      "name": "HomeGlo Deactivate",
-      "description": "Disable HomeGlo for an area (lights remain in current state)",
+    "homeglo_toggle": {
+      "name": "HomeGlo Toggle",
+      "description": "Smart toggle - turns on lights with HomeGlo if off, turns off lights and disables HomeGlo if on",
       "fields": {
         "area_id": {
           "name": "Area",
-          "description": "The area(s) to deactivate HomeGlo for (lights remain unchanged)"
+          "description": "The area(s) to toggle"
         }
       }
     }

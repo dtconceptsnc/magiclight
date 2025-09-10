@@ -5,10 +5,10 @@ blueprint:
     Maps switch button presses to HomeGlo primitives.
     
     Button mappings:
-    - ON button single press: Toggle HomeGlo on/off based on light state
+    - ON button single press: Toggle lights and HomeGlo (smart toggle)
     - OFF button single press: Reset to current time and enable HomeGlo
-    - UP button single press: Step up brightness along adaptive curve
-    - DOWN button single press: Step down brightness along adaptive curve
+    - UP button single press: Step up brightness along glo curve
+    - DOWN button single press: Step down brightness along glo curve
   domain: automation
   input:
     switch_device:
@@ -67,46 +67,14 @@ action:
       {% set switch_list = switches if switches is list else [switches] %}
       {{ trigger.event.data.device_id in switch_list }}
   - choose:
-      # ON button: Toggle HomeGlo based on light state
+      # ON button: Toggle HomeGlo
       - conditions:
           - condition: trigger
             id: on_press
         sequence:
-          - choose:
-              # If any lights are on in the area, use homeglo_off (turns lights off and disables HomeGlo)
-              - conditions:
-                  - condition: template
-                    value_template: >
-                      {% set area_list = areas if areas is list else [areas] %}
-                      {% set ns = namespace(lights_on = false) %}
-                      {% for area_name in area_list %}
-                        {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
-                        {% if lights | selectattr('state', 'eq', 'on') | list | length > 0 %}
-                          {% set ns.lights_on = true %}
-                        {% endif %}
-                      {% endfor %}
-                      {{ ns.lights_on }}
-                sequence:
-                  - service: homeglo.homeglo_off
-                    data:
-                      area_id: "{{ areas }}"
-              # If all lights are off, enable HomeGlo (which turns them on with adaptive lighting)
-              - conditions:
-                  - condition: template
-                    value_template: >
-                      {% set area_list = areas if areas is list else [areas] %}
-                      {% set ns = namespace(all_lights_off = true) %}
-                      {% for area_name in area_list %}
-                        {% set lights = states.light | selectattr('entity_id', 'in', area_entities(area_name)) | list %}
-                        {% if lights | selectattr('state', 'eq', 'on') | list | length > 0 %}
-                          {% set ns.all_lights_off = false %}
-                        {% endif %}
-                      {% endfor %}
-                      {{ ns.all_lights_off }}
-                sequence:
-                  - service: homeglo.homeglo_on
-                    data:
-                      area_id: "{{ areas }}"
+          - service: homeglo.homeglo_toggle
+            data:
+              area_id: "{{ areas }}"
       
       # OFF button: Reset
       - conditions:

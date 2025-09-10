@@ -1,5 +1,21 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 3.1.0
+
+- **Refined Primitives Behavior**: Simplified and clarified primitive actions
+  - `homeglo_on`: Turn on lights with adaptive lighting and enable HomeGlo mode
+  - `homeglo_off`: Disable HomeGlo mode only (lights remain unchanged)
+  - `homeglo_toggle`: Smart toggle - turns off lights and disables HomeGlo if on, turns on lights with HomeGlo if off
+  - Removed `homeglo_deactivate` (redundant with new `homeglo_off` behavior)
+- **Improved Blueprint**: Simplified automation using new primitives
+  - ON button: Uses `homeglo_toggle` for smart light/HomeGlo control
+  - OFF button: Reset to current time
+  - UP/DOWN buttons: Step along glo curve
+  - All services now pass multiple areas at once for better performance
+- **Service Updates**: Updated all service descriptions
+  - Replaced "adaptive lighting" terminology with "glo" throughout
+  - Clarified behavior of each service in descriptions
+
 ## 3.0.0
 - **HomeGlo Primitives System**: Complete restructure of service calls into primitive actions
   - `homeglo_on`: Enable HomeGlo mode and turn on lights with adaptive lighting

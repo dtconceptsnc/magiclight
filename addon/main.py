@@ -1056,18 +1056,18 @@ class HomeAssistantWebSocketClient:
                     else:
                         logger.warning("homeglo_off called without area_id")
                         
-                elif service == "homeglo_deactivate":
+                elif service == "homeglo_toggle":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.homeglo_deactivate service call for area: {area_id}")
+                    logger.info(f"Received homeglo.homeglo_toggle service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
                         area_list = area_id if isinstance(area_id, list) else [area_id]
                         for area in area_list:
-                            logger.info(f"Processing homeglo_deactivate for area: {area}")
-                            await self.primitives.homeglo_deactivate(area, "service_call")
+                            logger.info(f"Processing homeglo_toggle for area: {area}")
+                            await self.primitives.homeglo_toggle(area, "service_call")
                     else:
-                        logger.warning("homeglo_deactivate called without area_id")
+                        logger.warning("homeglo_toggle called without area_id")
             
             # Handle ZHA events
             elif event_type == "zha_event":
