@@ -1,4 +1,4 @@
 # https://developers.home-assistant.io/docs/add-ons/repository#repository-configuration
-name: Intuitive Light
-url: 'https://github.com/tkthundr/magic-light'
+name: HomeGlo
+url: 'https://github.com/intuitivelight/homeglo-ha'
 maintainer: Tim K <bright.frog1891@fastmail.com>

@@ -1,14 +1,14 @@
-# Intuitive Light for Home Assistant
+# HomeGlo for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-Intuitive Light provides adaptive lighting control for Home Assistant, automatically adjusting brightness and color temperature based on the sun's position.
+HomeGlo provides adaptive lighting control for Home Assistant, automatically adjusting brightness and color temperature based on the sun's position.
 
 ## Components
 
 This repository contains two components:
 
-### 1. Intuitive Light Addon (`addon/`)
+### 1. HomeGlo Addon (`addon/`)
 A Home Assistant addon that:
 - Connects to Home Assistant via WebSocket API
 - Listens for ZHA switch events
@@ -26,7 +26,7 @@ A Home Assistant custom component that:
 ### Installing the Addon
 
 1. Add this repository to your Home Assistant addon store
-2. Install the "Intuitive Light" addon
+2. Install the "HomeGlo" addon
 3. Start the addon
 4. Access the Light Designer through the Home Assistant sidebar
 
@@ -117,7 +117,7 @@ The adaptive lighting curves can be customized using the Light Designer interfac
 
 ## Support
 
-For issues, feature requests, or questions, please visit the [GitHub repository](https://github.com/intuitivelight/intuitivelight-ha).
+For issues, feature requests, or questions, please visit the [GitHub repository](https://github.com/intuitivelight/homeglo-ha).
 
 ## License
 

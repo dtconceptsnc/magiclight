@@ -3,7 +3,11 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
-Intuitive Light is a Home Assistant add-on that connects to the Home Assistant WebSocket API and listens for ZHA switch events. When a switch's top button is pressed, it automatically turns on lights in the corresponding area with adaptive lighting based on the sun's position.
+HomeGlo (formerly Intuitive Light) is a dual-component Home Assistant project:
+1. **Add-on** (`addon/`): Docker-based Home Assistant add-on that provides adaptive lighting based on sun position
+2. **Custom Integration** (`custom_components/homeglo/`): HACS-installable integration (currently minimal implementation)
+
+The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch events, and automatically adjusts lights in corresponding areas with adaptive lighting based on the sun's position.
 
 ## Architecture
 
@@ -13,6 +17,7 @@ Intuitive Light is a Home Assistant add-on that connects to the Home Assistant W
 - `addon/light_controller.py`: Multi-protocol light controller with support for ZigBee, Z-Wave, WiFi, Matter
 - `addon/switch.py`: Switch command processor handling button press events and light control
 - `addon/webserver.py`: Web server for Light Designer interface accessible via Home Assistant ingress
+- `addon/designer.html`: Interactive web UI for configuring adaptive lighting curves
 
 ### Key Functionality
 1. **WebSocket Connection**: Establishes persistent connection to Home Assistant using long-lived access token
@@ -21,6 +26,7 @@ Intuitive Light is a Home Assistant add-on that connects to the Home Assistant W
 4. **Adaptive Lighting**: Calculates appropriate lighting values based on sun elevation data from Home Assistant
 5. **Magic Mode**: Automatically updates lights in areas where switches have been used
 6. **Light Designer**: Web interface for configuring adaptive lighting curves
+7. **ZHA Group Management**: Automatically creates/syncs ZHA groups with "Glo_" prefix for efficient control
 
 ## Development Commands
 
@@ -51,21 +57,6 @@ cd addon && ./build_local.sh --run
 cd addon && ./build_local.sh --run --port 8100
 ```
 
-### Building Add-on
-```bash
-# Build for specific architecture
-cd addon && ./build_addon.sh --arch amd64
-
-# Build for all architectures
-cd addon && ./build_addon.sh --all
-
-# Build without cache
-cd addon && ./build_addon.sh --no-cache
-
-# Build and push to registry
-cd addon && ./build_addon.sh --push
-```
-
 ## Configuration
 
 ### Environment Variables (for local testing)
@@ -75,16 +66,20 @@ HA_HOST=localhost
 HA_PORT=8123
 HA_TOKEN=your_long_lived_token_here
 HA_USE_SSL=false
-COLOR_MODE=kelvin
 ```
 
 ### Add-on Configuration
 The add-on uses Home Assistant's auth_api and homeassistant_api for automatic authentication when running as an add-on.
 
 Configuration options in Home Assistant:
-- `color_mode`: Choose between kelvin, rgb, or xy color modes
+- `color_mode`: Choose between kelvin, rgb, or xy color modes (default: kelvin)
 - `min_color_temp`: Minimum color temperature in Kelvin (default: 500)
 - `max_color_temp`: Maximum color temperature in Kelvin (default: 6500)
+
+### Repository Configuration
+- `repository.yaml`: Defines the add-on repository metadata
+- `hacs.json`: Configuration for HACS installation of the custom integration
+- Repository URL: https://github.com/tkthundr/magic-light
 
 ## Key Design Patterns
 
@@ -108,6 +103,7 @@ Configuration options in Home Assistant:
 - Smart light control method selection based on area composition
 - Areas with only ZHA lights use efficient group control
 - Mixed-protocol areas use area-based control
+- Groups automatically update when devices change areas
 
 ## Light Designer Interface
 - Accessible through Home Assistant sidebar when addon is running
@@ -115,12 +111,13 @@ Configuration options in Home Assistant:
 - Visual controls for curve parameters with live updates
 - Save configuration directly from the web interface
 - API endpoints at `/api/config` (GET) and `/api/save` (POST)
+- Shows step markers when dimming visualization is enabled
 
 ## Testing Considerations
 - The add-on can be tested locally using Docker or directly with Python
-- Use `--test` flag with build_addon.sh for test mode builds
+- Test files organized in `tests/unit/` directory with 8 test files covering core functionality
 - Monitor logs for device discovery, event handling, and adaptive lighting calculations
-- Test files organized in `tests/unit/` directory
+- Use pytest configuration in `pytest.ini` for test settings
 
 ## Git Workflow
 When creating commits:
@@ -128,3 +125,25 @@ When creating commits:
 2. Add entry to `addon/CHANGELOG.md`
 3. Include descriptive commit message
 4. Use conventional commit format when applicable
+
+## Project Structure
+```
+/addon/                  # Home Assistant add-on
+  ├── main.py           # WebSocket client and main entry point
+  ├── brain.py          # Adaptive lighting calculations
+  ├── light_controller.py # Multi-protocol light control
+  ├── switch.py         # Switch event handling
+  ├── webserver.py      # Light Designer web server
+  ├── designer.html     # Light Designer UI
+  ├── config.yaml       # Add-on configuration
+  ├── Dockerfile        # Container build
+  ├── build.yaml        # Multi-arch build config
+  └── build_local.sh    # Local development script
+
+/custom_components/homeglo/  # HACS integration (minimal)
+  ├── __init__.py
+  └── manifest.json
+
+/tests/unit/            # Test suite
+  └── test_*.py         # Unit tests for core functionality
+```

@@ -1,4 +1,4 @@
-# Testing IntuitiveLight
+# Testing HomeGlo
 
 ## Setup
 
@@ -16,7 +16,7 @@ pytest
 
 ### Run with coverage
 ```bash
-pytest --cov=magiclight --cov-report=html
+pytest --cov=homeglo --cov-report=html
 ```
 Then open `htmlcov/index.html` to view coverage report.
 
@@ -59,7 +59,7 @@ Tests use pytest. Basic structure:
 
 ```python
 import pytest
-from magiclight.brain import get_adaptive_lighting
+from homeglo.brain import get_adaptive_lighting
 
 def test_something():
     result = get_adaptive_lighting(...)

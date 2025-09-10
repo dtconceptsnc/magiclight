@@ -8,7 +8,6 @@ import time
 from zoneinfo import ZoneInfo
 import random
 
-from brain import calculate_dimming_step, DEFAULT_MAX_DIM_STEPS
 # Light controller imports removed - using consolidated determine_light_target instead
 
 
@@ -50,8 +49,7 @@ class SwitchCommandProcessor:
         elif button == "up" and command == "up_press":
             await self._handle_up_button_press(device_id)
         elif button == "down" and command == "down_press":
-            # Step down is now handled via the HomeGlo custom component service
-            logger.info(f"Down button press on device {device_id} - use homeglo.step_down service instead")
+            await self._handle_down_button_press(device_id)
         else:
             logger.info(f"Unhandled button press: device={device_id}, button={button}, command={command}")
 
@@ -93,7 +91,7 @@ class SwitchCommandProcessor:
         logger.info(f"Set lights in area {area_id} to random RGB color: ({r}, {g}, {b})")
     
     async def _handle_off_button_press(self, device_id: str):
-        """Handle the OFF button press - always reset to time offset 0 and enable magic mode.
+        """Handle the OFF button press - performs a Reset operation.
         
         Args:
             device_id: The device ID that triggered the event
@@ -106,23 +104,8 @@ class SwitchCommandProcessor:
             logger.warning(f"No area mapping found for device: {device_id}")
             return
         
-        # Check if lights are on in the area
-        lights_in_area = await self.client.get_lights_in_area(area_id)
-        any_light_on = any(light.get("state") == "on" for light in lights_in_area)
-
-        # Reset time offset to 0 and enable magic mode
-        logger.info(f"Resetting to time offset 0 and enabling magic mode for area {area_id}")
-        
-        # Reset the time offset to 0
-        self.client.magic_mode_time_offsets[area_id] = 0
-        
-        # Enable magic mode (this also resets time offset to 0 internally)
-        self.client.enable_magic_mode(area_id)
-        
-        # Get and apply adaptive lighting values for current time (offset 0)
-        lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-        await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
-        logger.info(f"Magic mode enabled with time offset 0 for area {area_id}")
+        # Delegate to the Reset primitive
+        await self.client.primitives.reset(area_id, f"switch_{device_id}")
             
     async def _handle_on_button_press(self, device_id: str):
         """Handle the ON button press with toggle functionality.
@@ -150,13 +133,12 @@ class SwitchCommandProcessor:
                 break
         
         if any_light_on:
-            # Turn off all lights in the area and disable magic mode (saves current offset)
+            # Turn off all lights in the area and disable HomeGlo (saves current offset)
             await self._turn_off_lights(area_id, device_id)
-            await self.client.disable_magic_mode(area_id)  # This saves the current offset
+            await self.client.primitives.homeglo_off(area_id, f"switch_{device_id}")
         else:
-            # Turn on all lights with adaptive lighting and enable magic mode (restores saved offset)
-            self.client.enable_magic_mode(area_id,True)  # This restores saved offset if available
-            await self._turn_on_lights_adaptive(area_id, device_id)
+            # Turn on lights with HomeGlo enabled (restores saved offset if available)
+            await self.client.primitives.homeglo_on(area_id, f"switch_{device_id}")
             
     async def _handle_off_button_hold(self, device_id: str):
         """Handle the OFF button hold - simulate time moving forward by 1 hour.
@@ -223,26 +205,25 @@ class SwitchCommandProcessor:
             logger.warning(f"No area mapping found for device: {device_id}")
             return
         
-        # Increase brightness
-        await self.dim_up(area_id, device_id)
+        # Delegate to primitives
+        await self.client.primitives.step_up(area_id, f"switch_{device_id}")
         
-    # Commented out - step_down is now handled via the HomeGlo custom component service
-    # async def _handle_down_button_press(self, device_id: str):
-    #     """Handle the DOWN button press for dimming down.
-    #     
-    #     Args:
-    #         device_id: The device ID that triggered the event
-    #     """
-    #     logger.info(f"Down button pressed on device: {device_id}")
-    #     
-    #     # Get area for this device
-    #     area_id = self.client.device_to_area_mapping.get(device_id)
-    #     if not area_id:
-    #         logger.warning(f"No area mapping found for device: {device_id}")
-    #         return
-    #     
-    #     # Decrease brightness
-    #     await self.dim_down(area_id, device_id)
+    async def _handle_down_button_press(self, device_id: str):
+        """Handle the DOWN button press for dimming down.
+        
+        Args:
+            device_id: The device ID that triggered the event
+        """
+        logger.info(f"Down button pressed on device: {device_id}")
+        
+        # Get area for this device
+        area_id = self.client.device_to_area_mapping.get(device_id)
+        if not area_id:
+            logger.warning(f"No area mapping found for device: {device_id}")
+            return
+        
+        # Delegate to primitives
+        await self.client.primitives.step_down(area_id, f"switch_{device_id}")
         
     async def _turn_off_lights(self, area_id: str, device_id: str):
         """Turn off all lights in an area.
@@ -297,236 +278,6 @@ class SwitchCommandProcessor:
             # Use the centralized light control function
             await self.client.turn_on_lights_adaptive(area_id, adaptive_values, transition=1)
         logger.info(f"Turned on lights in area {area_id} with adaptive settings")
-        
-    async def dim_up(self, area_id: str, device_id: str, increment_pct: int = 17):
-        """Increase brightness - in magic mode, move along the adaptive curve.
-        
-        Args:
-            area_id: The area ID to control
-            device_id: The device ID that triggered this action
-            increment_pct: Percentage to increase brightness (default 17%) - used only when not in magic mode
-        """
-        # Check if area is in magic mode
-        if area_id in self.client.magic_mode_areas:
-            logger.info(f"Dimming up along magic mode curve for area {area_id}")
-            
-            # Get current time with offset
-            current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            current_time = datetime.now() + timedelta(minutes=current_offset)
-            
-            # Use the new arc-based dimming calculation
-            try:
-                # Get max_dim_steps from config if available
-                max_steps = DEFAULT_MAX_DIM_STEPS  # Use the constant from brain.py
-                if hasattr(self.client, 'config') and self.client.config:
-                    max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
-                
-                # Get curve parameters from client if available
-                curve_params = {}
-                if hasattr(self.client, 'curve_params'):
-                    curve_params = self.client.curve_params
-                
-                dimming_result = calculate_dimming_step(
-                    current_time=current_time,
-                    action='brighten',
-                    max_steps=max_steps,
-                    **curve_params  # Pass the curve parameters
-                )
-                
-                # Update the stored offset
-                new_offset = current_offset + dimming_result['time_offset_minutes']
-                # Limit offset to reasonable bounds (-12 hours to +12 hours)
-                new_offset = max(-720, min(720, new_offset))
-                self.client.magic_mode_time_offsets[area_id] = new_offset
-                
-                logger.info(f"Time offset for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
-                
-                # Apply the lighting values
-                lighting_values = {
-                    'kelvin': dimming_result['kelvin'],
-                    'brightness': dimming_result['brightness'],
-                    'rgb': dimming_result.get('rgb'),
-                    'xy': dimming_result.get('xy')
-                }
-                
-                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied magic mode brightening: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
-                
-            except Exception as e:
-                logger.error(f"Error calculating dimming step: {e}")
-                # Fall back to simple time offset adjustment
-                new_offset = current_offset + 30
-                new_offset = max(-720, min(720, new_offset))
-                self.client.magic_mode_time_offsets[area_id] = new_offset
-                
-                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-            
-        else:
-            # Not in magic mode - use standard dimming
-            logger.info(f"Increasing brightness by {increment_pct}% in area {area_id}")
-            
-            # Get current light states in the area
-            lights_in_area = await self.client.get_lights_in_area(area_id)
-            
-            # Check if any lights are on
-            any_light_on = False
-            for light in lights_in_area:
-                if light.get("state") == "on":
-                    any_light_on = True
-                    break
-            
-            if not any_light_on:
-                logger.info(f"No lights are on in area {area_id}, not turning on lights")
-                return
-            else:
-                # Increase brightness of lights that are on
-                # Use the consolidated logic to determine target
-                target_type, target_value = await self.client.determine_light_target(area_id)
-                
-                service_data = {
-                    "brightness_step_pct": increment_pct,
-                    "transition": 1
-                }
-                
-                target = {target_type: target_value}
-                await self.client.call_service("light", "turn_on", service_data, target)
-                
-                logger.info(f"Brightness increased by {increment_pct}% in area {area_id}")
-        
-    async def dim_down(self, area_id: str, device_id: str, decrement_pct: int = 17):
-        """Decrease brightness - in magic mode, move along the adaptive curve.
-        
-        Args:
-            area_id: The area ID to control
-            device_id: The device ID that triggered this action
-            decrement_pct: Percentage to decrease brightness (default 17%) - used only when not in magic mode
-        """
-        # Check if area is in magic mode
-        if area_id in self.client.magic_mode_areas:
-            logger.info(f"Dimming down along magic mode curve for area {area_id}")
-            
-            # Get current time with offset
-            current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            current_time = datetime.now() + timedelta(minutes=current_offset)
-            
-            # Use the new arc-based dimming calculation
-            try:
-                # Get max_dim_steps from config if available
-                max_steps = DEFAULT_MAX_DIM_STEPS  # Use the constant from brain.py
-                if hasattr(self.client, 'config') and self.client.config:
-                    max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
-                    logger.debug(f"Using max_dim_steps from config: {max_steps}")
-                else:
-                    logger.debug(f"Using default max_dim_steps: {max_steps}")
-                
-                # Get current light brightness before dimming
-                lights_in_area = await self.client.get_lights_in_area(area_id)
-                current_brightness = None
-                for light in lights_in_area:
-                    if light.get("state") == "on":
-                        brightness = light.get("attributes", {}).get("brightness")
-                        if brightness:
-                            current_brightness = int((brightness / 255) * 100)
-                            break
-                
-                logger.debug(f"Current brightness before dimming: {current_brightness}%")
-                logger.debug(f"Current time with offset: {current_time.isoformat()}, offset={current_offset} minutes")
-                
-                # Get curve parameters from client if available
-                curve_params = {}
-                if hasattr(self.client, 'curve_params'):
-                    curve_params = self.client.curve_params
-                    logger.debug(f"Using curve_params from client: {list(curve_params.keys())}")
-                
-                dimming_result = calculate_dimming_step(
-                    current_time=current_time,
-                    action='dim',
-                    max_steps=max_steps,
-                    **curve_params  # Pass the curve parameters
-                )
-                
-                # Update the stored offset
-                new_offset = current_offset + dimming_result['time_offset_minutes']
-                # Limit offset to reasonable bounds (-12 hours to +12 hours)
-                new_offset = max(-720, min(720, new_offset))
-                self.client.magic_mode_time_offsets[area_id] = new_offset
-                
-                logger.info(f"Time offset for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
-                logger.debug(f"Dimming result - brightness: {dimming_result['brightness']}%, kelvin: {dimming_result['kelvin']}K")
-                logger.debug(f"Time offset change: {dimming_result['time_offset_minutes']:.1f} minutes")
-                
-                # Apply the lighting values
-                lighting_values = {
-                    'kelvin': dimming_result['kelvin'],
-                    'brightness': max(1, dimming_result['brightness']),  # Ensure minimum brightness
-                    'rgb': dimming_result.get('rgb'),
-                    'xy': dimming_result.get('xy')
-                }
-                
-                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied magic mode dimming: {lighting_values['kelvin']}K, {lighting_values['brightness']}% (was {current_brightness}%)")
-                
-            except Exception as e:
-                logger.error(f"Error calculating dimming step: {e}")
-                # Fall back to simple time offset adjustment
-                new_offset = current_offset - 30
-                new_offset = max(-720, min(720, new_offset))
-                self.client.magic_mode_time_offsets[area_id] = new_offset
-                
-                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-                lighting_values = lighting_values.copy()
-                lighting_values['brightness'] = max(1, lighting_values['brightness'])
-                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-            
-        else:
-            # Not in magic mode - use standard dimming
-            logger.info(f"Decreasing brightness by {decrement_pct}% in area {area_id}")
-            
-            # Get current light states in the area
-            lights_in_area = await self.client.get_lights_in_area(area_id)
-            
-            # Check if any lights are on
-            any_light_on = False
-            lights_on_count = 0
-            total_brightness = 0
-            
-            for light in lights_in_area:
-                if light.get("state") == "on":
-                    any_light_on = True
-                    lights_on_count += 1
-                    # Get current brightness if available
-                    brightness = light.get("attributes", {}).get("brightness")
-                    if brightness:
-                        # Convert from 0-255 to percentage
-                        brightness_pct = (brightness / 255) * 100
-                        total_brightness += brightness_pct
-            
-            if not any_light_on:
-                logger.info(f"No lights are on in area {area_id}, nothing to dim")
-                return
-            
-            # Calculate average brightness
-            avg_brightness = total_brightness / lights_on_count if lights_on_count > 0 else 50
-            
-            # If dimming would turn lights off (brightness <= decrement), turn them off instead
-            if avg_brightness <= decrement_pct:
-                logger.info(f"Dimming by {decrement_pct}% would turn lights off, turning off instead")
-                await self._turn_off_lights(area_id, device_id)
-            else:
-                # Decrease brightness of lights that are on
-                # Use the consolidated logic to determine target
-                target_type, target_value = await self.client.determine_light_target(area_id)
-                
-                service_data = {
-                    "brightness_step_pct": -decrement_pct,  # Negative value to decrease
-                    "transition": 0.5
-                }
-                
-                target = {target_type: target_value}
-                await self.client.call_service("light", "turn_on", service_data, target)
-                
-                logger.info(f"Brightness decreased by {decrement_pct}% in area {area_id}")
             
     async def _set_lights_for_simulated_time(self, area_id: str, device_id: str) -> None:
         """

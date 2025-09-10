@@ -1,4 +1,4 @@
-# Intuitive Light Add-on Documentation
+# HomeGlo Add-on Documentation
 
 ## Configuration Options
 

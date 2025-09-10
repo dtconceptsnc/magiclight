@@ -13,6 +13,7 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from switch import SwitchCommandProcessor
+from primitives import HomeGloPrimitives
 from brain import get_adaptive_lighting, ColorMode
 from light_controller import (
     LightControllerFactory,
@@ -52,6 +53,7 @@ class HomeAssistantWebSocketClient:
         self.device_to_area_mapping = {}  # Map device IDs to areas
         self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
         self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
+        self.primitives = HomeGloPrimitives(self)  # Initialize primitives handler
         self.light_controller = None  # Will be initialized after websocket connection
         self.latitude = None  # Home Assistant latitude
         self.longitude = None  # Home Assistant longitude
@@ -542,6 +544,30 @@ class HomeAssistantWebSocketClient:
             os.makedirs(data_dir, exist_ok=True)
             return data_dir
     
+    def _update_color_mode_from_config(self, merged_config: Dict[str, Any]):
+        """Update color mode from configuration if available.
+        
+        Args:
+            merged_config: Dictionary containing configuration from options.json and designer_config.json
+        """
+        if 'color_mode' in merged_config:
+            color_mode_str = str(merged_config['color_mode']).lower()
+            try:
+                # Try to get by value (lowercase) first
+                new_color_mode = ColorMode(color_mode_str)
+                if new_color_mode != self.color_mode:
+                    logger.info(f"Updating color mode from config: {self.color_mode.value} -> {new_color_mode.value}")
+                    self.color_mode = new_color_mode
+            except ValueError:
+                # Try uppercase enum name as fallback
+                try:
+                    new_color_mode = ColorMode[color_mode_str.upper()]
+                    if new_color_mode != self.color_mode:
+                        logger.info(f"Updating color mode from config: {self.color_mode.value} -> {new_color_mode.value}")
+                        self.color_mode = new_color_mode
+                except KeyError:
+                    logger.warning(f"Invalid color_mode '{color_mode_str}' in config, keeping current: {self.color_mode.value}")
+    
     def load_saved_offsets(self):
         """Load saved time offsets from disk."""
         try:
@@ -661,6 +687,9 @@ class HomeAssistantWebSocketClient:
             self.config = merged_config
         except Exception:
             pass
+
+        # Update color mode from configuration if available
+        self._update_color_mode_from_config(merged_config)
 
         try:
             # Extract simplified curve parameters if present
@@ -964,25 +993,68 @@ class HomeAssistantWebSocketClient:
                 
                 if service == "step_up":
                     area_id = service_data.get("area_id")
-                    device_id = service_data.get("device_id")
-                    logger.info(f"Received homeglo.step_up service call for area: {area_id}, device: {device_id}")
+                    logger.info(f"Received homeglo.step_up service call for area: {area_id}")
                     
-                    # Call the existing dim_up functionality
+                    # Handle both single area (string) and multiple areas (list)
                     if area_id:
-                        await self.switch_processor.dim_up(area_id, device_id or "service_call")
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing step_up for area: {area}")
+                            await self.primitives.step_up(area, "service_call")
                     else:
                         logger.warning("step_up called without area_id")
                         
                 elif service == "step_down":
                     area_id = service_data.get("area_id")
-                    device_id = service_data.get("device_id")
-                    logger.info(f"Received homeglo.step_down service call for area: {area_id}, device: {device_id}")
+                    logger.info(f"Received homeglo.step_down service call for area: {area_id}")
                     
-                    # Call the existing dim_down functionality
+                    # Handle both single area (string) and multiple areas (list)
                     if area_id:
-                        await self.switch_processor.dim_down(area_id, device_id or "service_call")
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing step_down for area: {area}")
+                            await self.primitives.step_down(area, "service_call")
                     else:
                         logger.warning("step_down called without area_id")
+                        
+                elif service == "reset":
+                    area_id = service_data.get("area_id")
+                    logger.info(f"Received homeglo.reset service call for area: {area_id}")
+                    
+                    # Handle both single area (string) and multiple areas (list)
+                    if area_id:
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing reset for area: {area}")
+                            await self.primitives.reset(area, "service_call")
+                    else:
+                        logger.warning("reset called without area_id")
+                        
+                elif service == "homeglo_on":
+                    area_id = service_data.get("area_id")
+                    logger.info(f"Received homeglo.homeglo_on service call for area: {area_id}")
+                    
+                    # Handle both single area (string) and multiple areas (list)
+                    if area_id:
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing homeglo_on for area: {area}")
+                            await self.primitives.homeglo_on(area, "service_call")
+                    else:
+                        logger.warning("homeglo_on called without area_id")
+                        
+                elif service == "homeglo_off":
+                    area_id = service_data.get("area_id")
+                    logger.info(f"Received homeglo.homeglo_off service call for area: {area_id}")
+                    
+                    # Handle both single area (string) and multiple areas (list)
+                    if area_id:
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing homeglo_off for area: {area}")
+                            await self.primitives.homeglo_off(area, "service_call")
+                    else:
+                        logger.warning("homeglo_off called without area_id")
             
             # Handle ZHA events
             elif event_type == "zha_event":
