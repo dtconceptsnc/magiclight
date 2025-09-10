@@ -39,10 +39,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Setting up Intuitive Light integration")
     
     # Store the config entry for later use
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = entry.data
-    
-    # Services are already registered in async_setup
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    domain_data[entry.entry_id] = entry.data
+
+    # Ensure services are registered even if async_setup wasn't called
+    if not domain_data.get("services_registered"):
+        await _register_services(hass)
+        domain_data["services_registered"] = True
     
     return True
 
