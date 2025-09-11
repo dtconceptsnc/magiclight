@@ -1,6 +1,6 @@
 # HomeGlo - Adaptive Lighting for Home Assistant
 
-![HomeGlo Light Designer](designer.png)
+![HomeGlo Light Designer](.github/assets/designer.png)
 
 Transform your home's ambiance with HomeGlo, the intelligent lighting system that automatically adjusts your lights throughout the day to match natural sunlight patterns.
 
