@@ -1,15 +1,170 @@
-# Home Assistant Add-on: Example add-on
+# HomeGlo Add-on for Home Assistant
 
-_Example add-on to use as a blueprint for new add-ons._
+HomeGlo Add-on provides intelligent adaptive lighting control that automatically adjusts your lights based on the sun's position throughout the day.
 
-![Supports aarch64 Architecture][aarch64-shield]
-![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield]
-![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
+## Features
 
-[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
-[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
+- **Automatic Light Control**: Responds to ZHA switch button presses to control lights in the same area
+- **Adaptive Lighting**: Adjusts color temperature and brightness based on sun elevation
+- **Multi-Protocol Support**: Controls ZigBee, Z-Wave, WiFi, and Matter lights
+- **ZHA Group Management**: Automatically creates and syncs ZigBee groups for efficient control
+- **Light Designer**: Built-in web interface for customizing adaptive lighting curves
+- **Magic Mode**: Lights automatically update when physical switches are used
+- **Energy Efficient**: Optimized group control reduces ZigBee network traffic
+
+## Installation
+
+1. Add the HomeGlo repository to your Home Assistant:
+   - Navigate to **Settings** → **Add-ons** → **Add-on Store**
+   - Click the three dots menu → **Repositories**
+   - Add: `https://github.com/intuitivelight/homeglo-ha`
+
+2. Install the HomeGlo add-on:
+   - Find "HomeGlo Adaptive Lighting" in the add-on store
+   - Click **Install**
+
+3. Start the add-on:
+   - Click **Start**
+   - Check **Show in sidebar** for easy access to Light Designer
+
+## Configuration
+
+### Add-on Options
+
+```yaml
+color_mode: kelvin  # Options: kelvin, rgb, xy
+min_color_temp: 500  # Minimum Kelvin (warmest)
+max_color_temp: 6500  # Maximum Kelvin (coolest)
+```
+
+### Light Designer
+
+Access the Light Designer through the Home Assistant sidebar when the add-on is running:
+
+1. **Morning Curve**: Configure how lights transition from sunrise to midday
+   - Adjust midpoint and steepness
+   - Set brightness range
+
+2. **Evening Curve**: Configure sunset to nighttime transitions
+   - Customize warmth progression
+   - Fine-tune dimming behavior
+
+3. **Color Temperature**: Set the range from warm to cool
+   - Minimum: Warmest evening light
+   - Maximum: Brightest daylight
+
+4. **Preview**: See real-time visualization of your settings
+   - Current sun position indicator
+   - Step markers for dimming levels
+
+## How It Works
+
+### Switch Integration
+
+When you press a ZHA-compatible switch:
+1. HomeGlo detects the button press event
+2. Identifies all lights in the same area as the switch
+3. Calculates optimal lighting based on current sun position
+4. Updates all lights with adaptive values
+
+### Supported Switches
+
+- Philips Hue switches and dimmers
+- IKEA TRADFRI controllers
+- Aqara switches
+- Any ZHA-compatible switch device
+
+### Supported Lights
+
+HomeGlo automatically detects and controls:
+- **ZigBee**: Via ZHA integration
+- **Z-Wave**: Via Z-Wave JS integration
+- **WiFi**: Tuya, LIFX, and other cloud/local integrations
+- **Matter**: Via Matter integration
+- **Groups**: Light groups and areas
+
+### ZHA Group Management
+
+HomeGlo automatically manages ZigBee groups for optimal performance:
+- Creates groups with "Glo_" prefix in a dedicated area
+- Syncs group membership when devices change areas
+- Uses efficient group commands for all-ZigBee areas
+- Falls back to area control for mixed-protocol setups
+
+## Advanced Usage
+
+### Manual Testing
+
+Test adaptive lighting for any area:
+```bash
+# Via Home Assistant CLI
+ha addon logs homeglo --follow
+```
+
+### Monitoring
+
+View real-time activity:
+- Check add-on logs for event processing
+- Monitor Light Designer for current sun position
+- Watch for "Magic mode" updates in logs
+
+### Performance Optimization
+
+- ZigBee-only areas use group commands (single network packet)
+- Mixed areas use parallel commands for responsiveness
+- Automatic caching of device registry for fast lookups
+
+## Troubleshooting
+
+### Lights Not Responding
+
+1. Verify the switch and lights are in the same area
+2. Check that lights support color temperature adjustment
+3. Ensure Home Assistant can control the lights directly
+4. Review add-on logs for error messages
+
+### Switch Not Detected
+
+1. Confirm switch uses ZHA integration (not Zigbee2MQTT)
+2. Check switch is properly paired and shows events
+3. Verify button mapping in Developer Tools → Events
+
+### Color Issues
+
+1. Adjust `color_mode` in configuration
+2. Try different modes: kelvin → rgb → xy
+3. Check light capabilities in Home Assistant
+
+## Technical Details
+
+### WebSocket Connection
+- Uses Home Assistant supervisor authentication
+- Persistent connection with automatic reconnection
+- Subscribes to ZHA events and state changes
+
+### Adaptive Algorithm
+- Solar position: -1 (sunrise) to 0 (noon) to 1 (sunset)
+- Separate morning/evening curves with midpoint control
+- Brightness steps: 10%, 30%, 50%, 70%, 100%
+- Color temperature interpolation based on sun elevation
+
+### File Structure
+```
+/addon/
+├── main.py              # WebSocket client and event handler
+├── brain.py             # Adaptive lighting calculations
+├── light_controller.py  # Multi-protocol light control
+├── switch.py           # Switch command processing
+├── webserver.py        # Light Designer server
+├── designer.html       # Light Designer interface
+└── config.yaml         # Add-on metadata
+```
+
+## Support
+
+For issues or feature requests, please visit:
+https://github.com/intuitivelight/homeglo-ha/issues
+
+## License
+
+GNU General Public License v3.0

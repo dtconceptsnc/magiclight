@@ -1,124 +1,109 @@
-# HomeGlo for Home Assistant
+# HomeGlo - Adaptive Lighting for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+![HomeGlo Light Designer](designer.png)
 
-HomeGlo provides adaptive lighting control for Home Assistant, automatically adjusting brightness and color temperature based on the sun's position.
+Transform your home's ambiance with HomeGlo, the intelligent lighting system that automatically adjusts your lights throughout the day to match natural sunlight patterns.
 
-## Components
+## ✨ Features
 
-This repository contains two components:
+- **Automatic Adaptive Lighting** - Seamlessly transitions from cool daylight to warm evening tones
+- **Smart Switch Integration** - Works with your existing switches for instant control
+- **Customizable Light Curves** - Fine-tune brightness and color temperature to your preferences
+- **Multi-Protocol Support** - Controls ZigBee, Z-Wave, WiFi, and Matter lights
+- **Visual Light Designer** - Interactive web interface to perfect your lighting curves
+- **Magic Mode** - Automatically updates lights when you use physical switches
+- **Energy Efficient** - Optimized group control for ZigBee networks
 
-### 1. HomeGlo Addon (`addon/`)
-A Home Assistant addon that:
-- Connects to Home Assistant via WebSocket API
-- Listens for ZHA switch events
-- Provides adaptive lighting based on sun position
-- Includes a Light Designer web interface for curve customization
+## 🎯 Why HomeGlo?
 
-### 2. HomeGlo Integration (`custom_components/homeglo/`)
-A Home Assistant custom component that:
-- Exposes services for controlling lights via automations
-- Works with any trigger (not just ZHA switches)
-- Communicates with the addon via WebSocket events
+Traditional smart lights require constant manual adjustments or complex automations. HomeGlo changes that by providing intelligent, adaptive lighting that just works. Your lights automatically adjust based on the sun's position, creating the perfect ambiance for any time of day.
 
-## Installation
+- **Better Sleep** - Reduces blue light exposure in the evening
+- **Increased Comfort** - Natural light transitions that feel right
+- **Zero Maintenance** - Set it once and forget it
+- **Works with What You Have** - Compatible with all major smart light protocols
 
-### Installing the Addon
+## 📦 Installation
 
-1. Add this repository to your Home Assistant addon store
-2. Install the "HomeGlo" addon
-3. Start the addon
-4. Access the Light Designer through the Home Assistant sidebar
+> **⚠️ IMPORTANT**: HomeGlo requires BOTH components to be installed for full functionality:
+> 1. **The Add-on** - Provides the adaptive lighting engine and Light Designer interface
+> 2. **The Integration** - Enables HomeGlo services for automations and blueprints
+>
+> Installing only one component will result in limited or non-functional features.
 
-### Installing the Integration
+### Step 1: Install the Home Assistant Add-on (Required)
 
-#### Via HACS (Recommended)
-1. Open HACS
-2. Click on Integrations
-3. Click the three dots menu and select "Custom repositories"
-4. Add this repository URL with category "Integration"
-5. Search for "HomeGlo" and install
-6. Restart Home Assistant
-7. Go to Settings → Integrations → Add Integration → Search for "HomeGlo"
+[![Add HomeGlo Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha)
 
-#### Manual Installation
-1. Copy the `custom_components/homeglo` folder to your Home Assistant `custom_components` directory
-2. Restart Home Assistant
-3. Go to Settings → Integrations → Add Integration → Search for "HomeGlo"
+1. Click the button above to add the HomeGlo repository to your Home Assistant
+2. Navigate to **Settings** → **Add-ons** → **Add-on Store**
+3. Find "HomeGlo Adaptive Lighting" and click Install
+4. Start the add-on and check the logs
 
-## Services
+### Step 2: Install the HACS Integration (Required)
 
-The integration provides the following services:
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=intuitivelight&repository=homeglo-ha&category=integration)
 
-### `homeglo.step_up`
-Increase brightness by one step along the adaptive lighting curve.
+1. Ensure [HACS](https://hacs.xyz/) is installed
+2. Click the button above or search for "HomeGlo" in HACS
+3. Click Install and restart Home Assistant
+4. Add HomeGlo through **Settings** → **Devices & Services**
 
-**Parameters:**
-- `area_id` (optional): The area to control
-- `device_id` (optional): The device that triggered the command
+### Step 3: Import the Blueprint (Recommended)
 
-### `homeglo.step_down`
-Decrease brightness by one step along the adaptive lighting curve.
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha%2Fblob%2Fmain%2Fcustom_components%2Fhomeglo%2Fblueprints%2Fdefault_switch.yaml)
 
-**Parameters:**
-- `area_id` (optional): The area to control
-- `device_id` (optional): The device that triggered the command
+1. Click the button above to import the HomeGlo Smart Switch Control blueprint
+2. Or manually import from: **Settings** → **Automations & Scenes** → **Blueprints** → **Import Blueprint**
+3. Use URL: `https://github.com/intuitivelight/homeglo-ha/blob/main/custom_components/homeglo/blueprints/default_switch.yaml`
+4. Create an automation from the blueprint:
+   - Select your switch device(s) (supports ZHA and Hue Bridge)
+   - Choose target area(s) to control
+   - Save and activate the automation
 
-## Example Automations
+The blueprint provides smart button mappings:
+- **ON button**: Smart toggle (turns lights on with HomeGlo or off)
+- **OFF button**: Reset to current time and enable HomeGlo
+- **UP/DOWN buttons**: Step brightness along the adaptive curve
 
-### Control lights with a Zigbee button
-```yaml
-automation:
-  - alias: "Living Room - Brightness Up"
-    trigger:
-      - platform: device
-        device_id: YOUR_DEVICE_ID
-        domain: zha
-        type: remote_button_short_press
-        subtype: dim_up
-    action:
-      - service: homeglo.step_up
-        data:
-          area_id: living_room
+## 🚀 Quick Start
 
-  - alias: "Living Room - Brightness Down"
-    trigger:
-      - platform: device
-        device_id: YOUR_DEVICE_ID
-        domain: zha
-        type: remote_button_short_press
-        subtype: dim_down
-    action:
-      - service: homeglo.step_down
-        data:
-          area_id: living_room
-```
+1. **Install ALL components** following the installation steps above
+2. **Create an automation** from the blueprint for your switch devices
+3. **Press your configured switch** - lights in that area will automatically adjust
+4. **Open Light Designer** from the Home Assistant sidebar to customize your preferences
+5. **Enjoy** perfect lighting throughout the day!
 
-### Control with time-based automation
-```yaml
-automation:
-  - alias: "Gradual Morning Brightening"
-    trigger:
-      - platform: time_pattern
-        minutes: "/5"
-    condition:
-      - condition: time
-        after: "06:00:00"
-        before: "08:00:00"
-    action:
-      - service: homeglo.step_up
-        data:
-          area_id: bedroom
-```
+## 📊 Light Designer
 
-## Configuration
+Access the Light Designer through your Home Assistant sidebar when the add-on is running. This intuitive interface lets you:
 
-The adaptive lighting curves can be customized using the Light Designer interface accessible through the Home Assistant sidebar when the addon is running.
+- Preview your lighting curves in real-time
+- Adjust brightness and color temperature ranges
+- Fine-tune morning and evening transitions
+- Save configurations instantly
 
-## Support
+## 🔧 Compatibility
 
-For issues, feature requests, or questions, please visit the [GitHub repository](https://github.com/intuitivelight/homeglo-ha).
+HomeGlo works with:
+- **Smart Switches**: ZHA-compatible switches (Hue, IKEA, Aqara, etc.)
+- **Smart Lights**: ZigBee, Z-Wave, WiFi (Tuya, LIFX, etc.), Matter
+- **Home Assistant**: 2023.1 or newer
 
-## License
+## 📝 Configuration
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+HomeGlo works out of the box with sensible defaults. For advanced users, customize through:
+
+- **Add-on Configuration**: Adjust color modes and temperature ranges
+- **Light Designer**: Visual interface for curve customization
+- **YAML**: Advanced automation possibilities
+
+## 📄 License
+
+HomeGlo is released under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+
+---
+
+**Need Help?** Open an [issue](https://github.com/intuitivelight/homeglo-ha/issues) or check our [documentation](https://github.com/intuitivelight/homeglo-ha/wiki).
+
+**Love HomeGlo?** Give us a ⭐ on GitHub!

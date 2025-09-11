@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Overview
 HomeGlo (formerly Intuitive Light) is a dual-component Home Assistant project:
 1. **Add-on** (`addon/`): Docker-based Home Assistant add-on that provides adaptive lighting based on sun position
-2. **Custom Integration** (`custom_components/homeglo/`): HACS-installable integration (currently minimal implementation)
+2. **Custom Integration** (`custom_components/homeglo/`): HACS-installable integration providing HomeGlo service primitives
 
 The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch events, and automatically adjusts lights in corresponding areas with adaptive lighting based on the sun's position.
 
@@ -18,15 +18,17 @@ The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch ev
 - `addon/switch.py`: Switch command processor handling button press events and light control
 - `addon/webserver.py`: Web server for Light Designer interface accessible via Home Assistant ingress
 - `addon/designer.html`: Interactive web UI for configuring adaptive lighting curves
+- `addon/primitives.py`: Core service implementations for HomeGlo operations
 
 ### Key Functionality
 1. **WebSocket Connection**: Establishes persistent connection to Home Assistant using long-lived access token
 2. **Device Discovery**: Maps ZHA switch devices to their areas through Home Assistant's device registry
-3. **Event Handling**: Listens for ZHA button press events (specifically top button "on_press" commands)
+3. **Event Handling**: Listens for ZHA button press events (specifically "on_press" commands)
 4. **Adaptive Lighting**: Calculates appropriate lighting values based on sun elevation data from Home Assistant
 5. **Magic Mode**: Automatically updates lights in areas where switches have been used
 6. **Light Designer**: Web interface for configuring adaptive lighting curves
 7. **ZHA Group Management**: Automatically creates/syncs ZHA groups with "Glo_" prefix for efficient control
+8. **Service Primitives**: Provides `homeglo_on`, `homeglo_off`, `homeglo_toggle`, `step_up`, `step_down`, and `reset` services
 
 ## Development Commands
 
@@ -40,12 +42,15 @@ pytest tests/unit/test_brain_basics.py
 
 # Run with verbose output
 pytest -v tests/
+
+# Run and stop on first failure
+pytest -x
 ```
 
 ### Local Development
 ```bash
 # Install development dependencies
-pip install -r requirements-dev.txt
+pip install -r addon/requirements-dev.txt
 
 # Build addon for current architecture (no cache)
 cd addon && ./build_local.sh
@@ -79,7 +84,7 @@ Configuration options in Home Assistant:
 ### Repository Configuration
 - `repository.yaml`: Defines the add-on repository metadata
 - `hacs.json`: Configuration for HACS installation of the custom integration
-- Repository URL: https://github.com/tkthundr/magic-light
+- Repository URL: https://github.com/intuitivelight/homeglo-ha
 
 ## Key Design Patterns
 
@@ -115,9 +120,9 @@ Configuration options in Home Assistant:
 
 ## Testing Considerations
 - The add-on can be tested locally using Docker or directly with Python
-- Test files organized in `tests/unit/` directory with 8 test files covering core functionality
+- Test files organized in `tests/unit/` directory covering core functionality
 - Monitor logs for device discovery, event handling, and adaptive lighting calculations
-- Use pytest configuration in `pytest.ini` for test settings
+- Use pytest for running tests (no pytest.ini file - uses defaults)
 
 ## Git Workflow
 When creating commits:
@@ -126,6 +131,14 @@ When creating commits:
 3. Include descriptive commit message
 4. Use conventional commit format when applicable
 
+## Blueprint Automation
+The repository includes a Home Assistant blueprint (`blueprints/blueprint.yaml`) for easy switch automation:
+- Supports multiple ZHA switch devices
+- Targets multiple areas simultaneously
+- ON button: Smart toggle (uses `homeglo_toggle` service)
+- OFF button: Reset to current time
+- UP/DOWN buttons: Step along adaptive curve
+
 ## Project Structure
 ```
 /addon/                  # Home Assistant add-on
@@ -133,6 +146,7 @@ When creating commits:
   ├── brain.py          # Adaptive lighting calculations
   ├── light_controller.py # Multi-protocol light control
   ├── switch.py         # Switch event handling
+  ├── primitives.py     # HomeGlo service implementations
   ├── webserver.py      # Light Designer web server
   ├── designer.html     # Light Designer UI
   ├── config.yaml       # Add-on configuration
@@ -140,10 +154,14 @@ When creating commits:
   ├── build.yaml        # Multi-arch build config
   └── build_local.sh    # Local development script
 
-/custom_components/homeglo/  # HACS integration (minimal)
-  ├── __init__.py
-  └── manifest.json
+/custom_components/homeglo/  # HACS integration
+  ├── __init__.py       # Service registration
+  ├── manifest.json     # Integration metadata
+  └── services.yaml     # Service definitions
 
 /tests/unit/            # Test suite
   └── test_*.py         # Unit tests for core functionality
+
+/blueprints/            # Home Assistant blueprints
+  └── blueprint.yaml    # ZHA switch automation
 ```
