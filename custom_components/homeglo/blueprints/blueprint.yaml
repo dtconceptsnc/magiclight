@@ -1,5 +1,5 @@
 blueprint:
-  name: HomeGlo Smart Switch Control (ZHA + Hue Bridge)
+  name: HomeGlo Default Switch
   description: >
     Control lights with HomeGlo adaptive lighting using ZHA or Hue Bridge events.
     Button mappings (single press / short release):
