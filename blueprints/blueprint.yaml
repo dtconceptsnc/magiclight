@@ -1,19 +1,17 @@
 blueprint:
-  name: HomeGlo Smart Switch Control
+  name: HomeGlo Smart Switch Control (ZHA + Hue Bridge)
   description: >
-    Control lights with HomeGlo adaptive lighting using ZHA switch events.
-    Maps switch button presses to HomeGlo primitives.
-    
-    Button mappings:
-    - ON button single press: Toggle lights and HomeGlo (smart toggle)
-    - OFF button single press: Reset to current time and enable HomeGlo
-    - UP button single press: Step up brightness along glo curve
-    - DOWN button single press: Step down brightness along glo curve
+    Control lights with HomeGlo adaptive lighting using ZHA or Hue Bridge events.
+    Button mappings (single press / short release):
+    - ON  -> smart toggle
+    - OFF -> reset + enable HomeGlo
+    - UP  -> step up brightness
+    - DOWN-> step down brightness
   domain: automation
   input:
     switch_device:
       name: Switch Device(s)
-      description: The switch device(s) to use for controlling lights
+      description: The Hue/ZHA switch device(s) to use
       selector:
         device:
           multiple: true
@@ -27,77 +25,144 @@ blueprint:
 mode: restart
 max_exceeded: silent
 
+# ── Triggers ───────────────────────────────────────────────────────────────────
 trigger:
-  # ON button single press from any switch
+  # ZHA single-press events
   - platform: event
     event_type: zha_event
     event_data:
       command: "on_press"
-    id: on_press
-  
-  # OFF button single press from any switch
+    id: zha_on
   - platform: event
     event_type: zha_event
     event_data:
       command: "off_press"
-    id: off_press
-  
-  # UP button single press from any switch
+    id: zha_off
   - platform: event
     event_type: zha_event
     event_data:
       command: "up_press"
-    id: up_press
-  
-  # DOWN button single press from any switch
+    id: zha_up
   - platform: event
     event_type: zha_event
     event_data:
       command: "down_press"
-    id: down_press
+    id: zha_down
 
+  # Hue Bridge (Philips Hue integration) — short_release per button:
+  # subtype 1=ON, 2=UP, 3=DOWN, 4=OFF
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: short_release
+      subtype: 1
+    id: hue_on
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: short_release
+      subtype: 4
+    id: hue_off
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: short_release
+      subtype: 2
+    id: hue_up
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: short_release
+      subtype: 3
+    id: hue_down
+
+  # (Optional) Older/alt Hue payloads some users still see (1002 style).
+  # Uncomment if your bridge reports numeric 'event' codes:
+  # - platform: event
+  #   event_type: hue_event
+  #   event_data: { event: 1002 }
+  #   id: hue_on_legacy
+  # - platform: event
+  #   event_type: hue_event
+  #   event_data: { event: 4002 }
+  #   id: hue_off_legacy
+  # - platform: event
+  #   event_type: hue_event
+  #   event_data: { event: 2002 }
+  #   id: hue_up_legacy
+  # - platform: event
+  #   event_type: hue_event
+  #   event_data: { event: 3002 }
+  #   id: hue_down_legacy
+
+# ── Vars ──────────────────────────────────────────────────────────────────────
 variables:
   areas: !input target_areas
   switches: !input switch_device
 
+# ── Actions ───────────────────────────────────────────────────────────────────
 action:
-  # Only proceed if the event came from one of our configured switches
+  # Only proceed if the event came from one of our configured devices
   - condition: template
     value_template: >
-      {% set switch_list = switches if switches is list else [switches] %}
-      {{ trigger.event.data.device_id in switch_list }}
+      {% set ds = switches if switches is iterable else [switches] %}
+      {{ trigger.event.data.device_id in ds }}
   - choose:
-      # ON button: Toggle HomeGlo
+      # ON -> smart toggle
       - conditions:
-          - condition: trigger
-            id: on_press
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_on
+              - condition: trigger
+                id: hue_on
+              # - condition: trigger
+              #   id: hue_on_legacy
         sequence:
           - service: homeglo.homeglo_toggle
             data:
               area_id: "{{ areas }}"
-      
-      # OFF button: Reset
+
+      # OFF -> reset
       - conditions:
-          - condition: trigger
-            id: off_press
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_off
+              - condition: trigger
+                id: hue_off
+              # - condition: trigger
+              #   id: hue_off_legacy
         sequence:
           - service: homeglo.reset
             data:
               area_id: "{{ areas }}"
-      
-      # UP button: Step up
+
+      # UP -> step up
       - conditions:
-          - condition: trigger
-            id: up_press
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_up
+              - condition: trigger
+                id: hue_up
+              # - condition: trigger
+              #   id: hue_up_legacy
         sequence:
           - service: homeglo.step_up
             data:
               area_id: "{{ areas }}"
-      
-      # DOWN button: Step down
+
+      # DOWN -> step down
       - conditions:
-          - condition: trigger
-            id: down_press
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_down
+              - condition: trigger
+                id: hue_down
+              # - condition: trigger
+              #   id: hue_down_legacy
         sequence:
           - service: homeglo.step_down
             data:
