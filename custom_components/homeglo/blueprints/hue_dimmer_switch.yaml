@@ -11,18 +11,27 @@ blueprint:
         device:
           multiple: true
           filter:
-            - manufacturer: Signify Netherlands B.V.
+            - integration: zha
+              manufacturer: Signify Netherlands B.V.
               model: RWL021
-            - manufacturer: Signify Netherlands B.V.
+            - integration: zha
+              manufacturer: Signify Netherlands B.V.
               model: RWL022
-            - manufacturer: Philips
+            - integration: zha
+              manufacturer: Philips
               model: RWL021
-            - manufacturer: Philips
-              model: RWL022
-            - manufacturer: Signify Netherlands B.V.
-              model: Hue dimmer switch
-            - manufacturer: Philips
-              model: Hue dimmer switch
+            - integration: zha
+              manufacturer: Philips
+              model: RWL020
+            - integration: zha
+              manufacturer: Signify Netherlands B.V.
+              model: RDM002
+            - integration: hue
+              manufacturer: Signify Netherlands B.V.
+              model: Hue dimmer switch (RWL022)
+            - integration: hue
+              manufacturer: Signify Netherlands B.V.
+              model: Hue dimmer switch (RWL021)
     target_areas:
       name: Target Areas
       description: The area(s) to control when buttons are pressed
