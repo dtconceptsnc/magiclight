@@ -21,9 +21,5 @@ panel_title: HomeGlo
 panel_admin: false
 options:
   color_mode: "kelvin"
-  min_color_temp: 500
-  max_color_temp: 6500
 schema:
   color_mode: list(kelvin|rgb|xy)
-  min_color_temp: "int(153,9000)"
-  max_color_temp: "int(153,9000)"

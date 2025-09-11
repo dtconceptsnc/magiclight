@@ -76,10 +76,8 @@ HA_USE_SSL=false
 ### Add-on Configuration
 The add-on uses Home Assistant's auth_api and homeassistant_api for automatic authentication when running as an add-on.
 
-Configuration options in Home Assistant:
+Configuration option in Home Assistant:
 - `color_mode`: Choose between kelvin, rgb, or xy color modes (default: kelvin)
-- `min_color_temp`: Minimum color temperature in Kelvin (default: 500)
-- `max_color_temp`: Maximum color temperature in Kelvin (default: 6500)
 
 ### Repository Configuration
 - `repository.yaml`: Defines the add-on repository metadata
