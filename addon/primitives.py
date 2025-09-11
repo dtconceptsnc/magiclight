@@ -87,11 +87,8 @@ class HomeGloPrimitives:
             # Not in HomeGlo mode - use standard brightness increase
             logger.info(f"[{source}] Area {area_id} not in HomeGlo mode, using standard brightness increase")
             
-            # Get current light states in the area
-            lights_in_area = await self.client.get_lights_in_area(area_id)
-            
             # Check if any lights are on
-            any_light_on = any(light.get("state") == "on" for light in lights_in_area)
+            any_light_on = await self.client.any_lights_on_in_area(area_id)
             
             if not any_light_on:
                 logger.info(f"No lights are on in area {area_id}, not turning on lights")
@@ -128,17 +125,6 @@ class HomeGloPrimitives:
                 if hasattr(self.client, 'config') and self.client.config:
                     max_steps = self.client.config.get('max_dim_steps', DEFAULT_MAX_DIM_STEPS)
                 
-                # Get current light brightness before dimming
-                lights_in_area = await self.client.get_lights_in_area(area_id)
-                current_brightness = None
-                for light in lights_in_area:
-                    if light.get("state") == "on":
-                        brightness = light.get("attributes", {}).get("brightness")
-                        if brightness:
-                            current_brightness = int((brightness / 255) * 100)
-                            break
-                
-                logger.debug(f"Current brightness before stepping down: {current_brightness}%")
                 
                 # Get curve parameters from client if available
                 curve_params = {}
@@ -187,47 +173,22 @@ class HomeGloPrimitives:
             # Not in HomeGlo mode - use standard brightness decrease
             logger.info(f"[{source}] Area {area_id} not in HomeGlo mode, using standard brightness decrease")
             
-            # Get current light states in the area
-            lights_in_area = await self.client.get_lights_in_area(area_id)
-            
-            # Check if any lights are on and get average brightness
-            any_light_on = False
-            lights_on_count = 0
-            total_brightness = 0
-            
-            for light in lights_in_area:
-                if light.get("state") == "on":
-                    any_light_on = True
-                    lights_on_count += 1
-                    brightness = light.get("attributes", {}).get("brightness")
-                    if brightness:
-                        brightness_pct = (brightness / 255) * 100
-                        total_brightness += brightness_pct
+            # Check if any lights are on
+            any_light_on = await self.client.any_lights_on_in_area(area_id)
             
             if not any_light_on:
                 logger.info(f"No lights are on in area {area_id}, nothing to dim")
                 return
             
-            # Calculate average brightness
-            avg_brightness = total_brightness / lights_on_count if lights_on_count > 0 else 50
-            
-            # If dimming would turn lights off, turn them off instead
-            if avg_brightness <= 17:
-                logger.info(f"Dimming by 17% would turn lights off, turning off instead")
-                target_type, target_value = await self.client.determine_light_target(area_id)
-                service_data = {"transition": 1}
-                target = {target_type: target_value}
-                await self.client.call_service("light", "turn_off", service_data, target)
-            else:
-                # Decrease brightness
-                target_type, target_value = await self.client.determine_light_target(area_id)
-                service_data = {
-                    "brightness_step_pct": -17,  # Negative value to decrease
-                    "transition": 0.5
-                }
-                target = {target_type: target_value}
-                await self.client.call_service("light", "turn_on", service_data, target)
-                logger.info(f"Brightness decreased by 17% in area {area_id}")
+            # Just decrease brightness by 17% - Home Assistant handles minimum brightness
+            target_type, target_value = await self.client.determine_light_target(area_id)
+            service_data = {
+                "brightness_step_pct": -17,  # Negative value to decrease
+                "transition": 0.5
+            }
+            target = {target_type: target_value}
+            await self.client.call_service("light", "turn_on", service_data, target)
+            logger.info(f"Brightness decreased by 17% in area {area_id}")
     
     async def homeglo_on(self, area_id: str, source: str = "service_call"):
         """HomeGlo On - Enable HomeGlo mode and set lights to current time position.
@@ -290,57 +251,74 @@ class HomeGloPrimitives:
         
         logger.info(f"HomeGlo disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved, lights unchanged")
     
+    async def homeglo_toggle_multiple(self, area_ids: list, source: str = "service_call"):
+        """HomeGlo Toggle for multiple areas - Smart toggle based on combined light state.
+        
+        If ANY lights are on in ANY area:
+        - Turn off all lights in all areas
+        - Disable HomeGlo mode in all areas
+        
+        If ALL lights are off in ALL areas:
+        - Turn on lights with adaptive lighting in all areas
+        - Enable HomeGlo mode in all areas
+        
+        Args:
+            area_ids: List of area IDs to control as a group
+            source: Source of the action
+        """
+        # Convert single area to list for consistency
+        if isinstance(area_ids, str):
+            area_ids = [area_ids]
+        
+        logger.info(f"[{source}] Toggle called for areas: {area_ids}")
+        
+        # Check if ANY lights are on in ANY of the areas
+        # Pass all areas at once - the function handles checking them all
+        any_light_on = await self.client.any_lights_on_in_area(area_ids)
+        
+        logger.info(f"Toggle decision for {len(area_ids)} area(s): lights_on={any_light_on}")
+        
+        if any_light_on:
+            # Lights are on somewhere - turn off ALL areas and disable HomeGlo
+            logger.info(f"Lights are on in at least one area, turning off all areas and disabling HomeGlo")
+            
+            for area_id in area_ids:
+                # Turn off all lights
+                target_type, target_value = await self.client.determine_light_target(area_id)
+                service_data = {"transition": 1}
+                target = {target_type: target_value}
+                await self.client.call_service("light", "turn_off", service_data, target)
+                
+                # Disable HomeGlo mode if enabled
+                if area_id in self.client.magic_mode_areas:
+                    await self.client.disable_magic_mode(area_id, save_offset=True)
+                    logger.info(f"HomeGlo disabled for area {area_id}")
+            
+        else:
+            # All lights are off - turn them all on with HomeGlo
+            logger.info(f"All lights are off in all areas, enabling HomeGlo and turning on")
+            
+            for area_id in area_ids:
+                # Enable magic mode (sets HomeGlo = true)
+                self.client.enable_magic_mode(area_id, restore_offset=True)
+                
+                # Get and apply adaptive lighting values
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
+                
+                offset = self.client.magic_mode_time_offsets.get(area_id, 0)
+                logger.info(f"HomeGlo enabled for area {area_id} with TimeLocation offset {offset} minutes")
+    
     async def homeglo_toggle(self, area_id: str, source: str = "service_call"):
         """HomeGlo Toggle - Smart toggle based on light state.
         
-        If lights are off:
-        - Turn on lights with adaptive lighting
-        - Enable HomeGlo mode
-        
-        If any lights are on:
-        - Turn off all lights
-        - Disable HomeGlo mode
+        Just delegates to homeglo_toggle_multiple for consistency.
         
         Args:
             area_id: The area ID to control
             source: Source of the action
         """
-        logger.info(f"[{source}] Toggling HomeGlo for area {area_id}")
-        
-        # Get current light states in the area
-        lights_in_area = await self.client.get_lights_in_area(area_id)
-        
-        # Check if any lights are on
-        any_light_on = any(light.get("state") == "on" for light in lights_in_area)
-        
-        if any_light_on:
-            # Lights are on - turn them off and disable HomeGlo
-            logger.info(f"Lights are on in area {area_id}, turning off and disabling HomeGlo")
-            
-            # Turn off all lights
-            target_type, target_value = await self.client.determine_light_target(area_id)
-            service_data = {"transition": 1}
-            target = {target_type: target_value}
-            await self.client.call_service("light", "turn_off", service_data, target)
-            
-            # Disable HomeGlo mode if enabled
-            if area_id in self.client.magic_mode_areas:
-                await self.client.disable_magic_mode(area_id, save_offset=True)
-                logger.info(f"HomeGlo disabled for area {area_id}")
-            
-        else:
-            # Lights are off - turn them on with HomeGlo
-            logger.info(f"Lights are off in area {area_id}, enabling HomeGlo and turning on")
-            
-            # Enable magic mode (sets HomeGlo = true)
-            self.client.enable_magic_mode(area_id, restore_offset=True)
-            
-            # Get and apply adaptive lighting values
-            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
-            
-            offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            logger.info(f"HomeGlo enabled for area {area_id} with TimeLocation offset {offset} minutes")
+        await self.homeglo_toggle_multiple([area_id], source)
     
     async def reset(self, area_id: str, source: str = "service_call"):
         """Reset - Set TimeLocation to current time (offset 0), enable HomeGlo, and unfreeze.

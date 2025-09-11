@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Sequence, Union
 
 import websockets
 from websockets.client import WebSocketClientProtocol
@@ -438,82 +438,6 @@ class HomeAssistantWebSocketClient:
             
         return False
         
-    async def get_lights_in_area(self, area_id: str) -> List[Dict[str, Any]]:
-        """Get all light entities in a specific area with their current states.
-        
-        Args:
-            area_id: The area ID to query
-            
-        Returns:
-            List of light entities with their states
-        """
-        lights = []
-        
-        # First check if we have a ZHA group entity for this area
-        light_entity_id = self.area_to_light_entity.get(area_id)
-        if light_entity_id:
-            # Use cached state if available
-            if light_entity_id in self.cached_states:
-                entity = self.cached_states[light_entity_id]
-                logger.debug(f"Using cached ZHA group entity state for {light_entity_id}")
-                return [{
-                    "entity_id": light_entity_id,
-                    "state": entity.get("state"),
-                    "attributes": entity.get("attributes", {})
-                }]
-        
-        # Fallback to getting all states if no ZHA group entity
-        # Get current states
-        message_id = self._get_next_message_id()
-        states_msg = {
-            "id": message_id,
-            "type": "get_states"
-        }
-        
-        await self.websocket.send(json.dumps(states_msg))
-        
-        # Wait for response
-        timeout = 5  # seconds
-        start_time = asyncio.get_event_loop().time()
-        
-        while asyncio.get_event_loop().time() - start_time < timeout:
-            try:
-                message = await asyncio.wait_for(self.websocket.recv(), timeout=0.1)
-                msg = json.loads(message)
-                
-                if msg.get("id") == message_id and msg.get("type") == "result":
-                    result = msg.get("result", [])
-                    
-                    # If we have a ZHA group entity, only return that
-                    if light_entity_id:
-                        for entity in result:
-                            if entity.get("entity_id") == light_entity_id:
-                                return [{
-                                    "entity_id": light_entity_id,
-                                    "state": entity.get("state"),
-                                    "attributes": entity.get("attributes", {})
-                                }]
-                    
-                    # Otherwise get all light entities (fallback behavior)
-                    for entity in result:
-                        entity_id = entity.get("entity_id", "")
-                        if entity_id.startswith("light."):
-                            lights.append({
-                                "entity_id": entity_id,
-                                "state": entity.get("state"),
-                                "attributes": entity.get("attributes", {})
-                            })
-                    
-                    break
-                    
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Error getting light states: {e}")
-                break
-        
-        return lights
-        
     async def get_areas_with_switches(self) -> List[str]:
         """Get all areas that have devices with 'Switch' in the friendly name.
         
@@ -592,6 +516,71 @@ class HomeAssistantWebSocketClient:
                 logger.debug(f"Saved time offsets: {self.saved_time_offsets}")
         except Exception as e:
             logger.warning(f"Failed to save time offsets: {e}")
+
+    async def any_lights_on_in_area(
+        self,
+        area_id_or_list: Union[str, Sequence[str]]
+    ) -> bool:
+        """Return True if any lights are on in the given area(s).
+
+        Accepts a single area id/name/slug OR a list of them.
+        Uses HA's template engine (no manual area registry lookup).
+        """
+
+        # Normalize to list[str]
+        if isinstance(area_id_or_list, str):
+            areas: list[str] = [area_id_or_list]
+        else:
+            areas = [a for a in area_id_or_list if isinstance(a, str)]
+
+        if not areas:
+            logger.warning("[template] no area_id provided")
+            return False
+
+        for area_id in areas:
+            # Fast path: known group entity for this key
+            light_entity_id = self.area_to_light_entity.get(area_id)
+            if light_entity_id:
+                state = self.cached_states.get(light_entity_id, {}).get("state")
+                logger.info(f"[group_fastpath] {light_entity_id=} {area_id=} state={state}")
+                if state in ("on", "off"):
+                    if state == "on":
+                        return True
+                    continue  # go next area
+
+            # Ask HA via template: does this area have ANY light.* that is 'on'?
+            template = (
+                f"{{{{ expand(area_entities('{area_id}')) "
+                f"| selectattr('entity_id', 'match', '^light\\\\.') "
+                f"| selectattr('state', 'eq', 'on') "
+                f"| list | count > 0 }}}}"
+            )
+            logger.debug(f"[template] area={area_id} jinja={template}")
+
+            resp = await self.send_message_wait_response(
+                {
+                    "type": "render_template",
+                    "template": template,
+                    "report_errors": True,
+                    "timeout": 10,
+                },
+                full_envelope=True,
+            )
+
+            if isinstance(resp, dict) and resp.get("type") == "result" and resp.get("success", False):
+                inner = resp.get("result") or {}
+                rendered = inner.get("result")
+                area_on = (
+                    rendered if isinstance(rendered, bool)
+                    else (str(rendered).strip().lower() in ("true", "1", "yes", "on"))
+                )
+                if area_on:
+                    return True
+            else:
+                logger.warning(f"[template] failed for area={area_id}: {resp!r} (treating as off)")
+
+        # None of the areas had lights on
+        return False
     
     def enable_magic_mode(self, area_id: str, restore_offset: bool = False):
         """Enable magic mode for an area.
@@ -984,7 +973,7 @@ class HomeAssistantWebSocketClient:
             if event_type == "call_service":
                 logger.info(f"Service called: {event_data.get('domain')}.{event_data.get('service')} with data: {event_data.get('service_data')}")
             
-            logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
+            # logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
             
             # Handle custom homeglo service calls
             if event_type == "call_service" and event_data.get("domain") == "homeglo":
@@ -1063,9 +1052,8 @@ class HomeAssistantWebSocketClient:
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
                         area_list = area_id if isinstance(area_id, list) else [area_id]
-                        for area in area_list:
-                            logger.info(f"Processing homeglo_toggle for area: {area}")
-                            await self.primitives.homeglo_toggle(area, "service_call")
+                        # For toggle, we need to check ALL areas together to make a single decision
+                        await self.primitives.homeglo_toggle_multiple(area_list, "service_call")
                     else:
                         logger.warning("homeglo_toggle called without area_id")
             
@@ -1300,50 +1288,90 @@ class HomeAssistantWebSocketClient:
         else:
             logger.debug(f"Received message type: {msg_type}")
             
-    async def send_message_wait_response(self, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Send a message and wait for its specific response.
-        
-        Args:
-            message: The message to send (without id)
-            
-        Returns:
-            The result from the response, or None if failed
-        """
+    async def send_message_wait_response(
+    self,
+    message: Dict[str, Any],
+    *,
+    full_envelope: bool = False,
+) -> Optional[Dict[str, Any]]:
         if not self.websocket:
             logger.error("WebSocket not connected")
             return None
-            
-        # Add message ID
+
         message["id"] = self._get_next_message_id()
         msg_id = message["id"]
-        
-        # Send the message
-        await self.websocket.send(json.dumps(message))
-        
-        # Wait for response with timeout
-        timeout = 10  # seconds
-        start_time = asyncio.get_event_loop().time()
-        
-        while asyncio.get_event_loop().time() - start_time < timeout:
-            try:
-                response = await asyncio.wait_for(self.websocket.recv(), timeout=1.0)
-                data = json.loads(response)
-                
-                if data.get("id") == msg_id:
-                    if data["type"] == "result":
-                        return data.get("result")
-                    elif data.get("error"):
-                        logger.error(f"Error response: {data['error']}")
-                        return None
-                        
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Error waiting for response: {e}")
+
+        try:
+            await self.websocket.send(json.dumps(message))
+        except Exception as e:
+            logger.error(f"WebSocket send failed for id={msg_id}: {e}")
+            return None
+
+        overall_timeout = 10.0
+        deadline = asyncio.get_event_loop().time() + overall_timeout
+        need_event_followup = False
+        is_render_template = (message.get("type") == "render_template")
+
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                logger.error(f"Timeout waiting for response to message id={msg_id}")
                 return None
-                
-        logger.error(f"Timeout waiting for response to message {msg_id}")
-        return None
+
+            try:
+                frame = await asyncio.wait_for(self.websocket.recv(), timeout=remaining)
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout waiting for response to message id={msg_id}")
+                return None
+            except Exception as e:
+                logger.error(f"Error waiting for response to id={msg_id}: {e}")
+                return None
+
+            try:
+                data = json.loads(frame)
+            except Exception:
+                logger.debug(f"Ignoring non-JSON frame while waiting for id={msg_id}: {frame!r}")
+                continue
+
+            # Ignore unrelated frames (e.g., other subscriptions)
+            if data.get("id") != msg_id:
+                continue
+
+            # Case A: render_template sends a 'result' (often null) then an 'event' with the real value
+            if is_render_template:
+                if data.get("type") == "result":
+                    # If success but result is null, expect an event next
+                    if data.get("success", False) and data.get("result") is None:
+                        need_event_followup = True
+                        # don't return yet; keep looping for the event
+                        continue
+                    # Some HA versions may put the value here; handle normally below
+                elif data.get("type") == "event":
+                    # Synthesize a normal envelope from the event for caller convenience
+                    event = data.get("event") or {}
+                    if full_envelope:
+                        return {
+                            "id": msg_id,
+                            "type": "result",
+                            "success": True,
+                            "result": {"result": event.get("result")},
+                            "event": event,  # keep original if caller wants extra info
+                        }
+                    # legacy mode
+                    return {"result": event.get("result")}
+
+            # Case B: normal command or render_template that already included the result
+            if full_envelope:
+                return data
+
+            # Legacy behavior: return only inner result on success; None otherwise
+            if data.get("type") == "result" and data.get("success", False):
+                return data.get("result")
+
+            err = data.get("error")
+            if err:
+                logger.error(f"Error response to id={msg_id}: {err}")
+                return None
     
     async def listen(self):
         """Main listener loop."""

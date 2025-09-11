@@ -123,14 +123,7 @@ class SwitchCommandProcessor:
             return
         
         # Check if any lights are on in the area
-        lights_in_area = await self.client.get_lights_in_area(area_id)
-        
-        # Check if any lights are on
-        any_light_on = False
-        for light in lights_in_area:
-            if light.get("state") == "on":
-                any_light_on = True
-                break
+        any_light_on = await self.client.any_lights_on_in_area(area_id)
         
         if any_light_on:
             # Turn off all lights in the area and disable HomeGlo (saves current offset)

@@ -1,5 +1,8 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 3.2.0
+ - Fix toggling
+
 ## 3.1.0
 
 - **Refined Primitives Behavior**: Simplified and clarified primitive actions
