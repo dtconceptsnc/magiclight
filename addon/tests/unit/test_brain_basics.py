@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from magiclight.brain import (
+from brain import (
     get_adaptive_lighting,
     AdaptiveLighting,
     calculate_dimming_step,

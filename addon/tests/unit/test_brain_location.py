@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from magiclight.brain import get_adaptive_lighting
+from brain import get_adaptive_lighting
 
 
 def test_get_adaptive_lighting_raises_without_location(monkeypatch):

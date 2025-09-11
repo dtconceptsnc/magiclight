@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: HomeGlo
-version: "3.2.0"
+version: "3.2.1"
 slug: homeglo
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/intuitivelight/homeglo-ha"

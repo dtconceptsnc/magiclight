@@ -1,4 +1,4 @@
-from magiclight.brain import AdaptiveLighting
+from brain import AdaptiveLighting
 
 
 def test_color_temperature_to_xy_and_rgb_ranges():

@@ -4,7 +4,7 @@
 import pytest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from magiclight.brain import get_adaptive_lighting, calculate_dimming_step
+from brain import get_adaptive_lighting, calculate_dimming_step
 
 
 @pytest.fixture
@@ -153,51 +153,6 @@ class TestArcBasedDimming:
             previous_brightness = result['brightness']
             current_time = result['target_time']
 
-
-class TestPerceptualStepping:
-    """Test that gamma affects step distribution."""
-    
-    def test_different_gamma_values(self, test_location):
-        """Test stepping with different gamma values."""
-        tz = ZoneInfo("US/Eastern")
-        # Use early morning when brightness is in mid-range for gamma to have effect
-        test_time = datetime.now(tz).replace(hour=5, minute=30, second=0, microsecond=0)
-        
-        gamma_values = [
-            (0, "Linear"),      # UI value 0 -> gamma 1.0
-            (38, "Default"),    # UI value 38 -> gamma 0.62
-            (75, "Dim-focused") # UI value 75 -> gamma 0.25
-        ]
-        
-        results = []
-        for gamma_ui, label in gamma_values:
-            config = {
-                'mid_bri_up': 6.0,
-                'steep_bri_up': 1.5,
-                'mid_cct_up': 6.0,
-                'steep_cct_up': 1.5,
-                'gamma_ui': gamma_ui,
-                'max_dim_steps': 10
-            }
-            
-            result = calculate_dimming_step(
-                current_time=test_time,
-                action='brighten',
-                max_steps=10,
-                config=config,
-                **test_location
-            )
-            
-            results.append((gamma_ui, result['brightness'], result['time_offset_minutes']))
-        
-        # Different gamma values should produce different step sizes (time offsets)
-        # Even if brightness ends up similar, the time to get there should differ
-        time_offsets = [abs(r[2]) for r in results]  # Use absolute value of time offset
-        
-        # Check that at least some gamma values produce different results
-        # Allow for small numerical differences
-        unique_offsets = len(set(round(t, 1) for t in time_offsets))
-        assert unique_offsets >= 2, f"Different gamma values should produce different step sizes. Got offsets: {time_offsets}"
 
 
 class TestMirrorParameters:

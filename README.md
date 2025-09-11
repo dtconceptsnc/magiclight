@@ -51,11 +51,11 @@ Traditional smart lights require constant manual adjustments or complex automati
 
 ### Step 3: Import the Blueprint (Recommended)
 
-[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha%2Fblob%2Fmain%2Fcustom_components%2Fhomeglo%2Fblueprints%2Fdefault_switch.yaml)
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha%2Fblob%2Fmain%2Fcustom_components%2Fhomeglo%2Fblueprints%2Fhue_dimmer_switch.yaml)
 
 1. Click the button above to import the HomeGlo Smart Switch Control blueprint
 2. Or manually import from: **Settings** → **Automations & Scenes** → **Blueprints** → **Import Blueprint**
-3. Use URL: `https://github.com/intuitivelight/homeglo-ha/blob/main/custom_components/homeglo/blueprints/default_switch.yaml`
+3. Use URL: `https://github.com/intuitivelight/homeglo-ha/blob/main/custom_components/homeglo/blueprints/hue_dimmer_switch.yaml`
 4. Create an automation from the blueprint:
    - Select your switch device(s) (supports ZHA and Hue Bridge)
    - Choose target area(s) to control

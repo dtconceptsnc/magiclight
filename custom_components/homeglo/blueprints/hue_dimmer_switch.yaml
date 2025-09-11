@@ -1,12 +1,7 @@
 blueprint:
-  name: HomeGlo Smart Switch Control (ZHA + Hue Bridge)
+  name: HomeGlo Hue Dimmer Switch
   description: >
-    Control lights with HomeGlo adaptive lighting using ZHA or Hue Bridge events.
-    Button mappings (single press / short release):
-    - ON  -> smart toggle
-    - OFF -> reset + enable HomeGlo
-    - UP  -> step up brightness
-    - DOWN-> step down brightness
+    Control Hue Dimmer Switches via HomeGlo
   domain: automation
   input:
     switch_device:
@@ -15,6 +10,19 @@ blueprint:
       selector:
         device:
           multiple: true
+          filter:
+            - manufacturer: Signify Netherlands B.V.
+              model: RWL021
+            - manufacturer: Signify Netherlands B.V.
+              model: RWL022
+            - manufacturer: Philips
+              model: RWL021
+            - manufacturer: Philips
+              model: RWL022
+            - manufacturer: Signify Netherlands B.V.
+              model: Hue dimmer switch
+            - manufacturer: Philips
+              model: Hue dimmer switch
     target_areas:
       name: Target Areas
       description: The area(s) to control when buttons are pressed

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from magiclight.brain import AdaptiveLighting
+from brain import AdaptiveLighting
 
 
 def test_calculate_sun_position_cosine_at_key_points():
