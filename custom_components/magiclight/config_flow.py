@@ -1,4 +1,4 @@
-"""Config flow for HomeGlo integration."""
+"""Config flow for MagicLight integration."""
 from __future__ import annotations
 
 import logging
@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for HomeGlo."""
+    """Handle a config flow for MagicLight."""
 
     VERSION = 1
 
@@ -30,14 +30,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # Check if already configured
-            await self.async_set_unique_id("homeglo_services")
-            _LOGGER.debug("[%s] config_flow: set unique_id=homeglo_services", DOMAIN)
+            await self.async_set_unique_id("magiclight_services")
+            _LOGGER.debug("[%s] config_flow: set unique_id=magiclight_services", DOMAIN)
             self._abort_if_unique_id_configured()
 
             # Create the config entry
-            _LOGGER.info("[%s] config_flow: creating entry 'HomeGlo Services'", DOMAIN)
+            _LOGGER.info("[%s] config_flow: creating entry 'MagicLight Services'", DOMAIN)
             return self.async_create_entry(
-                title="HomeGlo Services", 
+                title="MagicLight Services", 
                 data=user_input or {}
             )
 
@@ -46,6 +46,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({}),
             description_placeholders={
-                "addon_required": "Note: This integration requires the HomeGlo addon to be installed and running."
+                "addon_required": "Note: This integration requires the MagicLight addon to be installed and running."
             }
         )

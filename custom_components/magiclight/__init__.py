@@ -1,4 +1,4 @@
-"""The HomeGlo integration."""
+"""The MagicLight integration."""
 from __future__ import annotations
 
 import logging
@@ -15,9 +15,9 @@ from .const import (
     SERVICE_STEP_UP,
     SERVICE_STEP_DOWN,
     SERVICE_RESET,
-    SERVICE_HOMEGLO_ON,
-    SERVICE_HOMEGLO_OFF,
-    SERVICE_HOMEGLO_TOGGLE,
+    SERVICE_MAGICLIGHT_ON,
+    SERVICE_MAGICLIGHT_OFF,
+    SERVICE_MAGICLIGHT_TOGGLE,
     ATTR_AREA_ID,
 )
 
@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the HomeGlo component."""
+    """Set up the MagicLight component."""
     _LOGGER.debug("[%s] async_setup called with config keys: %s", DOMAIN, list(config.keys()))
 
     hass.data.setdefault(DOMAIN, {})
@@ -43,7 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up HomeGlo from a config entry."""
+    """Set up MagicLight from a config entry."""
     _LOGGER.info("[%s] async_setup_entry: id=%s title=%s", DOMAIN, entry.entry_id, entry.title)
 
     # Store the config entry for later use
@@ -63,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _register_services(hass: HomeAssistant) -> None:
-    """Register HomeGlo services."""
+    """Register MagicLight services."""
     _LOGGER.debug("[%s] _register_services invoked", DOMAIN)
     
     async def handle_step_up(call: ServiceCall) -> None:
@@ -99,37 +99,37 @@ async def _register_services(hass: HomeAssistant) -> None:
         _LOGGER.info("[%s] reset called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
-    async def handle_homeglo_on(call: ServiceCall) -> None:
-        """Handle the homeglo_on service call.
+    async def handle_magiclight_on(call: ServiceCall) -> None:
+        """Handle the magiclight_on service call.
         
         The addon listens for these service calls via WebSocket events,
         so we don't need to make any API calls here.
         """
         area_id = call.data.get(ATTR_AREA_ID)
         
-        _LOGGER.info("[%s] homeglo_on called: area_id=%s", DOMAIN, area_id)
+        _LOGGER.info("[%s] magiclight_on called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
-    async def handle_homeglo_off(call: ServiceCall) -> None:
-        """Handle the homeglo_off service call.
+    async def handle_magiclight_off(call: ServiceCall) -> None:
+        """Handle the magiclight_off service call.
         
         The addon listens for these service calls via WebSocket events,
         so we don't need to make any API calls here.
         """
         area_id = call.data.get(ATTR_AREA_ID)
         
-        _LOGGER.info("[%s] homeglo_off called: area_id=%s", DOMAIN, area_id)
+        _LOGGER.info("[%s] magiclight_off called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
-    async def handle_homeglo_toggle(call: ServiceCall) -> None:
-        """Handle the homeglo_toggle service call.
+    async def handle_magiclight_toggle(call: ServiceCall) -> None:
+        """Handle the magiclight_toggle service call.
         
         The addon listens for these service calls via WebSocket events,
         so we don't need to make any API calls here.
         """
         area_id = call.data.get(ATTR_AREA_ID)
         
-        _LOGGER.info("[%s] homeglo_toggle called: area_id=%s", DOMAIN, area_id)
+        _LOGGER.info("[%s] magiclight_toggle called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
     
     # Schema for services - area_id can be a string or list of strings
@@ -151,17 +151,17 @@ async def _register_services(hass: HomeAssistant) -> None:
     )
     _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_RESET)
     hass.services.async_register(
-        DOMAIN, SERVICE_HOMEGLO_ON, handle_homeglo_on, schema=area_schema
+        DOMAIN, SERVICE_MAGICLIGHT_ON, handle_magiclight_on, schema=area_schema
     )
-    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_HOMEGLO_ON)
+    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_MAGICLIGHT_ON)
     hass.services.async_register(
-        DOMAIN, SERVICE_HOMEGLO_OFF, handle_homeglo_off, schema=area_schema
+        DOMAIN, SERVICE_MAGICLIGHT_OFF, handle_magiclight_off, schema=area_schema
     )
-    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_HOMEGLO_OFF)
+    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_MAGICLIGHT_OFF)
     hass.services.async_register(
-        DOMAIN, SERVICE_HOMEGLO_TOGGLE, handle_homeglo_toggle, schema=area_schema
+        DOMAIN, SERVICE_MAGICLIGHT_TOGGLE, handle_magiclight_toggle, schema=area_schema
     )
-    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_HOMEGLO_TOGGLE)
+    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_MAGICLIGHT_TOGGLE)
 
     _LOGGER.info("[%s] Services registered successfully", DOMAIN)
 
@@ -183,9 +183,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_remove(DOMAIN, SERVICE_STEP_UP)
         hass.services.async_remove(DOMAIN, SERVICE_STEP_DOWN)
         hass.services.async_remove(DOMAIN, SERVICE_RESET)
-        hass.services.async_remove(DOMAIN, SERVICE_HOMEGLO_ON)
-        hass.services.async_remove(DOMAIN, SERVICE_HOMEGLO_OFF)
-        hass.services.async_remove(DOMAIN, SERVICE_HOMEGLO_TOGGLE)
+        hass.services.async_remove(DOMAIN, SERVICE_MAGICLIGHT_ON)
+        hass.services.async_remove(DOMAIN, SERVICE_MAGICLIGHT_OFF)
+        hass.services.async_remove(DOMAIN, SERVICE_MAGICLIGHT_TOGGLE)
         hass.data[DOMAIN].pop("services_registered", None)
 
     return True

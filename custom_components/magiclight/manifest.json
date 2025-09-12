@@ -1,6 +1,6 @@
 {
-  "domain": "homeglo",
-  "name": "HomeGlo Integration",
+  "domain": "magiclight",
+  "name": "MagicLight Integration",
   "codeowners": ["@tkthundr"],
   "config_flow": true,
   "dependencies": ["light"],

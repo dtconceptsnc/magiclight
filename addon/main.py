@@ -13,7 +13,7 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from switch import SwitchCommandProcessor
-from primitives import HomeGloPrimitives
+from primitives import MagicLightPrimitives
 from brain import get_adaptive_lighting, ColorMode
 from light_controller import (
     LightControllerFactory,
@@ -53,7 +53,7 @@ class HomeAssistantWebSocketClient:
         self.device_to_area_mapping = {}  # Map device IDs to areas
         self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
         self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
-        self.primitives = HomeGloPrimitives(self)  # Initialize primitives handler
+        self.primitives = MagicLightPrimitives(self)  # Initialize primitives handler
         self.light_controller = None  # Will be initialized after websocket connection
         self.latitude = None  # Home Assistant latitude
         self.longitude = None  # Home Assistant longitude
@@ -105,7 +105,7 @@ class HomeAssistantWebSocketClient:
         return current_id
     
     def _update_zha_group_mapping(self, entity_id: str, friendly_name: str) -> None:
-        """Update the ZHA group mapping for a light entity if it matches the Glo_ pattern.
+        """Update the ZHA group mapping for a light entity if it matches the Magic_ pattern.
         
         Args:
             entity_id: The entity ID
@@ -123,8 +123,8 @@ class HomeAssistantWebSocketClient:
         area_name = None
         
         # Try to extract from friendly_name first (preserving case)
-        if "Glo_" in friendly_name:
-            parts = friendly_name.split("Glo_")
+        if "Magic_" in friendly_name:
+            parts = friendly_name.split("Magic_")
             if len(parts) >= 2:
                 area_name = parts[-1].strip()
         elif "glo_" in friendly_name.lower():
@@ -889,8 +889,8 @@ class HomeAssistantWebSocketClient:
             for area_id, area_info in areas.items():
                 area_name = area_info.get('name', '')
                 
-                # Skip the Glo_Zigbee_Groups area - it's just for organizing group entities
-                if area_name == 'Glo_Zigbee_Groups':
+                # Skip the Magic_Zigbee_Groups area - it's just for organizing group entities
+                if area_name == 'Magic_Zigbee_Groups':
                     continue
                     
                 zha_lights = area_info.get('zha_lights', [])
@@ -975,14 +975,14 @@ class HomeAssistantWebSocketClient:
             
             # logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
             
-            # Handle custom homeglo service calls
-            if event_type == "call_service" and event_data.get("domain") == "homeglo":
+            # Handle custom magiclight service calls
+            if event_type == "call_service" and event_data.get("domain") == "magiclight":
                 service = event_data.get("service")
                 service_data = event_data.get("service_data", {})
                 
                 if service == "step_up":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.step_up service call for area: {area_id}")
+                    logger.info(f"Received magiclight.step_up service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
@@ -995,7 +995,7 @@ class HomeAssistantWebSocketClient:
                         
                 elif service == "step_down":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.step_down service call for area: {area_id}")
+                    logger.info(f"Received magiclight.step_down service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
@@ -1008,7 +1008,7 @@ class HomeAssistantWebSocketClient:
                         
                 elif service == "reset":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.reset service call for area: {area_id}")
+                    logger.info(f"Received magiclight.reset service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
@@ -1019,43 +1019,43 @@ class HomeAssistantWebSocketClient:
                     else:
                         logger.warning("reset called without area_id")
                         
-                elif service == "homeglo_on":
+                elif service == "magiclight_on":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.homeglo_on service call for area: {area_id}")
+                    logger.info(f"Received magiclight.magiclight_on service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
                         area_list = area_id if isinstance(area_id, list) else [area_id]
                         for area in area_list:
-                            logger.info(f"Processing homeglo_on for area: {area}")
-                            await self.primitives.homeglo_on(area, "service_call")
+                            logger.info(f"Processing magiclight_on for area: {area}")
+                            await self.primitives.magiclight_on(area, "service_call")
                     else:
-                        logger.warning("homeglo_on called without area_id")
+                        logger.warning("magiclight_on called without area_id")
                         
-                elif service == "homeglo_off":
+                elif service == "magiclight_off":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.homeglo_off service call for area: {area_id}")
+                    logger.info(f"Received magiclight.magiclight_off service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
                         area_list = area_id if isinstance(area_id, list) else [area_id]
                         for area in area_list:
-                            logger.info(f"Processing homeglo_off for area: {area}")
-                            await self.primitives.homeglo_off(area, "service_call")
+                            logger.info(f"Processing magiclight_off for area: {area}")
+                            await self.primitives.magiclight_off(area, "service_call")
                     else:
-                        logger.warning("homeglo_off called without area_id")
+                        logger.warning("magiclight_off called without area_id")
                         
-                elif service == "homeglo_toggle":
+                elif service == "magiclight_toggle":
                     area_id = service_data.get("area_id")
-                    logger.info(f"Received homeglo.homeglo_toggle service call for area: {area_id}")
+                    logger.info(f"Received magiclight.magiclight_toggle service call for area: {area_id}")
                     
                     # Handle both single area (string) and multiple areas (list)
                     if area_id:
                         area_list = area_id if isinstance(area_id, list) else [area_id]
                         # For toggle, we need to check ALL areas together to make a single decision
-                        await self.primitives.homeglo_toggle_multiple(area_list, "service_call")
+                        await self.primitives.magiclight_toggle_multiple(area_list, "service_call")
                     else:
-                        logger.warning("homeglo_toggle called without area_id")
+                        logger.warning("magiclight_toggle called without area_id")
             
             # Handle ZHA events
             elif event_type == "zha_event":
@@ -1219,9 +1219,9 @@ class HomeAssistantWebSocketClient:
                             self.sun_data = attributes
                             logger.info(f"Initial sun data: elevation={self.sun_data.get('elevation')}")
                         
-                        # Detect ZHA group light entities (Glo_AREA pattern)
+                        # Detect ZHA group light entities (Magic_AREA pattern)
                         if entity_id.startswith("light."):
-                            # Check both entity_id and friendly_name for Glo_ pattern
+                            # Check both entity_id and friendly_name for Magic_ pattern
                             friendly_name = attributes.get("friendly_name", "")
                             
                             # Debug log all light entities
@@ -1264,7 +1264,7 @@ class HomeAssistantWebSocketClient:
                         logger.info(f"Total: {len(unique_entities)} ZHA groups mapped to areas")
                         logger.info("="*50)
                     else:
-                        logger.warning("No ZHA group light entities found (looking for 'Glo_' pattern)")
+                        logger.warning("No ZHA group light entities found (looking for 'Magic_' pattern)")
             
             # Handle config result
             elif result and isinstance(result, dict):
@@ -1417,7 +1417,7 @@ class HomeAssistantWebSocketClient:
                     if unique_groups > 0:
                         logger.info(f"✓ Found {unique_groups} ZHA groups")
                     else:
-                        logger.warning("⚠ No ZHA groups found (looking for 'Glo_' pattern in light names)")
+                        logger.warning("⚠ No ZHA groups found (looking for 'Magic_' pattern in light names)")
                 
                 # Get device registry to map devices to areas (now waits for completion)
                 device_mapping = await self.get_device_registry()

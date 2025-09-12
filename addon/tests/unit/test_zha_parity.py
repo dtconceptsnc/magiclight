@@ -190,7 +190,7 @@ class TestZHAParity:
         mock_ws_client.send_message_wait_response.side_effect = [
             # First call: Get area registry for ensure_glo_area_exists
             [],  # No existing areas
-            # Second call: Create Glo_Zigbee_Groups area
+            # Second call: Create Magic_Zigbee_Groups area
             {"area_id": "glo_area"},
             # Third call: list existing ZHA groups (empty)
             [],
@@ -199,7 +199,7 @@ class TestZHAParity:
             [
                 {"area_id": "room1", "name": "Room 1"},
                 {"area_id": "room2", "name": "Room 2"},
-                {"area_id": "glo_area", "name": "Glo_Zigbee_Groups"}
+                {"area_id": "glo_area", "name": "Magic_Zigbee_Groups"}
             ],
             # 5. Get device registry
             [
@@ -239,7 +239,7 @@ class TestZHAParity:
             # 9. Create group response for room1 (has parity)
             {"success": True},
             # 10. List groups after creation
-            [{"name": "Glo_Room_1", "group_id": 1001}]
+            [{"name": "Magic_Room_1", "group_id": 1001}]
         ]
         
         mock_ws_client.get_states.return_value = [

@@ -1,7 +1,7 @@
 blueprint:
-  name: HomeGlo Hue Dimmer Switch
+  name: MagicLight Hue Dimmer Switch
   description: >
-    Control Hue Dimmer Switches via HomeGlo
+    Control Hue Dimmer Switches via MagicLight
   domain: automation
   input:
     switch_device:
@@ -136,7 +136,7 @@ action:
               # - condition: trigger
               #   id: hue_on_legacy
         sequence:
-          - service: homeglo.homeglo_toggle
+          - service: magiclight.magiclight_toggle
             data:
               area_id: "{{ areas }}"
 
@@ -151,7 +151,7 @@ action:
               # - condition: trigger
               #   id: hue_off_legacy
         sequence:
-          - service: homeglo.reset
+          - service: magiclight.reset
             data:
               area_id: "{{ areas }}"
 
@@ -166,7 +166,7 @@ action:
               # - condition: trigger
               #   id: hue_up_legacy
         sequence:
-          - service: homeglo.step_up
+          - service: magiclight.step_up
             data:
               area_id: "{{ areas }}"
 
@@ -181,6 +181,6 @@ action:
               # - condition: trigger
               #   id: hue_down_legacy
         sequence:
-          - service: homeglo.step_down
+          - service: magiclight.step_down
             data:
               area_id: "{{ areas }}"

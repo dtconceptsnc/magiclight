@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up HomeGlo Services",
-        "description": "This integration provides services to control HomeGlo. Make sure the HomeGlo addon is installed and running before proceeding.",
+        "title": "Set up MagicLight Services",
+        "description": "This integration provides services to control MagicLight. Make sure the MagicLight addon is installed and running before proceeding.",
         "data": {}
       }
     },
@@ -18,7 +18,7 @@
   "services": {
     "step_up": {
       "name": "Step Up",
-      "description": "Increase brightness by one step along the glo curve",
+      "description": "Increase brightness by one step along the magic curve",
       "fields": {
         "area_id": {
           "name": "Area",
@@ -28,7 +28,7 @@
     },
     "step_down": {
       "name": "Step Down",
-      "description": "Decrease brightness by one step along the glo curve",
+      "description": "Decrease brightness by one step along the magic curve",
       "fields": {
         "area_id": {
           "name": "Area",
@@ -38,7 +38,7 @@
     },
     "reset": {
       "name": "Reset",
-      "description": "Reset area to current time, enable HomeGlo, and apply glo",
+      "description": "Reset area to current time, enable MagicLight, and apply magic",
       "fields": {
         "area_id": {
           "name": "Area",
@@ -46,29 +46,29 @@
         }
       }
     },
-    "homeglo_on": {
-      "name": "HomeGlo On",
-      "description": "Turn on lights and enable HomeGlo mode for an area",
+    "magiclight_on": {
+      "name": "MagicLight On",
+      "description": "Turn on lights and enable MagicLight mode for an area",
       "fields": {
         "area_id": {
           "name": "Area",
-          "description": "The area(s) to enable HomeGlo for"
+          "description": "The area(s) to enable MagicLight for"
         }
       }
     },
-    "homeglo_off": {
-      "name": "HomeGlo Off",
-      "description": "Disable HomeGlo mode for an area (lights remain unchanged)",
+    "magiclight_off": {
+      "name": "MagicLight Off",
+      "description": "Disable MagicLight mode for an area (lights remain unchanged)",
       "fields": {
         "area_id": {
           "name": "Area",
-          "description": "The area(s) to disable HomeGlo for"
+          "description": "The area(s) to disable MagicLight for"
         }
       }
     },
-    "homeglo_toggle": {
-      "name": "HomeGlo Toggle",
-      "description": "Smart toggle - turns on lights with HomeGlo if off, turns off lights and disables HomeGlo if on",
+    "magiclight_toggle": {
+      "name": "MagicLight Toggle",
+      "description": "Smart toggle - turns on lights with MagicLight if off, turns off lights and disables MagicLight if on",
       "fields": {
         "area_id": {
           "name": "Area",

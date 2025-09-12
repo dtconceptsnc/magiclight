@@ -1,6 +1,6 @@
-# HomeGlo Add-on for Home Assistant
+# MagicLight Add-on for Home Assistant
 
-HomeGlo Add-on provides intelligent adaptive lighting control that automatically adjusts your lights based on the sun's position throughout the day.
+MagicLight Add-on provides intelligent adaptive lighting control that automatically adjusts your lights based on the sun's position throughout the day.
 
 ## Features
 
@@ -14,13 +14,13 @@ HomeGlo Add-on provides intelligent adaptive lighting control that automatically
 
 ## Installation
 
-1. Add the HomeGlo repository to your Home Assistant:
+1. Add the MagicLight repository to your Home Assistant:
    - Navigate to **Settings** → **Add-ons** → **Add-on Store**
    - Click the three dots menu → **Repositories**
    - Add: `https://github.com/intuitivelight/homeglo-ha`
 
-2. Install the HomeGlo add-on:
-   - Find "HomeGlo Adaptive Lighting" in the add-on store
+2. Install the MagicLight add-on:
+   - Find "MagicLight Adaptive Lighting" in the add-on store
    - Click **Install**
 
 3. Start the add-on:
@@ -62,7 +62,7 @@ Access the Light Designer through the Home Assistant sidebar when the add-on is 
 ### Switch Integration
 
 When you press a ZHA-compatible switch:
-1. HomeGlo detects the button press event
+1. MagicLight detects the button press event
 2. Identifies all lights in the same area as the switch
 3. Calculates optimal lighting based on current sun position
 4. Updates all lights with adaptive values
@@ -76,7 +76,7 @@ When you press a ZHA-compatible switch:
 
 ### Supported Lights
 
-HomeGlo automatically detects and controls:
+MagicLight automatically detects and controls:
 - **ZigBee**: Via ZHA integration
 - **Z-Wave**: Via Z-Wave JS integration
 - **WiFi**: Tuya, LIFX, and other cloud/local integrations
@@ -85,7 +85,7 @@ HomeGlo automatically detects and controls:
 
 ### ZHA Group Management
 
-HomeGlo automatically manages ZigBee groups for optimal performance:
+MagicLight automatically manages ZigBee groups for optimal performance:
 - Creates groups with "Glo_" prefix in a dedicated area
 - Syncs group membership when devices change areas
 - Uses efficient group commands for all-ZigBee areas
@@ -98,7 +98,7 @@ HomeGlo automatically manages ZigBee groups for optimal performance:
 Test adaptive lighting for any area:
 ```bash
 # Via Home Assistant CLI
-ha addon logs homeglo --follow
+ha addon logs magiclight --follow
 ```
 
 ### Monitoring

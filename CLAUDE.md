@@ -3,9 +3,9 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
-HomeGlo (formerly Intuitive Light) is a dual-component Home Assistant project:
+MagicLight (formerly Intuitive Light) is a dual-component Home Assistant project:
 1. **Add-on** (`addon/`): Docker-based Home Assistant add-on that provides adaptive lighting based on sun position
-2. **Custom Integration** (`custom_components/homeglo/`): HACS-installable integration providing HomeGlo service primitives
+2. **Custom Integration** (`custom_components/magiclight/`): HACS-installable integration providing MagicLight service primitives
 
 The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch events, and automatically adjusts lights in corresponding areas with adaptive lighting based on the sun's position.
 
@@ -18,7 +18,7 @@ The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch ev
 - `addon/switch.py`: Switch command processor handling button press events and light control
 - `addon/webserver.py`: Web server for Light Designer interface accessible via Home Assistant ingress
 - `addon/designer.html`: Interactive web UI for configuring adaptive lighting curves
-- `addon/primitives.py`: Core service implementations for HomeGlo operations
+- `addon/primitives.py`: Core service implementations for MagicLight operations
 
 ### Key Functionality
 1. **WebSocket Connection**: Establishes persistent connection to Home Assistant using long-lived access token
@@ -27,8 +27,8 @@ The add-on connects to Home Assistant's WebSocket API, listens for ZHA switch ev
 4. **Adaptive Lighting**: Calculates appropriate lighting values based on sun elevation data from Home Assistant
 5. **Magic Mode**: Automatically updates lights in areas where switches have been used
 6. **Light Designer**: Web interface for configuring adaptive lighting curves
-7. **ZHA Group Management**: Automatically creates/syncs ZHA groups with "Glo_" prefix for efficient control
-8. **Service Primitives**: Provides `homeglo_on`, `homeglo_off`, `homeglo_toggle`, `step_up`, `step_down`, and `reset` services
+7. **ZHA Group Management**: Automatically creates/syncs ZHA groups with "Magic_" prefix for efficient control
+8. **Service Primitives**: Provides `magiclight_on`, `magiclight_off`, `magiclight_toggle`, `step_up`, `step_down`, and `reset` services
 
 ## Development Commands
 
@@ -101,8 +101,8 @@ Configuration option in Home Assistant:
 - Converts color temperature to RGB and XY coordinates for compatibility
 
 ### ZHA Group Management
-- Automatically creates/syncs ZHA groups with "Glo_" prefix
-- Groups organized in dedicated "Glo_Zigbee_Groups" area
+- Automatically creates/syncs ZHA groups with "Magic_" prefix
+- Groups organized in dedicated "Magic_Zigbee_Groups" area
 - Smart light control method selection based on area composition
 - Areas with only ZHA lights use efficient group control
 - Mixed-protocol areas use area-based control
@@ -133,7 +133,7 @@ When creating commits:
 The repository includes a Home Assistant blueprint (`blueprints/blueprint.yaml`) for easy switch automation:
 - Supports multiple ZHA switch devices
 - Targets multiple areas simultaneously
-- ON button: Smart toggle (uses `homeglo_toggle` service)
+- ON button: Smart toggle (uses `magiclight_toggle` service)
 - OFF button: Reset to current time
 - UP/DOWN buttons: Step along adaptive curve
 
@@ -144,7 +144,7 @@ The repository includes a Home Assistant blueprint (`blueprints/blueprint.yaml`)
   ├── brain.py          # Adaptive lighting calculations
   ├── light_controller.py # Multi-protocol light control
   ├── switch.py         # Switch event handling
-  ├── primitives.py     # HomeGlo service implementations
+  ├── primitives.py     # MagicLight service implementations
   ├── webserver.py      # Light Designer web server
   ├── designer.html     # Light Designer UI
   ├── config.yaml       # Add-on configuration
@@ -152,7 +152,7 @@ The repository includes a Home Assistant blueprint (`blueprints/blueprint.yaml`)
   ├── build.yaml        # Multi-arch build config
   └── build_local.sh    # Local development script
 
-/custom_components/homeglo/  # HACS integration
+/custom_components/magiclight/  # HACS integration
   ├── __init__.py       # Service registration
   ├── manifest.json     # Integration metadata
   └── services.yaml     # Service definitions
