@@ -3,7 +3,7 @@ name: MagicLight
 version: "3.2.1"
 slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
-url: "https://github.com/intuitivelight/homeglo-ha"
+url: "https://github.com/dtconceptsnc/magiclight"
 arch:
   - armhf
   - armv7

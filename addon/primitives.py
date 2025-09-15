@@ -293,14 +293,6 @@ class MagicLightPrimitives:
                 service_data = {"transition": 1}
                 target = {target_type: target_value}
                 await self.client.call_service("light", "turn_off", service_data, target)
-<<<<<<< HEAD
-=======
-                
-                # Disable MagicLight mode if enabled
-                if area_id in self.client.magic_mode_areas:
-                    await self.client.disable_magic_mode(area_id, save_offset=True)
-                    logger.info(f"MagicLight disabled for area {area_id}")
->>>>>>> magic
             
         else:
             # All lights are off - turn them all on with MagicLight

@@ -115,7 +115,7 @@ class HomeAssistantWebSocketClient:
         if entity_id.startswith("light."):
             logger.debug(f"Checking light entity: {entity_id}, friendly_name: '{friendly_name}'")
         
-        if "glo_" not in entity_id.lower() and "glo_" not in friendly_name.lower():
+        if "magic_" not in entity_id.lower() and "magic_" not in friendly_name.lower():
             return
         
         # logger.info(f"Found potential ZHA group: entity_id='{entity_id}', friendly_name='{friendly_name}'")
@@ -127,16 +127,16 @@ class HomeAssistantWebSocketClient:
             parts = friendly_name.split("Magic_")
             if len(parts) >= 2:
                 area_name = parts[-1].strip()
-        elif "glo_" in friendly_name.lower():
+        elif "magic_" in friendly_name.lower():
             # Fallback to case-insensitive extraction
-            idx = friendly_name.lower().index("glo_")
-            area_name = friendly_name[idx + 4:].strip()
+            idx = friendly_name.lower().index("magic_")
+            area_name = friendly_name[idx + 6:].strip()
         
         # If not found in friendly_name, try entity_id
         if not area_name:
-            if "glo_" in entity_id.lower():
-                idx = entity_id.lower().index("glo_")
-                area_name = entity_id[idx + 4:]
+            if "magic_" in entity_id.lower():
+                idx = entity_id.lower().index("magic_")
+                area_name = entity_id[idx + 6:]
                 # Remove "light." prefix if it leaked in
                 area_name = area_name.replace("light.", "")
         

@@ -17,10 +17,10 @@ MagicLight Add-on provides intelligent adaptive lighting control that automatica
 1. Add the MagicLight repository to your Home Assistant:
    - Navigate to **Settings** → **Add-ons** → **Add-on Store**
    - Click the three dots menu → **Repositories**
-   - Add: `https://github.com/intuitivelight/homeglo-ha`
+   - Add: `https://github.com/dtconceptsnc/magiclight`
 
 2. Install the MagicLight add-on:
-   - Find "MagicLight Adaptive Lighting" in the add-on store
+   - Find "MagicLight" in the add-on store
    - Click **Install**
 
 3. Start the add-on:
@@ -86,7 +86,7 @@ MagicLight automatically detects and controls:
 ### ZHA Group Management
 
 MagicLight automatically manages ZigBee groups for optimal performance:
-- Creates groups with "Glo_" prefix in a dedicated area
+- Creates groups with "Magic_" prefix in a dedicated area
 - Syncs group membership when devices change areas
 - Uses efficient group commands for all-ZigBee areas
 - Falls back to area control for mixed-protocol setups
@@ -163,7 +163,7 @@ View real-time activity:
 ## Support
 
 For issues or feature requests, please visit:
-https://github.com/intuitivelight/homeglo-ha/issues
+https://github.com/dtconceptsnc/magiclight/issues
 
 ## License
 

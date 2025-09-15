@@ -33,16 +33,16 @@ Traditional smart lights require constant manual adjustments or complex automati
 
 ### Step 1: Install the Home Assistant Add-on (Required)
 
-[![Add MagicLight Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha)
+[![Add MagicLight Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fdtconceptsnc%2Fmagiclight)
 
 1. Click the button above to add the MagicLight repository to your Home Assistant
 2. Navigate to **Settings** → **Add-ons** → **Add-on Store**
-3. Find "MagicLight Adaptive Lighting" and click Install
+3. Find "MagicLight" and click Install
 4. Start the add-on and check the logs
 
 ### Step 2: Install the HACS Integration (Required)
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=intuitivelight&repository=homeglo-ha&category=integration)
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dtconceptsnc&repository=magiclight&category=integration)
 
 1. Ensure [HACS](https://hacs.xyz/) is installed
 2. Click the button above or search for "MagicLight" in HACS
@@ -51,11 +51,11 @@ Traditional smart lights require constant manual adjustments or complex automati
 
 ### Step 3: Import the Blueprint (Recommended)
 
-[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fintuitivelight%2Fhomeglo-ha%2Fblob%2Fmain%2Fcustom_components%2Fhomeglo%2Fblueprints%2Fhue_dimmer_switch.yaml)
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fdtconceptsnc%2Fmagiclight%2Fblob%2Fmain%2Fcustom_components%2Fmagiclight%2Fblueprints%2Fhue_dimmer_switch.yaml)
 
 1. Click the button above to import the MagicLight Smart Switch Control blueprint
 2. Or manually import from: **Settings** → **Automations & Scenes** → **Blueprints** → **Import Blueprint**
-3. Use URL: `https://github.com/intuitivelight/homeglo-ha/blob/main/custom_components/magiclight/blueprints/hue_dimmer_switch.yaml`
+3. Use URL: `https://github.com/dtconceptsnc/magiclight/blob/main/custom_components/magiclight/blueprints/hue_dimmer_switch.yaml`
 4. Create an automation from the blueprint:
    - Select your switch device(s) (supports ZHA and Hue Bridge)
    - Choose target area(s) to control
@@ -100,10 +100,10 @@ MagicLight works out of the box with sensible defaults. For advanced users, cust
 
 ## 📄 License
 
-HomeGlo is released under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+MagicLight is released under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
 
 ---
 
-**Need Help?** Open an [issue](https://github.com/intuitivelight/homeglo-ha/issues) or check our [documentation](https://github.com/intuitivelight/homeglo-ha/wiki).
+**Need Help?** Open an [issue](https://github.com/dtconceptsnc/magiclight/issues) or check our [documentation](https://github.com/dtconceptsnc/magiclight/wiki).
 
-**Love HomeGlo?** Give us a ⭐ on GitHub!
+**Love MagicLight?** Give us a ⭐ on GitHub!

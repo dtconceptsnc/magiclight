@@ -126,9 +126,9 @@ class SwitchCommandProcessor:
         any_light_on = await self.client.any_lights_on_in_area(area_id)
         
         if any_light_on:
-            # Turn off all lights in the area and disable MagicLight (saves current offset)
-            await self._turn_off_lights(area_id, device_id)
+            # Disable MagicLight first to prevent race conditions, then turn off lights
             await self.client.primitives.magiclight_off(area_id, f"switch_{device_id}")
+            await self._turn_off_lights(area_id, device_id)
         else:
             # Turn on lights with MagicLight enabled (restores saved offset if available)
             await self.client.primitives.magiclight_on(area_id, f"switch_{device_id}")
