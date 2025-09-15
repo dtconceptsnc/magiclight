@@ -33,8 +33,6 @@ MagicLight Add-on provides intelligent adaptive lighting control that automatica
 
 ```yaml
 color_mode: kelvin  # Options: kelvin, rgb, xy
-min_color_temp: 500  # Minimum Kelvin (warmest)
-max_color_temp: 6500  # Maximum Kelvin (coolest)
 ```
 
 ### Light Designer
@@ -67,21 +65,13 @@ When you press a ZHA-compatible switch:
 3. Calculates optimal lighting based on current sun position
 4. Updates all lights with adaptive values
 
-### Supported Switches
+### Switch Integration
 
-- Philips Hue switches and dimmers
-- IKEA TRADFRI controllers
-- Aqara switches
-- Any ZHA-compatible switch device
+MagicLight supports Philips Hue Dimmer Switches via the included blueprint. Other switches require custom automations using the MagicLight integration services.
 
-### Supported Lights
+### Light Control
 
-MagicLight automatically detects and controls:
-- **ZigBee**: Via ZHA integration
-- **Z-Wave**: Via Z-Wave JS integration
-- **WiFi**: Tuya, LIFX, and other cloud/local integrations
-- **Matter**: Via Matter integration
-- **Groups**: Light groups and areas
+MagicLight controls all Home Assistant light entities including ZigBee, Z-Wave, WiFi, and Matter lights. For ZigBee lights, it automatically creates and manages efficient group commands.
 
 ### ZHA Group Management
 
