@@ -283,16 +283,16 @@ class HomeGloPrimitives:
             logger.info(f"Lights are on in at least one area, turning off all areas and disabling HomeGlo")
             
             for area_id in area_ids:
-                # Turn off all lights
+                # Disable HomeGlo mode first to prevent race conditions
+                if area_id in self.client.magic_mode_areas:
+                    await self.client.disable_magic_mode(area_id, save_offset=True)
+                    logger.info(f"HomeGlo disabled for area {area_id}")
+                
+                # Then turn off all lights
                 target_type, target_value = await self.client.determine_light_target(area_id)
                 service_data = {"transition": 1}
                 target = {target_type: target_value}
                 await self.client.call_service("light", "turn_off", service_data, target)
-                
-                # Disable HomeGlo mode if enabled
-                if area_id in self.client.magic_mode_areas:
-                    await self.client.disable_magic_mode(area_id, save_offset=True)
-                    logger.info(f"HomeGlo disabled for area {area_id}")
             
         else:
             # All lights are off - turn them all on with HomeGlo
