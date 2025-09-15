@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Switch command processing module for HomeGlo."""
+"""Switch command processing module for MagicLight."""
 
 import logging
 from typing import Dict, Any, List, Optional
@@ -126,12 +126,12 @@ class SwitchCommandProcessor:
         any_light_on = await self.client.any_lights_on_in_area(area_id)
         
         if any_light_on:
-            # Disable HomeGlo first to prevent race conditions, then turn off lights
-            await self.client.primitives.homeglo_off(area_id, f"switch_{device_id}")
+            # Turn off all lights in the area and disable MagicLight (saves current offset)
             await self._turn_off_lights(area_id, device_id)
+            await self.client.primitives.magiclight_off(area_id, f"switch_{device_id}")
         else:
-            # Turn on lights with HomeGlo enabled (restores saved offset if available)
-            await self.client.primitives.homeglo_on(area_id, f"switch_{device_id}")
+            # Turn on lights with MagicLight enabled (restores saved offset if available)
+            await self.client.primitives.magiclight_on(area_id, f"switch_{device_id}")
             
     async def _handle_off_button_hold(self, device_id: str):
         """Handle the OFF button hold - simulate time moving forward by 1 hour.

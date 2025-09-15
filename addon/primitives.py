@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HomeGlo Primitives - Core actions that can be triggered via service calls or other means."""
+"""MagicLight Primitives - Core actions that can be triggered via service calls or other means."""
 
 import logging
 from typing import Dict, Any, Optional
@@ -10,11 +10,11 @@ from brain import calculate_dimming_step, DEFAULT_MAX_DIM_STEPS
 logger = logging.getLogger(__name__)
 
 
-class HomeGloPrimitives:
-    """Handles all HomeGlo primitive actions/service calls."""
+class MagicLightPrimitives:
+    """Handles all MagicLight primitive actions/service calls."""
     
     def __init__(self, websocket_client):
-        """Initialize the HomeGlo primitives handler.
+        """Initialize the MagicLight primitives handler.
         
         Args:
             websocket_client: Reference to the HomeAssistantWebSocketClient instance
@@ -22,7 +22,7 @@ class HomeGloPrimitives:
         self.client = websocket_client
         
     async def step_up(self, area_id: str, source: str = "service_call"):
-        """Step up - Adjust TimeLocation to brighten and cool lights one step up the HomeGlo curve.
+        """Step up - Adjust TimeLocation to brighten and cool lights one step up the MagicLight curve.
         
         Args:
             area_id: The area ID to control
@@ -30,7 +30,7 @@ class HomeGloPrimitives:
         """
         # Check if area is in magic mode (HomeGlo enabled)
         if area_id in self.client.magic_mode_areas:
-            logger.info(f"[{source}] Stepping up along HomeGlo curve for area {area_id}")
+            logger.info(f"[{source}] Stepping up along MagicLight curve for area {area_id}")
             
             # Get current time with offset (TimeLocation)
             current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
@@ -71,7 +71,7 @@ class HomeGloPrimitives:
                 }
                 
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied HomeGlo step up: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                logger.info(f"Applied MagicLight step up: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
                 
             except Exception as e:
                 logger.error(f"Error calculating step up: {e}")
@@ -84,8 +84,8 @@ class HomeGloPrimitives:
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
             
         else:
-            # Not in HomeGlo mode - use standard brightness increase
-            logger.info(f"[{source}] Area {area_id} not in HomeGlo mode, using standard brightness increase")
+            # Not in MagicLight mode - use standard brightness increase
+            logger.info(f"[{source}] Area {area_id} not in MagicLight mode, using standard brightness increase")
             
             # Check if any lights are on
             any_light_on = await self.client.any_lights_on_in_area(area_id)
@@ -105,7 +105,7 @@ class HomeGloPrimitives:
             logger.info(f"Brightness increased by 17% in area {area_id}")
         
     async def step_down(self, area_id: str, source: str = "service_call"):
-        """Step down - Adjust TimeLocation to dim and warm lights one step down the HomeGlo curve.
+        """Step down - Adjust TimeLocation to dim and warm lights one step down the MagicLight curve.
         
         Args:
             area_id: The area ID to control
@@ -113,7 +113,7 @@ class HomeGloPrimitives:
         """
         # Check if area is in magic mode (HomeGlo enabled)
         if area_id in self.client.magic_mode_areas:
-            logger.info(f"[{source}] Stepping down along HomeGlo curve for area {area_id}")
+            logger.info(f"[{source}] Stepping down along MagicLight curve for area {area_id}")
             
             # Get current time with offset (TimeLocation)
             current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
@@ -155,7 +155,7 @@ class HomeGloPrimitives:
                 }
                 
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied HomeGlo step down: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                logger.info(f"Applied MagicLight step down: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
                 
             except Exception as e:
                 logger.error(f"Error calculating step down: {e}")
@@ -170,8 +170,8 @@ class HomeGloPrimitives:
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
             
         else:
-            # Not in HomeGlo mode - use standard brightness decrease
-            logger.info(f"[{source}] Area {area_id} not in HomeGlo mode, using standard brightness decrease")
+            # Not in MagicLight mode - use standard brightness decrease
+            logger.info(f"[{source}] Area {area_id} not in MagicLight mode, using standard brightness decrease")
             
             # Check if any lights are on
             any_light_on = await self.client.any_lights_on_in_area(area_id)
@@ -190,20 +190,20 @@ class HomeGloPrimitives:
             await self.client.call_service("light", "turn_on", service_data, target)
             logger.info(f"Brightness decreased by 17% in area {area_id}")
     
-    async def homeglo_on(self, area_id: str, source: str = "service_call"):
-        """HomeGlo On - Enable HomeGlo mode and set lights to current time position.
+    async def magiclight_on(self, area_id: str, source: str = "service_call"):
+        """MagicLight On - Enable MagicLight mode and set lights to current time position.
         
-        When HomeGlo is enabled:
+        When MagicLight is enabled:
         - The area enters "magic mode" and tracks solar time
         - Lights are automatically updated every minute based on TimeLocation
-        - If there's a saved TimeLocation from when HomeGlo was last disabled, it's restored
+        - If there's a saved TimeLocation from when MagicLight was last disabled, it's restored
         - Otherwise, TimeLocation starts at current time (offset = 0)
         
         Args:
             area_id: The area ID to control
             source: Source of the action
         """
-        logger.info(f"[{source}] Enabling HomeGlo for area {area_id}")
+        logger.info(f"[{source}] Enabling MagicLight for area {area_id}")
         
         # Check if already enabled
         was_enabled = area_id in self.client.magic_mode_areas
@@ -217,15 +217,15 @@ class HomeGloPrimitives:
         await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
         
         if was_enabled:
-            logger.info(f"HomeGlo was already enabled for area {area_id}, lights updated")
+            logger.info(f"MagicLight was already enabled for area {area_id}, lights updated")
         else:
             offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-            logger.info(f"HomeGlo enabled for area {area_id} with TimeLocation offset {offset} minutes")
+            logger.info(f"MagicLight enabled for area {area_id} with TimeLocation offset {offset} minutes")
     
-    async def homeglo_off(self, area_id: str, source: str = "service_call"):
-        """HomeGlo Off - Disable HomeGlo mode without changing light state.
+    async def magiclight_off(self, area_id: str, source: str = "service_call"):
+        """MagicLight Off - Disable MagicLight mode without changing light state.
         
-        When HomeGlo is disabled:
+        When MagicLight is disabled:
         - The area exits "magic mode" and stops tracking solar time
         - Lights remain in their current state (no change)
         - The current TimeLocation is saved for later restoration
@@ -235,32 +235,32 @@ class HomeGloPrimitives:
             area_id: The area ID to control
             source: Source of the action
         """
-        logger.info(f"[{source}] Disabling HomeGlo for area {area_id} (lights unchanged)")
+        logger.info(f"[{source}] Disabling MagicLight for area {area_id} (lights unchanged)")
         
         # Check if actually enabled
         if area_id not in self.client.magic_mode_areas:
-            logger.info(f"HomeGlo was already disabled for area {area_id}")
+            logger.info(f"MagicLight was already disabled for area {area_id}")
             return
         
         # Get current offset before disabling (for logging)
         current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
         
-        # Disable magic mode (sets HomeGlo = false, preserves TimeLocation)
+        # Disable magic mode (sets MagicLight = false, preserves TimeLocation)
         # save_offset=True means it will save current TimeLocation for later restoration
         await self.client.disable_magic_mode(area_id, save_offset=True)
         
-        logger.info(f"HomeGlo disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved, lights unchanged")
+        logger.info(f"MagicLight disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved, lights unchanged")
     
-    async def homeglo_toggle_multiple(self, area_ids: list, source: str = "service_call"):
-        """HomeGlo Toggle for multiple areas - Smart toggle based on combined light state.
+    async def magiclight_toggle_multiple(self, area_ids: list, source: str = "service_call"):
+        """MagicLight Toggle for multiple areas - Smart toggle based on combined light state.
         
         If ANY lights are on in ANY area:
         - Turn off all lights in all areas
-        - Disable HomeGlo mode in all areas
+        - Disable MagicLight mode in all areas
         
         If ALL lights are off in ALL areas:
         - Turn on lights with adaptive lighting in all areas
-        - Enable HomeGlo mode in all areas
+        - Enable MagicLight mode in all areas
         
         Args:
             area_ids: List of area IDs to control as a group
@@ -279,8 +279,8 @@ class HomeGloPrimitives:
         logger.info(f"Toggle decision for {len(area_ids)} area(s): lights_on={any_light_on}")
         
         if any_light_on:
-            # Lights are on somewhere - turn off ALL areas and disable HomeGlo
-            logger.info(f"Lights are on in at least one area, turning off all areas and disabling HomeGlo")
+            # Lights are on somewhere - turn off ALL areas and disable MagicLight
+            logger.info(f"Lights are on in at least one area, turning off all areas and disabling MagicLight")
             
             for area_id in area_ids:
                 # Disable HomeGlo mode first to prevent race conditions
@@ -293,13 +293,21 @@ class HomeGloPrimitives:
                 service_data = {"transition": 1}
                 target = {target_type: target_value}
                 await self.client.call_service("light", "turn_off", service_data, target)
+<<<<<<< HEAD
+=======
+                
+                # Disable MagicLight mode if enabled
+                if area_id in self.client.magic_mode_areas:
+                    await self.client.disable_magic_mode(area_id, save_offset=True)
+                    logger.info(f"MagicLight disabled for area {area_id}")
+>>>>>>> magic
             
         else:
-            # All lights are off - turn them all on with HomeGlo
-            logger.info(f"All lights are off in all areas, enabling HomeGlo and turning on")
+            # All lights are off - turn them all on with MagicLight
+            logger.info(f"All lights are off in all areas, enabling MagicLight and turning on")
             
             for area_id in area_ids:
-                # Enable magic mode (sets HomeGlo = true)
+                # Enable magic mode (sets MagicLight = true)
                 self.client.enable_magic_mode(area_id, restore_offset=True)
                 
                 # Get and apply adaptive lighting values
@@ -307,35 +315,35 @@ class HomeGloPrimitives:
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
                 
                 offset = self.client.magic_mode_time_offsets.get(area_id, 0)
-                logger.info(f"HomeGlo enabled for area {area_id} with TimeLocation offset {offset} minutes")
+                logger.info(f"MagicLight enabled for area {area_id} with TimeLocation offset {offset} minutes")
     
-    async def homeglo_toggle(self, area_id: str, source: str = "service_call"):
-        """HomeGlo Toggle - Smart toggle based on light state.
+    async def magiclight_toggle(self, area_id: str, source: str = "service_call"):
+        """MagicLight Toggle - Smart toggle based on light state.
         
-        Just delegates to homeglo_toggle_multiple for consistency.
+        Just delegates to magiclight_toggle_multiple for consistency.
         
         Args:
             area_id: The area ID to control
             source: Source of the action
         """
-        await self.homeglo_toggle_multiple([area_id], source)
+        await self.magiclight_toggle_multiple([area_id], source)
     
     async def reset(self, area_id: str, source: str = "service_call"):
-        """Reset - Set TimeLocation to current time (offset 0), enable HomeGlo, and unfreeze.
+        """Reset - Set TimeLocation to current time (offset 0), enable MagicLight, and unfreeze.
         
-        This resets the area to track the current actual time, enables HomeGlo mode,
+        This resets the area to track the current actual time, enables MagicLight mode,
         and applies the appropriate lighting for the current time.
         
         Args:
             area_id: The area ID to control
             source: Source of the action
         """
-        logger.info(f"[{source}] Resetting HomeGlo state for area {area_id}")
+        logger.info(f"[{source}] Resetting MagicLight state for area {area_id}")
         
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
         
-        # Enable magic mode (HomeGlo = true)
+        # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward
         self.client.enable_magic_mode(area_id)
         
@@ -346,7 +354,7 @@ class HomeGloPrimitives:
         lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
         await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
         
-        logger.info(f"Reset complete: area {area_id} now tracking current time with HomeGlo enabled")
+        logger.info(f"Reset complete: area {area_id} now tracking current time with MagicLight enabled")
     
     # TODO: Add more primitives as we implement them:
     # - full_send (zone-wide operation)

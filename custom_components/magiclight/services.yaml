@@ -1,6 +1,6 @@
 step_up:
   name: Step Up
-  description: Increase brightness by one step along the glo curve
+  description: Increase brightness by one step along the magic curve
   icon: mdi:brightness-5
   fields:
     area_id:
@@ -14,7 +14,7 @@ step_up:
 
 step_down:
   name: Step Down
-  description: Decrease brightness by one step along the glo curve
+  description: Decrease brightness by one step along the magic curve
   icon: mdi:brightness-4
   fields:
     area_id:
@@ -28,7 +28,7 @@ step_down:
 
 reset:
   name: Reset
-  description: Turn on lights to glo of current time, enable HomeGlo
+  description: Turn on lights to magic value of current time, enable MagicLight
   icon: mdi:restore
   fields:
     area_id:
@@ -40,37 +40,37 @@ reset:
         area:
           multiple: true
 
-homeglo_on:
-  name: HomeGlo On
-  description: Turn on lights and enable HomeGlo mode for an area
+magiclight_on:
+  name: MagicLight On
+  description: Turn on lights and enable MagicLight mode for an area
   icon: mdi:lightbulb-on
   fields:
     area_id:
       name: Area
-      description: The area(s) to enable HomeGlo for
+      description: The area(s) to enable MagicLight for
       required: true
       example: ["living_room", "kitchen"]
       selector:
         area:
           multiple: true
 
-homeglo_off:
-  name: HomeGlo Off
-  description: Disable HomeGlo mode for an area (lights remain unchanged)
+magiclight_off:
+  name: MagicLight Off
+  description: Disable MagicLight mode for an area (lights remain unchanged)
   icon: mdi:lightbulb-off
   fields:
     area_id:
       name: Area
-      description: The area(s) to disable HomeGlo for
+      description: The area(s) to disable MagicLight for
       required: true
       example: ["living_room", "kitchen"]
       selector:
         area:
           multiple: true
 
-homeglo_toggle:
-  name: HomeGlo Toggle
-  description: Smart toggle - turns on lights with HomeGlo if off, turns off lights and disables HomeGlo if on
+magiclight_toggle:
+  name: MagicLight Toggle
+  description: Smart toggle - turns on lights with MagicLight if off, turns off lights and disables MagicLight if on
   icon: mdi:lightbulb-auto
   fields:
     area_id:

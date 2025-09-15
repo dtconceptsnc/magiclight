@@ -1,6 +1,6 @@
-# HomeGlo Integration for Home Assistant
+# MagicLight Integration for Home Assistant
 
-The HomeGlo custom integration provides Home Assistant services for controlling lights with adaptive lighting based on the sun's position. It works in conjunction with the HomeGlo add-on to provide flexible automation capabilities.
+The MagicLight custom integration provides Home Assistant services for controlling lights with adaptive lighting based on the sun's position. It works in conjunction with the MagicLight add-on to provide flexible automation capabilities.
 
 ## Features
 
@@ -8,7 +8,7 @@ The HomeGlo custom integration provides Home Assistant services for controlling 
 - **Flexible Triggers**: Works with any Home Assistant trigger (not limited to ZHA)
 - **Area-Based Control**: Target specific areas or let the system determine from device context
 - **Adaptive Stepping**: Increase or decrease brightness along the adaptive curve
-- **WebSocket Communication**: Real-time communication with the HomeGlo add-on
+- **WebSocket Communication**: Real-time communication with the MagicLight add-on
 
 ## Installation
 
@@ -21,30 +21,30 @@ The HomeGlo custom integration provides Home Assistant services for controlling 
    - Open HACS in Home Assistant
    - Go to **Integrations**
    - Click the **+** button
-   - Search for "HomeGlo"
+   - Search for "MagicLight"
 3. Click **Download**
 4. Restart Home Assistant
 5. Add the integration:
    - Go to **Settings** → **Devices & Services**
    - Click **+ Add Integration**
-   - Search for "HomeGlo"
+   - Search for "MagicLight"
 
 ### Manual Installation
 
-1. Copy the `custom_components/homeglo` folder to your Home Assistant's `custom_components` directory
+1. Copy the `custom_components/magiclight` folder to your Home Assistant's `custom_components` directory
 2. Restart Home Assistant
 3. Add the integration through the UI as described above
 
 ## Prerequisites
 
-The HomeGlo integration requires the HomeGlo add-on to be installed and running. The add-on handles:
+The MagicLight integration requires the MagicLight add-on to be installed and running. The add-on handles:
 - Adaptive lighting calculations
 - Sun position tracking
 - Light control logic
 
 ## Available Services
 
-### `homeglo.step_up`
+### `magiclight.step_up`
 
 Increase brightness by one step along the adaptive lighting curve.
 
@@ -54,7 +54,7 @@ area_id: living_room  # Optional: Target area
 device_id: abc123     # Optional: Triggering device
 ```
 
-### `homeglo.step_down`
+### `magiclight.step_down`
 
 Decrease brightness by one step along the adaptive lighting curve.
 
@@ -80,7 +80,7 @@ automation:
         type: remote_button_short_press
         subtype: dim_up
     action:
-      - service: homeglo.step_up
+      - service: magiclight.step_up
         data:
           area_id: kitchen
 
@@ -92,7 +92,7 @@ automation:
         type: remote_button_short_press
         subtype: dim_down
     action:
-      - service: homeglo.step_down
+      - service: magiclight.step_down
         data:
           area_id: kitchen
 ```
@@ -109,7 +109,7 @@ automation:
         entity_id: binary_sensor.hallway_motion
         to: "on"
     action:
-      - service: homeglo.step_up
+      - service: magiclight.step_up
         data:
           area_id: hallway
 ```
@@ -129,7 +129,7 @@ automation:
         after: "06:00:00"
         before: "07:00:00"
     action:
-      - service: homeglo.step_up
+      - service: magiclight.step_up
         data:
           area_id: bedroom
 ```
@@ -147,7 +147,7 @@ automation:
         event_data:
           text: "dim the living room"
     action:
-      - service: homeglo.step_down
+      - service: magiclight.step_down
         data:
           area_id: living_room
 ```
@@ -179,7 +179,7 @@ automation:
       - platform: event
         event_type: custom_button_press
     action:
-      - service: homeglo.step_up
+      - service: magiclight.step_up
         data:
           area_id: "{{ trigger.event.data.area }}"
 ```
@@ -201,22 +201,22 @@ automation:
               - condition: time
                 before: "12:00:00"
             sequence:
-              - service: homeglo.step_up
+              - service: magiclight.step_up
                 data:
                   area_id: office
           - conditions:
               - condition: time
                 after: "20:00:00"
             sequence:
-              - service: homeglo.step_down
+              - service: magiclight.step_down
                 data:
                   area_id: office
 ```
 
 ## How It Works
 
-1. **Service Call**: When you call a HomeGlo service from an automation
-2. **WebSocket Event**: The integration sends an event to the HomeGlo add-on
+1. **Service Call**: When you call a MagicLight service from an automation
+2. **WebSocket Event**: The integration sends an event to the MagicLight add-on
 3. **Processing**: The add-on calculates adaptive values based on sun position
 4. **Light Control**: The add-on updates the specified lights
 5. **Confirmation**: The integration receives confirmation of the action
@@ -225,7 +225,7 @@ automation:
 
 ### Services Not Available
 
-1. Ensure the HomeGlo add-on is installed and running
+1. Ensure the MagicLight add-on is installed and running
 2. Check the integration is properly configured
 3. Restart Home Assistant after installation
 
@@ -233,7 +233,7 @@ automation:
 
 1. Verify the area_id matches an existing area in Home Assistant
 2. Check that lights in the area support color temperature
-3. Review HomeGlo add-on logs for errors
+3. Review MagicLight add-on logs for errors
 
 ### Integration Not Loading
 
@@ -243,12 +243,12 @@ automation:
 
 ## Developer Information
 
-The integration communicates with the HomeGlo add-on via WebSocket events:
+The integration communicates with the MagicLight add-on via WebSocket events:
 
 **Event Structure:**
 ```python
 {
-    "type": "homeglo_command",
+    "type": "magiclight_command",
     "command": "step_up" | "step_down",
     "area_id": "optional_area",
     "device_id": "optional_device"

@@ -1,7 +1,7 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
-name: HomeGlo
+name: MagicLight
 version: "3.2.1"
-slug: homeglo
+slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/intuitivelight/homeglo-ha"
 arch:
@@ -17,7 +17,7 @@ ingress: true
 ingress_port: 8099
 ingress_entry: /
 panel_icon: mdi:lightbulb
-panel_title: HomeGlo
+panel_title: MagicLight
 panel_admin: false
 options:
   color_mode: "kelvin"
