@@ -1,5 +1,35 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.0
+**Major Release - MagicLight & Test Suite**
+
+**Testing Infrastructure:**
+- Added comprehensive test suite with 2,400+ lines of test coverage
+- Implemented unit tests for all core components:
+  - Brain edge cases and adaptive lighting calculations
+  - Light controller multi-protocol support
+  - WebSocket connection and event handling
+  - Service primitives functionality
+  - Web server and Light Designer interface
+- Relocated tests to `addon/tests/` for better organization
+- Added pytest configuration and coverage reporting
+
+**CI/CD & Development:**
+- Added GitHub Actions workflows for automated testing
+- Implemented build, lint, and CI pipelines
+- Enhanced documentation structure
+- Improved code organization and maintainability
+
+**Bug Fixes:**
+- Fixed potential bugs in primitives service handling
+- Resolved issues in switch command processing
+- Improved error handling across components
+
+**Developer Experience:**
+- Added comprehensive testing commands to CLAUDE.md
+- Enhanced local development workflow
+- Improved build scripts and Docker configuration
+
 ## 3.2.0
  - Fix toggling
 
