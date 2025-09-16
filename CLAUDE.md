@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
-MagicLight (formerly HomeGlo/Intuitive Light) is a dual-component Home Assistant project:
+MagicLight is a dual-component Home Assistant project:
 1. **Add-on** (`addon/`): Docker-based Home Assistant add-on that provides adaptive lighting based on sun position
 2. **Custom Integration** (`custom_components/magiclight/`): HACS-installable integration providing MagicLight service primitives
 

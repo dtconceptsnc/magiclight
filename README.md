@@ -6,22 +6,9 @@ Transform your home's ambiance with MagicLight, the intelligent lighting system 
 
 ## ✨ Features
 
-- **Automatic Adaptive Lighting** - Seamlessly transitions from cool daylight to warm evening tones
-- **Smart Switch Integration** - Works with your existing switches for instant control
-- **Customizable Light Curves** - Fine-tune brightness and color temperature to your preferences
-- **Multi-Protocol Support** - Controls ZigBee, Z-Wave, WiFi, and Matter lights
+- **Smart Switch Integration** - Provided blueprint sets up Hue Dimmer Switch functionality in minutes
 - **Visual Light Designer** - Interactive web interface to perfect your lighting curves
-- **Magic Mode** - Automatically updates lights when you use physical switches
-- **Energy Efficient** - Optimized group control for ZigBee networks
-
-## 🎯 Why MagicLight?
-
-Traditional smart lights require constant manual adjustments or complex automations. MagicLight changes that by providing intelligent, adaptive lighting that just works. Your lights automatically adjust based on the sun's position, creating the perfect ambiance for any time of day.
-
-- **Better Sleep** - Reduces blue light exposure in the evening
-- **Increased Comfort** - Natural light transitions that feel right
-- **Zero Maintenance** - Set it once and forget it
-- **Works with What You Have** - Compatible with all major smart light protocols
+- **Magic Mode** - Automatically updates lights every minute to follow curve
 
 ## 📦 Installation
 
@@ -97,6 +84,15 @@ MagicLight works out of the box with sensible defaults. For advanced users, cust
 - **Add-on Configuration**: Adjust color modes and temperature ranges
 - **Light Designer**: Visual interface for curve customization
 - **YAML**: Advanced automation possibilities
+
+## 🙏 Influences
+
+- [Adaptive Lighting](https://github.com/basnijholt/adaptive-lighting)
+
+## 👥 Contributors
+
+- [@tkthundr](https://github.com/tkthundr)
+- [@rweisbein](https://github.com/rweisbein)
 
 ## 📄 License
 
