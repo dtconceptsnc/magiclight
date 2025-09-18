@@ -219,8 +219,8 @@ class TestMagicLightPrimitives:
 
         await self.primitives.magiclight_on(area_id)
 
-        # Should still call enable (idempotent)
-        self.mock_client.enable_magic_mode.assert_called_once_with(area_id, restore_offset=True)
+        # Should still call enable but without restoring offset (preserves current stepped state)
+        self.mock_client.enable_magic_mode.assert_called_once_with(area_id, restore_offset=False)
 
         # Should still update lights
         self.mock_client.turn_on_lights_adaptive.assert_called_once()
@@ -322,9 +322,9 @@ class TestMagicLightPrimitives:
         # Should reset time offset to 0
         assert self.mock_client.magic_mode_time_offsets[area_id] == 0
 
-        # Should clear saved offset
-        assert area_id not in self.mock_client.saved_time_offsets
-        self.mock_client.save_offsets.assert_called_once()
+        # Should preserve saved offset (for future magiclight_on calls)
+        assert area_id in self.mock_client.saved_time_offsets
+        assert self.mock_client.saved_time_offsets[area_id] == 180
 
         # Should enable magic mode
         self.mock_client.enable_magic_mode.assert_called_once_with(area_id)

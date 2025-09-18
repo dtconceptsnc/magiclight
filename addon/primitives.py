@@ -207,10 +207,10 @@ class MagicLightPrimitives:
         
         # Check if already enabled
         was_enabled = area_id in self.client.magic_mode_areas
-        
+
         # Enable magic mode (sets HomeGlo = true)
-        # restore_offset=True means it will restore saved TimeLocation if available
-        self.client.enable_magic_mode(area_id, restore_offset=True)
+        # Only restore saved offset if MagicLight was previously disabled
+        self.client.enable_magic_mode(area_id, restore_offset=not was_enabled)
         
         # Get and apply adaptive lighting values for current TimeLocation
         lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
@@ -335,10 +335,8 @@ class MagicLightPrimitives:
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
 
-        # Clear the saved offset so future magiclight_on calls don't restore the old state
-        if area_id in self.client.saved_time_offsets:
-            del self.client.saved_time_offsets[area_id]
-            self.client.save_offsets()  # Persist the change
+        # Note: We intentionally preserve saved_time_offsets so that future magiclight_on
+        # calls can restore previous stepped-down state. Reset only affects current session.
 
         # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward

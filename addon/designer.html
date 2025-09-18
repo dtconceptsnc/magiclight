@@ -81,6 +81,13 @@
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  /* Pulsing animation for live markers */
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+    100% { opacity: 1; transform: scale(1); }
+  }
 </style>
 </head>
 <body>
@@ -230,6 +237,10 @@ let listenersBound=false;
 let rafId=0,lastClientX=null;
 let setCursorRef = ()=>{};
 let selectedHour = new Date().getHours() + new Date().getMinutes()/60;
+
+// Time progression tracking
+let nowMarkerInterval = null;
+let nowMarkerIndex = -1;
 
 const SAMPLE_STEP = 0.1;
 const SOLAR_LABEL_SIZE = 10;
@@ -746,6 +757,50 @@ function buildSunColored(x,sun){
   return segs;
 }
 
+/* =========================
+   Now marker auto-update
+========================= */
+function updateNowMarker(){
+  if(!plotDivRef || nowMarkerIndex === -1) return;
+
+  const now = new Date();
+  const nowHour = now.getHours() + now.getMinutes()/60;
+  const nowBri = interpAtHour(arc.hours, arc.bris, nowHour);
+  const nowCCT = interpAtHour(arc.hours, arc.ccts, nowHour);
+  const nowOutline = getComputedStyle(document.documentElement).getPropertyValue('--nowBlue').trim()||'#66b8ff';
+
+  // Update now marker position and color
+  Plotly.restyle(plotDivRef, {
+    x: [[nowHour]],
+    y: [[nowBri]],
+    'marker.color': [[cctToRGB(nowCCT)]],
+    'marker.line.color': [[nowOutline]],
+    'marker.line.width': [[3]] // Make it slightly thicker for the pulse effect
+  }, nowMarkerIndex);
+
+  // Add pulsing effect to now marker
+  setTimeout(() => {
+    const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
+    nowMarkerElements.forEach(el => {
+      el.style.animation = 'pulse 2s ease-in-out infinite';
+      el.style.transformOrigin = 'center';
+    });
+  }, 100); // Small delay to ensure DOM is updated
+
+  // Update now annotation
+  const annotations = plotDivRef.layout.annotations || [];
+  const nowAnnotationIndex = annotations.findIndex(ann =>
+    ann.text && ann.text.toLowerCase().includes('now ')
+  );
+
+  if (nowAnnotationIndex !== -1) {
+    const upd = {};
+    upd[`annotations[${nowAnnotationIndex}].x`] = nowHour;
+    upd[`annotations[${nowAnnotationIndex}].text`] = `now ${formatTime(nowHour, params.use12Hour).toLowerCase()}`;
+    Plotly.relayout(plotDivRef, upd);
+  }
+}
+
 function renderPlot(series){
   const {hours,ccts,bris,morn,eve,solar,sunPower}=series;
   rebuildHalfArcCaches(morn, eve);
@@ -774,7 +829,7 @@ function renderPlot(series){
   const nowCCT=interpAtHour(hours,ccts,nowHour);
   const nowOutline=getComputedStyle(document.documentElement).getPropertyValue('--nowBlue').trim()||'#66b8ff';
   const nowMarker={type:'scatter',mode:'markers',x:[nowHour],y:[nowBri],name:'now',
-    marker:{size:10,color:cctToRGB(nowCCT),line:{width:2,color:nowOutline}},hoverinfo:'skip',showlegend:false};
+    marker:{size:12,color:cctToRGB(nowCCT),line:{width:3,color:nowOutline}},hoverinfo:'skip',showlegend:false};
 
   const annotations=[];
   const annotate=(xpos,label,color)=>{ if(xpos==null) return;
@@ -856,7 +911,17 @@ function renderPlot(series){
     Plotly.react(plotDivRef,data,layout,config).then(() => {
       CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
       CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
+      nowMarkerIndex = plotDivRef.data.findIndex(t => t && t.name === 'now');
       refreshCallouts(); // make sure first paint uses the new per-point colors
+
+      // Add pulsing effect to now marker
+      setTimeout(() => {
+        const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
+        nowMarkerElements.forEach(el => {
+          el.style.animation = 'pulse 2s ease-in-out infinite';
+          el.style.transformOrigin = 'center';
+        });
+      }, 200);
     });
   }
   else{
@@ -865,7 +930,17 @@ function renderPlot(series){
       bindInteractionsOnce();
       CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
       CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
+      nowMarkerIndex = plotDivRef.data.findIndex(t => t && t.name === 'now');
       refreshCallouts(); // first paint
+
+      // Add pulsing effect to now marker
+      setTimeout(() => {
+        const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
+        nowMarkerElements.forEach(el => {
+          el.style.animation = 'pulse 2s ease-in-out infinite';
+          el.style.transformOrigin = 'center';
+        });
+      }, 200);
     });
   }
 }
@@ -1353,6 +1428,28 @@ document.getElementById('step-count').value=params.max_dim_steps || defaults.max
 
 // Initialize
 loadConfiguration();
+
+// Start auto-updating now marker every minute
+function startNowMarkerUpdates() {
+  // Clear any existing interval
+  if (nowMarkerInterval) {
+    clearInterval(nowMarkerInterval);
+  }
+
+  // Update immediately, then every minute
+  updateNowMarker();
+  nowMarkerInterval = setInterval(updateNowMarker, 60000); // 60 seconds
+}
+
+// Start the timer after page loads
+setTimeout(startNowMarkerUpdates, 1000); // Wait 1 second for plot to initialize
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (nowMarkerInterval) {
+    clearInterval(nowMarkerInterval);
+  }
+});
 </script>
 </body>
 </html>
