@@ -1,5 +1,13 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.1
+**Bug Fix - Reset State Management**
+
+**Bug Fixes:**
+- Fixed reset primitive to properly clear saved TimeLocation offsets
+- Resolved issue where stepped-down state persisted after reset when MagicLight was re-enabled
+- Reset now correctly ensures area starts fresh at current time without restoring previous offsets
+
 ## 4.0.0
 **Major Release - MagicLight & Test Suite**
 

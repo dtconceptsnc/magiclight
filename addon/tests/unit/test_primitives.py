@@ -314,11 +314,17 @@ class TestMagicLightPrimitives:
         """Test reset functionality."""
         area_id = "test_area"
         self.mock_client.magic_mode_time_offsets[area_id] = 180  # Current offset
+        self.mock_client.saved_time_offsets = {area_id: 180}  # Saved offset
+        self.mock_client.save_offsets = MagicMock()
 
         await self.primitives.reset(area_id)
 
         # Should reset time offset to 0
         assert self.mock_client.magic_mode_time_offsets[area_id] == 0
+
+        # Should clear saved offset
+        assert area_id not in self.mock_client.saved_time_offsets
+        self.mock_client.save_offsets.assert_called_once()
 
         # Should enable magic mode
         self.mock_client.enable_magic_mode.assert_called_once_with(area_id)

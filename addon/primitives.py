@@ -322,30 +322,35 @@ class MagicLightPrimitives:
     
     async def reset(self, area_id: str, source: str = "service_call"):
         """Reset - Set TimeLocation to current time (offset 0), enable MagicLight, and unfreeze.
-        
+
         This resets the area to track the current actual time, enables MagicLight mode,
         and applies the appropriate lighting for the current time.
-        
+
         Args:
             area_id: The area ID to control
             source: Source of the action
         """
         logger.info(f"[{source}] Resetting MagicLight state for area {area_id}")
-        
+
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
-        
+
+        # Clear the saved offset so future magiclight_on calls don't restore the old state
+        if area_id in self.client.saved_time_offsets:
+            del self.client.saved_time_offsets[area_id]
+            self.client.save_offsets()  # Persist the change
+
         # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward
         self.client.enable_magic_mode(area_id)
-        
+
         # DayHalf is automatically determined by the brain based on current solar position
         # Frozen state would be handled by separate freeze/unfreeze primitives when implemented
-        
+
         # Get and apply adaptive lighting values for current time (offset 0)
         lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
         await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
-        
+
         logger.info(f"Reset complete: area {area_id} now tracking current time with MagicLight enabled")
     
     # TODO: Add more primitives as we implement them:
