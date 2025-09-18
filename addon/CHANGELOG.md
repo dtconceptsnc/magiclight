@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.3
+**Bug Fix - MagicLight On State Preservation & Light Designer Enhancement**
+
+**Bug Fixes:**
+- Fixed MagicLight On to preserve stepped-down state when MagicLight is already enabled
+- Resolved issue where motion-triggered MagicLight On would reset lights to current time instead of maintaining user's stepped adjustments
+- MagicLight On now only updates lights when MagicLight was previously disabled, preserving any manual step adjustments when already active
+
+**Enhancements:**
+- Added live pulsing "now" marker in Light Designer that automatically tracks current time
+- Now marker updates every minute and includes smooth pulsing animation for better visibility
+
 ## 4.0.1
 **Bug Fix - Reset State Management**
 

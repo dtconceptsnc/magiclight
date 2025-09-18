@@ -222,8 +222,8 @@ class TestMagicLightPrimitives:
         # Should still call enable but without restoring offset (preserves current stepped state)
         self.mock_client.enable_magic_mode.assert_called_once_with(area_id, restore_offset=False)
 
-        # Should still update lights
-        self.mock_client.turn_on_lights_adaptive.assert_called_once()
+        # Should NOT update lights when already enabled (preserves stepped-down state)
+        self.mock_client.turn_on_lights_adaptive.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_magiclight_off_enabled(self):

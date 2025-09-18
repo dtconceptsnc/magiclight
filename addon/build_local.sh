@@ -58,7 +58,7 @@ case $(uname -m) in
         ;;
 esac
 
-echo "Building HomeGlo addon for $ARCH (no cache)..."
+echo "Building MagicLight addon for $ARCH (no cache)..."
 
 docker run --rm -it --name builder --privileged \
     -v "$(pwd)":/data \
@@ -67,15 +67,16 @@ docker run --rm -it --name builder --privileged \
     -t /data \
     --test \
     --${ARCH} \
-    -i homeglo-${ARCH} \
-    -d local
+    -i magiclight-${ARCH} \
+    -d local \
+    --no-cache
 
-echo "Build complete! Image: local/homeglo-${ARCH}:latest"
+echo "Build complete! Image: local/magiclight-${ARCH}:latest"
 
 # Run the container if requested
 if [ "$RUN_AFTER_BUILD" = true ]; then
     echo ""
-    echo "Running HomeGlo container..."
+    echo "Running MagicLight container..."
     echo "Press Ctrl+C to stop"
     echo ""
     
@@ -102,10 +103,10 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
     
     # The builder creates images with 'local/' prefix
     docker run --rm -it \
-        --name homeglo-test \
+        --name magiclight-test \
         ${ENV_FILE} \
         -p "${HOST_PORT}:8099" \
-        local/homeglo-${ARCH}:latest
+        local/magiclight-${ARCH}:latest
     
     echo ""
     echo "Light Designer web UI should be available at: http://localhost:${HOST_PORT}"

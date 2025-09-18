@@ -208,17 +208,18 @@ class MagicLightPrimitives:
         # Check if already enabled
         was_enabled = area_id in self.client.magic_mode_areas
 
-        # Enable magic mode (sets HomeGlo = true)
-        # Only restore saved offset if MagicLight was previously disabled
-        self.client.enable_magic_mode(area_id, restore_offset=not was_enabled)
-        
-        # Get and apply adaptive lighting values for current TimeLocation
-        lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
-        await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
-        
         if was_enabled:
-            logger.info(f"MagicLight was already enabled for area {area_id}, lights updated")
+            # MagicLight already enabled - don't change lights, just ensure it stays enabled
+            self.client.enable_magic_mode(area_id, restore_offset=False)
+            logger.info(f"MagicLight was already enabled for area {area_id}, no changes made")
         else:
+            # MagicLight was disabled - enable it and restore saved offset if available
+            self.client.enable_magic_mode(area_id, restore_offset=True)
+
+            # Get and apply adaptive lighting values for current TimeLocation
+            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+            await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=1)
+
             offset = self.client.magic_mode_time_offsets.get(area_id, 0)
             logger.info(f"MagicLight enabled for area {area_id} with TimeLocation offset {offset} minutes")
     
