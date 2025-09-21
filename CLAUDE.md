@@ -196,3 +196,5 @@ When creating commits:
 - Repository URLs need consolidation (multiple references exist)
 - HACS installation via custom repository URL
 - Docker Hub images published to `dtconceptsnc/magiclight`
+- make sure to source .venv/bin/activate
+- dont update the integration (custom_components) if no changes were made in there

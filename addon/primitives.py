@@ -196,7 +196,7 @@ class MagicLightPrimitives:
         When MagicLight is enabled:
         - The area enters "magic mode" and tracks solar time
         - Lights are automatically updated every minute based on TimeLocation
-        - If there's a saved TimeLocation from when MagicLight was last disabled, it's restored
+        - If there's a recall TimeLocation from when MagicLight was last disabled, it's restored
         - Otherwise, TimeLocation starts at current time (offset = 0)
         
         Args:
@@ -229,7 +229,7 @@ class MagicLightPrimitives:
         When MagicLight is disabled:
         - The area exits "magic mode" and stops tracking solar time
         - Lights remain in their current state (no change)
-        - The current TimeLocation is saved for later restoration
+        - The current TimeLocation is saved as recall offset for later restoration
         - Automatic minute-by-minute updates stop
         
         Args:
@@ -321,7 +321,7 @@ class MagicLightPrimitives:
         """
         await self.magiclight_toggle_multiple([area_id], source)
     
-    async def reset(self, area_id: str, source: str = "service_call"):
+    async def reset(self, area_id: str, clear_saved: bool = True, source: str = "service_call"):
         """Reset - Set TimeLocation to current time (offset 0), enable MagicLight, and unfreeze.
 
         This resets the area to track the current actual time, enables MagicLight mode,
@@ -329,6 +329,7 @@ class MagicLightPrimitives:
 
         Args:
             area_id: The area ID to control
+            clear_saved: Whether to also clear recall offsets (default True for true reset)
             source: Source of the action
         """
         logger.info(f"[{source}] Resetting MagicLight state for area {area_id}")
@@ -336,8 +337,11 @@ class MagicLightPrimitives:
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
 
-        # Note: We intentionally preserve saved_time_offsets so that future magiclight_on
-        # calls can restore previous stepped-down state. Reset only affects current session.
+        # Clear recall offset for true reset (unless preserving for special cases)
+        if clear_saved and area_id in self.client.recall_time_offsets:
+            del self.client.recall_time_offsets[area_id]
+            self.client.save_offsets()
+            logger.info(f"Cleared recall offset for area {area_id}")
 
         # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward

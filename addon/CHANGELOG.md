@@ -1,5 +1,19 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.4
+**Bug Fix - Solar Midnight Recall Offset Reset**
+
+**Bug Fixes:**
+- Fixed solar midnight reset to also clear recall offsets (renamed from "saved offsets")
+- Resolved issue where recall offsets from previous day persisted after solar midnight
+- Solar midnight now provides true fresh start by clearing both current and recall TimeLocation offsets
+- Updated reset primitive to clear recall offsets by default (added `clear_saved` parameter for special cases)
+
+**Improvements:**
+- Renamed "saved_time_offsets" to "recall_time_offsets" for clarity
+- Added comprehensive tests for solar midnight reset behavior
+- Enhanced logging to distinguish between current and recall offset operations
+
 ## 4.0.3
 **Bug Fix - MagicLight On State Preservation & Light Designer Enhancement**
 

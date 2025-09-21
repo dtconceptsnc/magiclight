@@ -314,7 +314,7 @@ class TestMagicLightPrimitives:
         """Test reset functionality."""
         area_id = "test_area"
         self.mock_client.magic_mode_time_offsets[area_id] = 180  # Current offset
-        self.mock_client.saved_time_offsets = {area_id: 180}  # Saved offset
+        self.mock_client.recall_time_offsets = {area_id: 180}  # Recall offset
         self.mock_client.save_offsets = MagicMock()
 
         await self.primitives.reset(area_id)
@@ -322,9 +322,38 @@ class TestMagicLightPrimitives:
         # Should reset time offset to 0
         assert self.mock_client.magic_mode_time_offsets[area_id] == 0
 
-        # Should preserve saved offset (for future magiclight_on calls)
-        assert area_id in self.mock_client.saved_time_offsets
-        assert self.mock_client.saved_time_offsets[area_id] == 180
+        # Should clear recall offset by default (for true reset)
+        assert area_id not in self.mock_client.recall_time_offsets
+        self.mock_client.save_offsets.assert_called_once()
+
+        # Should enable magic mode
+        self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
+
+        # Should get and apply adaptive lighting
+        self.mock_client.get_adaptive_lighting_for_area.assert_called_once_with(area_id)
+        self.mock_client.turn_on_lights_adaptive.assert_called_once_with(
+            area_id,
+            self.mock_client.get_adaptive_lighting_for_area.return_value,
+            transition=1
+        )
+
+    @pytest.mark.asyncio
+    async def test_reset_preserve_recall(self):
+        """Test reset functionality with preserve recall offset option."""
+        area_id = "test_area"
+        self.mock_client.magic_mode_time_offsets[area_id] = 180  # Current offset
+        self.mock_client.recall_time_offsets = {area_id: 180}  # Recall offset
+        self.mock_client.save_offsets = MagicMock()
+
+        await self.primitives.reset(area_id, clear_saved=False)
+
+        # Should reset time offset to 0
+        assert self.mock_client.magic_mode_time_offsets[area_id] == 0
+
+        # Should preserve recall offset when clear_saved=False
+        assert area_id in self.mock_client.recall_time_offsets
+        assert self.mock_client.recall_time_offsets[area_id] == 180
+        self.mock_client.save_offsets.assert_not_called()
 
         # Should enable magic mode
         self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
@@ -393,3 +422,91 @@ class TestMagicLightPrimitives:
                 mock_logger.info.assert_called()
                 log_call = mock_logger.info.call_args_list[0][0][0]
                 assert custom_source in log_call
+
+
+class TestSolarMidnightReset:
+    """Test cases for solar midnight reset functionality."""
+
+    def setup_method(self):
+        """Set up test environment for each test."""
+        # Create mock websocket client
+        self.mock_client = MagicMock()
+        self.mock_client.magic_mode_areas = set()
+        self.mock_client.magic_mode_time_offsets = {}
+        self.mock_client.recall_time_offsets = {}
+        self.mock_client.latitude = 40.7128
+        self.mock_client.longitude = -74.0060
+        self.mock_client.timezone = "America/New_York"
+
+        # Mock async methods
+        self.mock_client.update_lights_in_magic_mode = AsyncMock()
+        self.mock_client.save_offsets = MagicMock()
+
+    @pytest.mark.asyncio
+    async def test_solar_midnight_resets_both_offsets(self):
+        """Test that solar midnight resets both current and recall offsets."""
+        from main import HomeAssistantWebSocketClient
+
+        # Create a real instance to test the method
+        client = HomeAssistantWebSocketClient("localhost", 8123, "test_token")
+        client.latitude = 40.7128
+        client.longitude = -74.0060
+        client.timezone = "America/New_York"
+
+        # Mock the async method
+        client.update_lights_in_magic_mode = AsyncMock()
+        client.save_offsets = MagicMock()
+
+        # Set up test data
+        area1 = "living_room"
+        area2 = "bedroom"
+
+        # Current offsets
+        client.magic_mode_time_offsets = {area1: 120, area2: -60}
+        # Recall offsets
+        client.recall_time_offsets = {area1: 180, area2: -90}
+        # Magic mode areas
+        client.magic_mode_areas = {area1, area2}
+
+        # Mock datetime to simulate crossing solar midnight
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        # Simulate yesterday and today
+        tzinfo = ZoneInfo("America/New_York")
+        yesterday = datetime(2024, 1, 15, 23, 30, tzinfo=tzinfo)
+        today = datetime(2024, 1, 16, 0, 30, tzinfo=tzinfo)  # After midnight
+
+        # First call (before midnight) - should return current time
+        result1 = await client.reset_offsets_at_solar_midnight(None)
+        assert result1 is not None
+
+        # Second call (after midnight) - should trigger reset
+        with patch('main.datetime') as mock_datetime:
+            mock_datetime.now.return_value = today
+
+            # Mock astral calculations to return predictable solar times
+            with patch('astral.sun.sun') as mock_sun:
+                solar_noon = today.replace(hour=12, minute=0, second=0)
+                mock_sun.return_value = {"noon": solar_noon}
+
+                result2 = await client.reset_offsets_at_solar_midnight(yesterday)
+
+        # Should return updated time
+        assert result2 is not None
+
+        # Both current offsets should be reset to 0
+        assert client.magic_mode_time_offsets[area1] == 0
+        assert client.magic_mode_time_offsets[area2] == 0
+
+        # Recall offsets should be cleared
+        assert area1 not in client.recall_time_offsets
+        assert area2 not in client.recall_time_offsets
+
+        # Should save the cleared state
+        client.save_offsets.assert_called_once()
+
+        # Should update lights for magic mode areas
+        assert client.update_lights_in_magic_mode.call_count == 2
+        client.update_lights_in_magic_mode.assert_any_call(area1)
+        client.update_lights_in_magic_mode.assert_any_call(area2)
