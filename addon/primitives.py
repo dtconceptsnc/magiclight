@@ -238,11 +238,11 @@ class MagicLightPrimitives:
 
         if was_enabled:
             # MagicLight already enabled - don't change lights, just ensure it stays enabled
-            self.client.enable_magic_mode(area_id, restore_offset=False)
+            self.client.enable_magic_mode(area_id)
             logger.info(f"MagicLight was already enabled for area {area_id}, no changes made")
         else:
-            # MagicLight was disabled - enable it and restore saved offset if available
-            self.client.enable_magic_mode(area_id, restore_offset=True)
+            # MagicLight was disabled - enable it
+            self.client.enable_magic_mode(area_id)
 
             # Get and apply adaptive lighting values for current TimeLocation
             lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
@@ -275,10 +275,9 @@ class MagicLightPrimitives:
         current_offset = self.client.magic_mode_time_offsets.get(area_id, 0)
         
         # Disable magic mode (sets MagicLight = false, preserves TimeLocation)
-        # save_offset=True means it will save current TimeLocation for later restoration
-        await self.client.disable_magic_mode(area_id, save_offset=True)
+        await self.client.disable_magic_mode(area_id)
         
-        logger.info(f"MagicLight disabled for area {area_id}, TimeLocation offset {current_offset} minutes saved, lights unchanged")
+        logger.info(f"MagicLight disabled for area {area_id}, TimeLocation offset {current_offset} minutes preserved, lights unchanged")
     
     async def magiclight_toggle_multiple(self, area_ids: list, source: str = "service_call"):
         """MagicLight Toggle for multiple areas - Smart toggle based on combined light state.
@@ -314,7 +313,7 @@ class MagicLightPrimitives:
             for area_id in area_ids:
                 # Disable HomeGlo mode first to prevent race conditions
                 if area_id in self.client.magic_mode_areas:
-                    await self.client.disable_magic_mode(area_id, save_offset=True)
+                    await self.client.disable_magic_mode(area_id)
                     logger.info(f"HomeGlo disabled for area {area_id}")
                 
                 # Then turn off all lights
@@ -329,7 +328,7 @@ class MagicLightPrimitives:
             
             for area_id in area_ids:
                 # Enable magic mode (sets MagicLight = true)
-                self.client.enable_magic_mode(area_id, restore_offset=True)
+                self.client.enable_magic_mode(area_id)
                 
                 # Get and apply adaptive lighting values
                 lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
@@ -349,7 +348,7 @@ class MagicLightPrimitives:
         """
         await self.magiclight_toggle_multiple([area_id], source)
     
-    async def reset(self, area_id: str, clear_saved: bool = True, source: str = "service_call"):
+    async def reset(self, area_id: str, source: str = "service_call"):
         """Reset - Set TimeLocation to current time (offset 0), enable MagicLight, and unfreeze.
 
         This resets the area to track the current actual time, enables MagicLight mode,
@@ -357,19 +356,12 @@ class MagicLightPrimitives:
 
         Args:
             area_id: The area ID to control
-            clear_saved: Whether to also clear recall offsets (default True for true reset)
             source: Source of the action
         """
         logger.info(f"[{source}] Resetting MagicLight state for area {area_id}")
 
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
-
-        # Clear recall offset for true reset (unless preserving for special cases)
-        if clear_saved and area_id in self.client.recall_time_offsets:
-            del self.client.recall_time_offsets[area_id]
-            self.client.save_offsets()
-            logger.info(f"Cleared recall offset for area {area_id}")
 
         # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward

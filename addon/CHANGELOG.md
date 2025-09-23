@@ -1,5 +1,27 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.7
+**Simplification - Remove Recall Offset Concept**
+
+**BREAKING**: Removed dual offset system for simplified state management
+- Eliminated "recall offsets" - there is now only one offset per area
+- Offsets are preserved in `magic_mode_time_offsets` whether magic mode is on or off
+- No more automatic saving/restoring of offsets when toggling magic mode
+- Removed file I/O for `saved_offsets.json`
+
+**Improvements:**
+- Simplified offset management - step adjustments persist across magic mode toggles
+- More predictable behavior - offsets don't get lost when disabling/enabling magic mode
+- Cleaner codebase - removed ~50 lines of save/restore logic
+- Better user experience - manual adjustments are preserved
+
+**Technical Changes:**
+- Removed `recall_time_offsets` dictionary and related methods
+- Simplified `enable_magic_mode()` and `disable_magic_mode()` method signatures
+- Updated all service primitives to use single offset system
+- Simplified solar midnight reset to only handle active offsets
+- Updated all tests to reflect new single-offset behavior
+
 ## 4.0.6
 **Bug Fix - UI/Backend Time Synchronization**
 

@@ -133,15 +133,6 @@ class TestHomeAssistantWebSocketClient:
         assert client._get_next_message_id() == 2
         assert client.message_id == 3
 
-    @patch('main.HomeAssistantWebSocketClient.load_saved_offsets')
-    def test_init_calls_load_saved_offsets(self, mock_load):
-        """Test that initialization calls load_saved_offsets."""
-        HomeAssistantWebSocketClient(
-            host="localhost", port=8123, access_token="token"
-        )
-
-        mock_load.assert_called_once()
-
     def test_update_zha_group_mapping_magic_prefix(self):
         """Test ZHA group mapping with Magic_ prefix."""
         client = HomeAssistantWebSocketClient(

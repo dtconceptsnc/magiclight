@@ -205,7 +205,7 @@ class TestMagicLightPrimitives:
         await self.primitives.magiclight_on(area_id)
 
         # Should enable magic mode
-        self.mock_client.enable_magic_mode.assert_called_once_with(area_id, restore_offset=True)
+        self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
 
         # Should get and apply adaptive lighting
         self.mock_client.get_adaptive_lighting_for_area.assert_called_once_with(area_id)
@@ -219,8 +219,8 @@ class TestMagicLightPrimitives:
 
         await self.primitives.magiclight_on(area_id)
 
-        # Should still call enable but without restoring offset (preserves current stepped state)
-        self.mock_client.enable_magic_mode.assert_called_once_with(area_id, restore_offset=False)
+        # Should still call enable (preserves current stepped state)
+        self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
 
         # Should NOT update lights when already enabled (preserves stepped-down state)
         self.mock_client.turn_on_lights_adaptive.assert_not_called()
@@ -234,8 +234,8 @@ class TestMagicLightPrimitives:
 
         await self.primitives.magiclight_off(area_id)
 
-        # Should disable magic mode with save_offset=True
-        self.mock_client.disable_magic_mode.assert_called_once_with(area_id, save_offset=True)
+        # Should disable magic mode
+        self.mock_client.disable_magic_mode.assert_called_once_with(area_id)
 
     @pytest.mark.asyncio
     async def test_magiclight_off_not_enabled(self):
@@ -314,46 +314,11 @@ class TestMagicLightPrimitives:
         """Test reset functionality."""
         area_id = "test_area"
         self.mock_client.magic_mode_time_offsets[area_id] = 180  # Current offset
-        self.mock_client.recall_time_offsets = {area_id: 180}  # Recall offset
-        self.mock_client.save_offsets = MagicMock()
 
         await self.primitives.reset(area_id)
 
         # Should reset time offset to 0
         assert self.mock_client.magic_mode_time_offsets[area_id] == 0
-
-        # Should clear recall offset by default (for true reset)
-        assert area_id not in self.mock_client.recall_time_offsets
-        self.mock_client.save_offsets.assert_called_once()
-
-        # Should enable magic mode
-        self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
-
-        # Should get and apply adaptive lighting
-        self.mock_client.get_adaptive_lighting_for_area.assert_called_once_with(area_id)
-        self.mock_client.turn_on_lights_adaptive.assert_called_once_with(
-            area_id,
-            self.mock_client.get_adaptive_lighting_for_area.return_value,
-            transition=1
-        )
-
-    @pytest.mark.asyncio
-    async def test_reset_preserve_recall(self):
-        """Test reset functionality with preserve recall offset option."""
-        area_id = "test_area"
-        self.mock_client.magic_mode_time_offsets[area_id] = 180  # Current offset
-        self.mock_client.recall_time_offsets = {area_id: 180}  # Recall offset
-        self.mock_client.save_offsets = MagicMock()
-
-        await self.primitives.reset(area_id, clear_saved=False)
-
-        # Should reset time offset to 0
-        assert self.mock_client.magic_mode_time_offsets[area_id] == 0
-
-        # Should preserve recall offset when clear_saved=False
-        assert area_id in self.mock_client.recall_time_offsets
-        assert self.mock_client.recall_time_offsets[area_id] == 180
-        self.mock_client.save_offsets.assert_not_called()
 
         # Should enable magic mode
         self.mock_client.enable_magic_mode.assert_called_once_with(area_id)
@@ -433,18 +398,16 @@ class TestSolarMidnightReset:
         self.mock_client = MagicMock()
         self.mock_client.magic_mode_areas = set()
         self.mock_client.magic_mode_time_offsets = {}
-        self.mock_client.recall_time_offsets = {}
         self.mock_client.latitude = 40.7128
         self.mock_client.longitude = -74.0060
         self.mock_client.timezone = "America/New_York"
 
         # Mock async methods
         self.mock_client.update_lights_in_magic_mode = AsyncMock()
-        self.mock_client.save_offsets = MagicMock()
 
     @pytest.mark.asyncio
-    async def test_solar_midnight_resets_both_offsets(self):
-        """Test that solar midnight resets both current and recall offsets."""
+    async def test_solar_midnight_resets_offsets(self):
+        """Test that solar midnight resets current offsets."""
         from main import HomeAssistantWebSocketClient
 
         # Create a real instance to test the method
@@ -455,7 +418,6 @@ class TestSolarMidnightReset:
 
         # Mock the async method
         client.update_lights_in_magic_mode = AsyncMock()
-        client.save_offsets = MagicMock()
 
         # Set up test data
         area1 = "living_room"
@@ -463,8 +425,6 @@ class TestSolarMidnightReset:
 
         # Current offsets
         client.magic_mode_time_offsets = {area1: 120, area2: -60}
-        # Recall offsets
-        client.recall_time_offsets = {area1: 180, area2: -90}
         # Magic mode areas
         client.magic_mode_areas = {area1, area2}
 
@@ -498,13 +458,6 @@ class TestSolarMidnightReset:
         # Both current offsets should be reset to 0
         assert client.magic_mode_time_offsets[area1] == 0
         assert client.magic_mode_time_offsets[area2] == 0
-
-        # Recall offsets should be cleared
-        assert area1 not in client.recall_time_offsets
-        assert area2 not in client.recall_time_offsets
-
-        # Should save the cleared state
-        client.save_offsets.assert_called_once()
 
         # Should update lights for magic mode areas
         assert client.update_lights_in_magic_mode.call_count == 2

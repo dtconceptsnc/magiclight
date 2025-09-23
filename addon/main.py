@@ -57,7 +57,6 @@ class HomeAssistantWebSocketClient:
         self.periodic_update_task = None  # Task for periodic light updates
         self.magic_mode_areas = set()  # Track which areas are in magic mode
         self.magic_mode_time_offsets = {}  # Track time offsets for dimming along curve
-        self.recall_time_offsets = {}  # Recall time offsets when lights are turned off
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         self.area_parity_cache = {}  # Cache of area ZHA parity status
@@ -79,8 +78,6 @@ class HomeAssistantWebSocketClient:
         # Note: Gamma parameters have been replaced with morning/evening curve parameters in brain.py
         # The new curve system provides separate control for morning and evening transitions
         
-        # Load saved time offsets on startup
-        self.load_saved_offsets()
         
     @property
     def websocket_url(self) -> str:
@@ -443,30 +440,6 @@ class HomeAssistantWebSocketClient:
                 except KeyError:
                     logger.warning(f"Invalid color_mode '{color_mode_str}' in config, keeping current: {self.color_mode.value}")
     
-    def load_saved_offsets(self):
-        """Load saved time offsets from disk."""
-        try:
-            data_dir = self._get_data_directory()
-            offsets_file = os.path.join(data_dir, "saved_offsets.json")
-            if os.path.exists(offsets_file):
-                with open(offsets_file, 'r') as f:
-                    self.recall_time_offsets = json.load(f)
-                    logger.info(f"Loaded recall time offsets: {self.recall_time_offsets}")
-            else:
-                logger.info("No saved time offsets found")
-        except Exception as e:
-            logger.warning(f"Failed to load saved time offsets: {e}")
-            
-    def save_offsets(self):
-        """Save recall time offsets to disk."""
-        try:
-            data_dir = self._get_data_directory()
-            offsets_file = os.path.join(data_dir, "saved_offsets.json")
-            with open(offsets_file, 'w') as f:
-                json.dump(self.recall_time_offsets, f)
-                logger.debug(f"Saved recall time offsets: {self.recall_time_offsets}")
-        except Exception as e:
-            logger.warning(f"Failed to save time offsets: {e}")
 
     async def any_lights_on_in_area(
         self,
@@ -533,41 +506,32 @@ class HomeAssistantWebSocketClient:
         # None of the areas had lights on
         return False
     
-    def enable_magic_mode(self, area_id: str, restore_offset: bool = False):
+    def enable_magic_mode(self, area_id: str):
         """Enable magic mode for an area.
-        
+
         Args:
             area_id: The area ID to enable magic mode for
-            restore_offset: Whether to restore saved time offset if available
         """
         self.magic_mode_areas.add(area_id)
-        
-        # Restore recall offset if available, otherwise reset to 0
-        if restore_offset and area_id in self.recall_time_offsets:
-            self.magic_mode_time_offsets[area_id] = self.recall_time_offsets[area_id]
-            logger.info(f"Magic mode enabled for area {area_id}, restored offset: {self.recall_time_offsets[area_id]} minutes")
+
+        # Use existing offset if available, otherwise set to 0
+        if area_id not in self.magic_mode_time_offsets:
+            self.magic_mode_time_offsets[area_id] = 0
+            logger.info(f"Magic mode enabled for area {area_id}, offset set to 0")
         else:
-            self.magic_mode_time_offsets[area_id] = 0  # Reset time offset
-            logger.info(f"Magic mode enabled for area {area_id}, offset reset to 0")
+            logger.info(f"Magic mode enabled for area {area_id}, keeping existing offset: {self.magic_mode_time_offsets[area_id]} minutes")
     
-    async def disable_magic_mode(self, area_id: str, save_offset: bool = True):
+    async def disable_magic_mode(self, area_id: str):
         """Disable magic mode for an area.
-        
+
         Args:
             area_id: The area ID to disable magic mode for
-            save_offset: Whether to save the current time offset for later restoration
         """
         # Check if magic mode was actually enabled
         was_enabled = area_id in self.magic_mode_areas
-        
-        # Save the current offset before removing it
-        if save_offset and area_id in self.magic_mode_time_offsets:
-            self.recall_time_offsets[area_id] = self.magic_mode_time_offsets[area_id]
-            logger.info(f"Saved recall time offset for area {area_id}: {self.recall_time_offsets[area_id]} minutes")
-            self.save_offsets()  # Persist to disk
-        
+
+        # Remove from magic mode areas but keep the offset in magic_mode_time_offsets
         self.magic_mode_areas.discard(area_id)
-        self.magic_mode_time_offsets.pop(area_id, None)  # Remove time offset
 
         # Debug logging to confirm area removal
         logger.info(f"Removed area {area_id} from magic_mode_areas. Current magic areas: {list(self.magic_mode_areas)}")
@@ -762,30 +726,19 @@ class HomeAssistantWebSocketClient:
             # We've crossed solar midnight - reset all offsets
             logger.info(f"Solar midnight reached at {solar_midnight.strftime('%H:%M:%S')} - resetting all manual offsets to 0")
             
-            # Reset all area offsets (both current and recall)
+            # Reset all area offsets
             areas_with_offsets = list(self.magic_mode_time_offsets.keys())
-            areas_with_recall = list(self.recall_time_offsets.keys())
-            all_areas = set(areas_with_offsets + areas_with_recall)
 
-            for area_id in all_areas:
+            for area_id in areas_with_offsets:
                 # Reset current offset
                 old_offset = self.magic_mode_time_offsets.get(area_id, 0)
                 if old_offset != 0:
                     logger.info(f"Resetting offset for area {area_id}: {old_offset} -> 0 minutes")
                     self.magic_mode_time_offsets[area_id] = 0
 
-                # Also clear recall offset to ensure fresh start
-                if area_id in self.recall_time_offsets:
-                    recall = self.recall_time_offsets[area_id]
-                    del self.recall_time_offsets[area_id]
-                    logger.info(f"Cleared recall offset for area {area_id}: {recall} minutes")
-
                 # Update lights in this area if it's in magic mode
                 if area_id in self.magic_mode_areas:
                     await self.update_lights_in_magic_mode(area_id)
-
-            # Save the cleared state to disk
-            self.save_offsets()
             
             return now
         elif now.date() != last_check.date():
