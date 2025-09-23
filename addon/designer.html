@@ -236,7 +236,8 @@ let plotDivRef=null;
 let listenersBound=false;
 let rafId=0,lastClientX=null;
 let setCursorRef = ()=>{};
-let selectedHour = new Date().getHours() + new Date().getMinutes()/60;
+let selectedHour = 12; // Will be set from server time
+let serverTimeInfo = null; // Stores server time and timezone info
 
 // Time progression tracking
 let nowMarkerInterval = null;
@@ -302,7 +303,7 @@ const defaults = {
   mirror_up: true,
   mirror_dn: true,
   // Sun/time defaults
-  month: new Date().getMonth()+1,
+  month: new Date().getMonth()+1, // Keep using browser date for month selection (testing only)
   latitude: 35.0, longitude: -78.6, timezone: 'US/Eastern',
   use12Hour: true,
   // Max dim steps for saving
@@ -554,6 +555,59 @@ function buildHalfArc(half){
 function rebuildHalfArcCaches(morn, eve){
   morningArc=buildHalfArc(morn);
   eveningArc=buildHalfArc(eve);
+}
+
+/* =========================
+   Server Time Synchronization
+========================= */
+async function fetchServerTime() {
+  try {
+    const response = await fetch('api/time');
+    if (response.ok) {
+      serverTimeInfo = await response.json();
+
+      // Update selectedHour to server time
+      selectedHour = serverTimeInfo.current_hour;
+
+      // Update location params from server
+      params.latitude = serverTimeInfo.latitude;
+      params.longitude = serverTimeInfo.longitude;
+      params.timezone = serverTimeInfo.timezone;
+
+      console.log(`Server time synced: ${serverTimeInfo.current_hour.toFixed(2)}h in ${serverTimeInfo.timezone}`);
+      console.log(`Current lighting: ${serverTimeInfo.lighting.brightness}% / ${serverTimeInfo.lighting.kelvin}K`);
+
+      return serverTimeInfo;
+    } else {
+      console.warn('Failed to fetch server time, using browser time as fallback');
+      // Fallback to browser time
+      const now = new Date();
+      selectedHour = now.getHours() + now.getMinutes() / 60;
+      return null;
+    }
+  } catch (error) {
+    console.error('Error fetching server time:', error);
+    // Fallback to browser time
+    const now = new Date();
+    selectedHour = now.getHours() + now.getMinutes() / 60;
+    return null;
+  }
+}
+
+function getCurrentHour() {
+  // Use server time if available, otherwise fallback to browser time
+  if (serverTimeInfo) {
+    // Calculate elapsed time since last server sync (approximate)
+    const serverTime = new Date(serverTimeInfo.current_time);
+    const now = new Date();
+    const elapsedMs = now.getTime() - serverTime.getTime();
+    const elapsedHours = elapsedMs / (1000 * 60 * 60);
+    return (serverTimeInfo.current_hour + elapsedHours) % 24;
+  } else {
+    // Fallback to browser time
+    const now = new Date();
+    return now.getHours() + now.getMinutes() / 60;
+  }
 }
 
 /* =========================
@@ -897,8 +951,7 @@ function buildSunColored(x,sun){
 function updateNowMarker(){
   if(!plotDivRef || nowMarkerIndex === -1) return;
 
-  const now = new Date();
-  const nowHour = now.getHours() + now.getMinutes()/60;
+  const nowHour = getCurrentHour();
   const nowBri = interpAtHour(arc.hours, arc.bris, nowHour);
   const nowCCT = interpAtHour(arc.hours, arc.ccts, nowHour);
   const nowOutline = getComputedStyle(document.documentElement).getPropertyValue('--nowBlue').trim()||'#66b8ff';
@@ -960,7 +1013,7 @@ async function renderPlot(series){
     hovertemplate:'%{text}<br>MagicLight %{y:.0f}%<br>color temperature %{customdata:.0f} K<extra></extra>',
     text:hours.map(h=>formatTime(h,params.use12Hour)), customdata:ccts, yaxis:'y', showlegend:false};
 
-  const now=new Date(); const nowHour=now.getHours()+now.getMinutes()/60;
+  const nowHour = getCurrentHour();
   const nowBri=interpAtHour(hours,bris,nowHour);
   const nowCCT=interpAtHour(hours,ccts,nowHour);
   const nowOutline=getComputedStyle(document.documentElement).getPropertyValue('--nowBlue').trim()||'#66b8ff';
@@ -1546,7 +1599,7 @@ async function loadConfiguration() {
 async function draw(){ const series=await compute(); await renderPlot(series); updateStepButtons(); }
 function resetAll(){
   Object.keys(defaults).forEach(k=>params[k]=defaults[k]);
-  selectedHour = new Date().getHours()+new Date().getMinutes()/60;
+  selectedHour = getCurrentHour();
   _solarCache=null;
 
   addMorningEveningUI();
@@ -1566,8 +1619,22 @@ document.getElementById('reset-all').onclick=resetAll;
 document.getElementById('save-config').onclick=saveConfiguration;
 document.getElementById('step-count').value=params.max_dim_steps || defaults.max_dim_steps;
 
-// Initialize
-loadConfiguration();
+// Initialize - fetch server time first, then load configuration
+async function initialize() {
+  try {
+    // Fetch server time and sync timezone
+    await fetchServerTime();
+
+    // Load configuration after time sync
+    await loadConfiguration();
+  } catch (error) {
+    console.error('Error during initialization:', error);
+    // Fall back to loading configuration without server time
+    await loadConfiguration();
+  }
+}
+
+initialize();
 
 // Start auto-updating now marker every minute
 function startNowMarkerUpdates() {
@@ -1576,9 +1643,27 @@ function startNowMarkerUpdates() {
     clearInterval(nowMarkerInterval);
   }
 
+  // Function to update both marker and periodically sync server time
+  let syncCounter = 0;
+  const updateWithSync = async () => {
+    updateNowMarker();
+
+    // Re-sync with server every 10 minutes to account for any drift
+    syncCounter++;
+    if (syncCounter >= 10) {
+      syncCounter = 0;
+      try {
+        await fetchServerTime();
+        updateNowMarker(); // Update again with fresh server time
+      } catch (error) {
+        console.warn('Failed to re-sync server time:', error);
+      }
+    }
+  };
+
   // Update immediately, then every minute
-  updateNowMarker();
-  nowMarkerInterval = setInterval(updateNowMarker, 60000); // 60 seconds
+  updateWithSync();
+  nowMarkerInterval = setInterval(updateWithSync, 60000); // 60 seconds
 }
 
 // Start the timer after page loads

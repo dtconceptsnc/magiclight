@@ -24,7 +24,7 @@ def calculate_step_sequence(current_hour: float, action: str, max_steps: int, co
     """Calculate a sequence of step positions for visualization.
 
     Args:
-        current_hour: Current solar time (0-24)
+        current_hour: Current clock time (0-24)
         action: 'brighten' or 'dim'
         max_steps: Maximum number of steps to calculate
         config: Configuration dict with curve parameters
@@ -55,10 +55,10 @@ def calculate_step_sequence(current_hour: float, action: str, max_steps: int, co
     solar_noon = solar_events["noon"]
     solar_midnight = solar_events["noon"] - timedelta(hours=12)
 
-    # Convert solar hour (0-24) to actual datetime
-    # current_hour 0 = solar midnight, 12 = solar noon, 24 = next solar midnight
-    hours_from_solar_midnight = current_hour
-    adjusted_time = solar_midnight + timedelta(hours=hours_from_solar_midnight)
+    # Convert clock hour (0-24) to actual datetime
+    # current_hour is now clock time (0 = midnight, 12 = noon, etc.)
+    base_time = datetime.now(tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
+    adjusted_time = base_time + timedelta(hours=current_hour)
 
     try:
         for step_num in range(max_steps):
@@ -100,12 +100,8 @@ def calculate_step_sequence(current_hour: float, action: str, max_steps: int, co
                 # Apply the time offset
                 adjusted_time += timedelta(minutes=result['time_offset_minutes'])
 
-                # Convert back to solar hour (0-24 scale)
-                time_from_solar_midnight = adjusted_time - solar_midnight
-                new_hour = time_from_solar_midnight.total_seconds() / 3600
-
-                # Ensure hour stays in valid range
-                new_hour = new_hour % 24
+                # Convert back to clock hour (0-24 scale)
+                new_hour = adjusted_time.hour + adjusted_time.minute / 60.0
 
                 steps.append({
                     'hour': new_hour,
@@ -195,12 +191,15 @@ def generate_curve_data(config: dict) -> dict:
         evening_brightness = []
         evening_cct = []
 
-        # Sample the full 24-hour curve (exclude the duplicate endpoint)
-        current_time = solar_midnight
+        # Sample the full 24-hour curve using actual clock time
+        # Start from midnight of today and sample every 0.1 hours
+        base_time = datetime.now(tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
+
         for i in range(int(24 / sample_step)):
-            # Calculate solar hour (0-24 scale where 0 = solar midnight, 12 = solar noon)
-            time_from_solar_midnight = current_time - solar_midnight
-            solar_hour = (time_from_solar_midnight.total_seconds() / 3600) % 24
+            current_time = base_time + timedelta(hours=i * sample_step)
+
+            # Calculate hour of day (0-24 scale) for plotting
+            clock_hour = current_time.hour + current_time.minute / 60.0
 
             # Get adaptive lighting values using the main function
             lighting_values = get_adaptive_lighting(
@@ -228,40 +227,40 @@ def generate_curve_data(config: dict) -> dict:
                 sun_power = 0
 
             # Add to main arrays
-            hours.append(solar_hour)
+            hours.append(clock_hour)
             brightness_values.append(brightness)
             cct_values.append(cct)
             rgb_values.append(list(rgb))
             sun_power_values.append(sun_power)
 
-            # Add to appropriate segment
-            if solar_hour < 12:
-                morning_hours.append(solar_hour)
+            # Add to appropriate segment (split at solar noon, not clock noon)
+            # Convert solar noon to clock time for proper segmentation
+            solar_noon_clock = solar_noon.hour + solar_noon.minute / 60.0
+            if clock_hour < solar_noon_clock:
+                morning_hours.append(clock_hour)
                 morning_brightness.append(brightness)
                 morning_cct.append(cct)
             else:
-                evening_hours.append(solar_hour)
+                evening_hours.append(clock_hour)
                 evening_brightness.append(brightness)
                 evening_cct.append(cct)
 
             # Move to next sample point
             current_time += timedelta(hours=sample_step)
 
-        # Convert solar times to hours (0-24 scale)
-        solar_noon_hour = 12.0
-        solar_midnight_hour = 0.0
+        # Convert solar times to clock hours (0-24 scale)
+        solar_noon_hour = solar_noon.hour + solar_noon.minute / 60.0
+        solar_midnight_hour = (solar_noon_hour + 12) % 24
 
         # Calculate sunrise/sunset if available
         sunrise_hour = None
         sunset_hour = None
         try:
             if 'sunrise' in solar_events and solar_events['sunrise']:
-                sunrise_offset = solar_events['sunrise'] - solar_midnight
-                sunrise_hour = (sunrise_offset.total_seconds() / 3600) % 24
+                sunrise_hour = solar_events['sunrise'].hour + solar_events['sunrise'].minute / 60.0
 
             if 'sunset' in solar_events and solar_events['sunset']:
-                sunset_offset = solar_events['sunset'] - solar_midnight
-                sunset_hour = (sunset_offset.total_seconds() / 3600) % 24
+                sunset_hour = solar_events['sunset'].hour + solar_events['sunset'].minute / 60.0
         except:
             pass
 
@@ -333,6 +332,7 @@ class LightDesignerServer:
         self.app.router.add_route('POST', '/{path:.*}/api/config', self.save_config)
         self.app.router.add_route('GET', '/{path:.*}/api/steps', self.get_step_sequences)
         self.app.router.add_route('GET', '/{path:.*}/api/curve', self.get_curve_data)
+        self.app.router.add_route('GET', '/{path:.*}/api/time', self.get_time)
         self.app.router.add_route('GET', '/{path:.*}/health', self.health_check)
 
         # Direct API routes (for non-ingress access)
@@ -340,6 +340,7 @@ class LightDesignerServer:
         self.app.router.add_post('/api/config', self.save_config)
         self.app.router.add_get('/api/steps', self.get_step_sequences)
         self.app.router.add_get('/api/curve', self.get_curve_data)
+        self.app.router.add_get('/api/time', self.get_time)
         self.app.router.add_get('/health', self.health_check)
         
         # Handle root and any other paths (catch-all must be last)
@@ -412,6 +413,65 @@ class LightDesignerServer:
     async def health_check(self, request: Request) -> Response:
         """Health check endpoint."""
         return web.json_response({"status": "healthy"})
+
+    async def get_time(self, request: Request) -> Response:
+        """Get current server time in Home Assistant timezone."""
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from brain import get_adaptive_lighting
+
+            # Get location from environment variables (set by main.py)
+            latitude = float(os.getenv("HASS_LATITUDE", "35.0"))
+            longitude = float(os.getenv("HASS_LONGITUDE", "-78.6"))
+            timezone = os.getenv("HASS_TIME_ZONE", "US/Eastern")
+
+            # Get current time in HA timezone
+            try:
+                tzinfo = ZoneInfo(timezone)
+            except:
+                tzinfo = None
+
+            now = datetime.now(tzinfo)
+
+            # Calculate current hour (0-24 scale)
+            current_hour = now.hour + now.minute / 60.0
+
+            # Load current configuration to use same parameters as UI
+            config = await self.load_config()
+
+            # Get current adaptive lighting values for comparison using same config as UI
+            lighting_values = get_adaptive_lighting(
+                latitude=latitude,
+                longitude=longitude,
+                timezone=timezone,
+                current_time=now,
+                min_color_temp=config.get('min_color_temp', 500),
+                max_color_temp=config.get('max_color_temp', 6500),
+                min_brightness=config.get('min_brightness', 1),
+                max_brightness=config.get('max_brightness', 100),
+                config=config
+            )
+
+            return web.json_response({
+                "current_time": now.isoformat(),
+                "current_hour": current_hour,
+                "timezone": timezone,
+                "latitude": latitude,
+                "longitude": longitude,
+                "lighting": {
+                    "brightness": lighting_values.get('brightness', 0),
+                    "kelvin": lighting_values.get('kelvin', 0),
+                    "solar_position": lighting_values.get('solar_position', 0)
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting time info: {e}")
+            return web.json_response(
+                {"error": f"Failed to get time info: {e}"},
+                status=500
+            )
 
     async def get_step_sequences(self, request: Request) -> Response:
         """Calculate step sequences for visualization."""

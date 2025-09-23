@@ -1,5 +1,21 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.6
+**Bug Fix - UI/Backend Time Synchronization**
+
+**Bug Fixes:**
+- Fixed timezone synchronization between Light Designer UI and backend
+- UI now fetches server time from Home Assistant instead of using browser time
+- Resolved issue where UI showed different lighting values than backend would apply
+- Fixed curve visualization to use clock time consistently across all API endpoints
+- Fixed step calculation markers to align with corrected curve data
+
+**Technical Details:**
+- Added `/api/time` endpoint to provide server time in Home Assistant timezone
+- Updated curve generation (`/api/curve`) to use clock time instead of mixing solar/clock time
+- Fixed step sequences (`/api/steps`) to interpret input as clock time
+- UI now syncs with server time on load and periodically re-syncs to prevent drift
+
 ## 4.0.5
 **Bugs + UI Backend**
 
