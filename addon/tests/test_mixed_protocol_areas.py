@@ -12,9 +12,6 @@ import pytest
 magiclight_path = Path(__file__).parent.parent / 'magiclight'
 sys.path.insert(0, str(magiclight_path))
 
-# Create mock modules before importing
-sys.modules['switch'] = Mock()
-sys.modules['switch'].SwitchCommandProcessor = Mock
 
 from light_controller import ZigBeeController, Protocol
 from brain import ColorMode
@@ -42,12 +39,6 @@ class TestMixedProtocolAreas:
         client.call_service = AsyncMock()
         client.color_mode = ColorMode.XY
         
-        # Set up mock device mappings
-        client.device_to_area_mapping = {
-            "switch1": "living_room",  # ZHA-only area
-            "switch2": "bedroom",      # Mixed area
-            "switch3": "kitchen"       # WiFi-only area
-        }
         
         # Set up parity cache
         client.area_parity_cache = {

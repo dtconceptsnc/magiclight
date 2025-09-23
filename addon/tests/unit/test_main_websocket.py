@@ -222,11 +222,10 @@ class TestHomeAssistantWebSocketClient:
         from unittest.mock import Mock
 
         # Skip test if modules are mocked (happens when running with other tests)
-        if any(isinstance(sys.modules.get(m), Mock) for m in ['switch', 'primitives']):
+        if any(isinstance(sys.modules.get(m), Mock) for m in ['primitives']):
             pytest.skip("Modules are mocked by other tests, skipping to avoid interference")
 
         # Import the classes we need
-        from switch import SwitchCommandProcessor
         from primitives import MagicLightPrimitives
 
         client = HomeAssistantWebSocketClient(
@@ -234,20 +233,13 @@ class TestHomeAssistantWebSocketClient:
         )
 
         # Check that all components are properly initialized
-        assert client.switch_processor is not None, "switch_processor should not be None"
         assert client.primitives is not None, "primitives should not be None"
 
-        assert isinstance(client.switch_processor, SwitchCommandProcessor), \
-            f"switch_processor should be SwitchCommandProcessor, got {type(client.switch_processor)}"
         assert isinstance(client.primitives, MagicLightPrimitives), \
             f"primitives should be MagicLightPrimitives, got {type(client.primitives)}"
 
-        assert hasattr(client.switch_processor, 'client'), \
-            "switch_processor should have 'client' attribute"
         assert hasattr(client.primitives, 'client'), \
             "primitives should have 'client' attribute"
-        assert client.switch_processor.client is client, \
-            "switch_processor.client should reference the HomeAssistantWebSocketClient instance"
         assert client.primitives.client is client, \
             "primitives.client should reference the HomeAssistantWebSocketClient instance"
 

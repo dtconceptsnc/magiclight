@@ -12,7 +12,6 @@ from typing import Dict, Any, List, Optional, Sequence, Union
 import websockets
 from websockets.client import WebSocketClientProtocol
 
-from switch import SwitchCommandProcessor
 from primitives import MagicLightPrimitives
 from brain import get_adaptive_lighting, ColorMode
 from light_controller import (
@@ -49,10 +48,7 @@ class HomeAssistantWebSocketClient:
         self.websocket: WebSocketClientProtocol = None
         self.message_id = 1
         self.sun_data = {}  # Store latest sun data
-        self.switch_to_area_mapping = {}  # Will be populated from HA
-        self.device_to_area_mapping = {}  # Map device IDs to areas
         self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
-        self.switch_processor = SwitchCommandProcessor(self)  # Initialize switch processor
         self.primitives = MagicLightPrimitives(self)  # Initialize primitives handler
         self.light_controller = None  # Will be initialized after websocket connection
         self.latitude = None  # Home Assistant latitude
@@ -321,7 +317,10 @@ class HomeAssistantWebSocketClient:
         
         # Build target
         target = {target_type: target_value}
-        
+
+        # Debug log exactly what we're sending
+        logger.info(f"MagicLight sending light.turn_on with data: {service_data}, target: {target}")
+
         # Call the service
         await self.call_service("light", "turn_on", service_data, target)
         
@@ -371,40 +370,6 @@ class HomeAssistantWebSocketClient:
         
         return message_id
         
-    async def get_device_registry(self) -> Dict[str, str]:
-        """Get device registry information and wait for switches to be mapped.
-        
-        Returns:
-            Dictionary mapping device IDs to area IDs for switches
-        """
-        result = await self.send_message_wait_response({"type": "config/device_registry/list"})
-        
-        if result and isinstance(result, list):
-            # Process device registry to find switches
-            for device in result:
-                device_id = device.get("id")
-                area_id = device.get("area_id")
-                name = (device.get("name_by_user") or "")
-                model = device.get("model", "")
-                
-                if device_id and area_id and "switch" in name.lower():
-                    self.device_to_area_mapping[device_id] = area_id
-                    logger.info(f"Mapped device {device_id} ({name}, {model}) to area {area_id}")
-            
-            # Log summary of discovered switches
-            if self.device_to_area_mapping:
-                logger.info("=== Discovered Switches ===")
-                logger.info(f"Found {len(self.device_to_area_mapping)} switches:")
-                for dev_id, area in self.device_to_area_mapping.items():
-                    logger.info(f"  - Device ID: {dev_id} -> Area: {area}")
-                logger.info("=========================")
-                
-                areas_with_switches = set(self.device_to_area_mapping.values())
-                logger.info(f"Found {len(areas_with_switches)} areas with switches")
-            else:
-                logger.warning("No switches found in device registry")
-        
-        return self.device_to_area_mapping
         
     async def get_config(self) -> bool:
         """Get Home Assistant configuration and wait for response.
@@ -438,20 +403,6 @@ class HomeAssistantWebSocketClient:
             
         return False
         
-    async def get_areas_with_switches(self) -> List[str]:
-        """Get all areas that have devices with 'Switch' in the friendly name.
-        
-        Returns:
-            List of area IDs
-        """
-        areas_with_switches = set()
-        
-        # Get all areas from device mapping
-        for device_id, area_id in self.device_to_area_mapping.items():
-            if area_id:
-                areas_with_switches.add(area_id)
-        
-        return list(areas_with_switches)
     
     def _get_data_directory(self) -> str:
         """Get the appropriate data directory based on environment.
@@ -617,11 +568,14 @@ class HomeAssistantWebSocketClient:
         
         self.magic_mode_areas.discard(area_id)
         self.magic_mode_time_offsets.pop(area_id, None)  # Remove time offset
-        
+
+        # Debug logging to confirm area removal
+        logger.info(f"Removed area {area_id} from magic_mode_areas. Current magic areas: {list(self.magic_mode_areas)}")
+
         if not was_enabled:
             logger.info(f"Magic mode already disabled for area {area_id}")
             return
-            
+
         logger.info(f"Magic mode disabled for area {area_id}")
     
     async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None, apply_time_offset: bool = True) -> Dict[str, Any]:
@@ -671,7 +625,7 @@ class HomeAssistantWebSocketClient:
                 except Exception as e:
                     logger.debug(f"Could not load config from {path}: {e}")
 
-        # Keep merged config available to other components (e.g., switch)
+        # Keep merged config available to other components
         try:
             self.config = merged_config
         except Exception:
@@ -729,7 +683,7 @@ class HomeAssistantWebSocketClient:
         elif os.getenv('MAX_BRIGHTNESS'):
             curve_params['max_brightness'] = int(os.getenv('MAX_BRIGHTNESS'))
         
-        # Store curve parameters for use in switch dimming calculations
+        # Store curve parameters for dimming calculations
         self.curve_params = curve_params
         
         # Get adaptive lighting values with new morning/evening curves
@@ -841,31 +795,32 @@ class HomeAssistantWebSocketClient:
         return last_check
     
     async def periodic_light_updater(self):
-        """Periodically update lights in areas with switches."""
+        """Periodically update lights in areas that have magic mode enabled."""
         last_solar_midnight_check = None
-        
+
         while True:
             try:
                 # Wait for 60 seconds
                 await asyncio.sleep(60)
-                
+
                 # Check if we should reset offsets at solar midnight
                 last_solar_midnight_check = await self.reset_offsets_at_solar_midnight(last_solar_midnight_check)
-                
-                # Get all areas with switches
-                areas = await self.get_areas_with_switches()
-                
-                if not areas:
-                    logger.debug("No areas with switches found for periodic update")
+
+                # Get all areas in magic mode
+                magic_areas = list(self.magic_mode_areas)
+
+                if not magic_areas:
+                    logger.debug("No areas in magic mode for periodic update")
                     continue
-                
-                logger.info(f"Running periodic light update for {len(areas)} areas with switches")
-                
-                # Update lights only in areas that are in magic mode
-                for area_id in areas:
-                    if area_id in self.magic_mode_areas:
-                        await self.update_lights_in_magic_mode(area_id)
-                    
+
+                logger.info(f"Running periodic light update for {len(magic_areas)} areas in magic mode")
+                logger.info(f"Areas in magic mode: {magic_areas}")
+
+                # Update lights in all magic mode areas
+                for area_id in magic_areas:
+                    logger.info(f"Updating lights in magic mode area: {area_id}")
+                    await self.update_lights_in_magic_mode(area_id)
+
             except asyncio.CancelledError:
                 logger.info("Periodic light updater cancelled")
                 break
@@ -923,53 +878,30 @@ class HomeAssistantWebSocketClient:
         except Exception as e:
             logger.error(f"Failed to refresh area parity cache: {e}")
     
-    async def sync_zha_groups(self, refresh_devices: bool = True):
-        """Helper method to sync ZHA groups with areas.
-        
-        Args:
-            refresh_devices: Whether to refresh the device registry first (default True).
-                            Set to False during startup when registry was just loaded.
-        """
+    async def sync_zha_groups(self):
+        """Helper method to sync ZHA groups with all areas."""
         try:
             logger.info("=" * 60)
             logger.info("Starting ZHA group sync process")
             logger.info("=" * 60)
-            
-            # Refresh device registry first (unless already done)
-            if refresh_devices:
-                await self.get_device_registry()
-            
+
             zigbee_controller = self.light_controller.controllers.get(Protocol.ZIGBEE)
             if zigbee_controller:
-                areas_with_switches = set(self.device_to_area_mapping.values())
-                if areas_with_switches:
-                    logger.info(f"Found {len(areas_with_switches)} areas with switches")
-                    success, areas = await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
-                    if success:
-                        logger.info("ZHA group sync completed")
-                        # Refresh parity cache using the areas data we already have
-                        await self.refresh_area_parity_cache(areas_data=areas)
-                else:
-                    logger.warning("No areas with switches found")
+                # Sync ZHA groups with all areas (no longer limited to areas with switches)
+                success, areas = await zigbee_controller.sync_zha_groups_with_areas()
+                if success:
+                    logger.info("ZHA group sync completed")
+                    # Refresh parity cache using the areas data we already have
+                    await self.refresh_area_parity_cache(areas_data=areas)
             else:
                 logger.warning("ZigBee controller not available for group sync")
-            
+
             logger.info("=" * 60)
             logger.info("ZHA group sync process complete")
             logger.info("=" * 60)
         except Exception as e:
             logger.error(f"Failed to sync ZHA groups: {e}")
     
-    async def handle_zha_switch_press(self, device_id: str, command: str, button: str):
-        """Handle ZHA switch button press.
-        
-        Args:
-            device_id: The device ID from ZHA
-            command: The command (e.g., 'on_press')
-            button: The button identifier (e.g., 'on')
-        """
-        # Delegate to switch processor
-        await self.switch_processor.process_button_press(device_id, command, button)
     
     async def handle_message(self, message: Dict[str, Any]):
         """Handle incoming messages."""
@@ -1070,45 +1002,14 @@ class HomeAssistantWebSocketClient:
                     else:
                         logger.warning("magiclight_toggle called without area_id")
             
-            # Handle ZHA events
-            elif event_type == "zha_event":
-                #logger.info("=== ZHA Event Received ===")
-                #logger.info(f"Device ID: {event_data.get('device_id')}")
-                #logger.info(f"Device IEEE: {event_data.get('device_ieee')}")
-                #logger.info(f"Unique ID: {event_data.get('unique_id')}")
-                #logger.info(f"Endpoint ID: {event_data.get('endpoint_id')}")
-                #logger.info(f"Cluster ID: {event_data.get('cluster_id')}")
-                logger.info(f"Command: {event_data.get('command')}")
-                logger.info(f"Args: {event_data.get('args')}")
-                #logger.info(f"Params: {event_data.get('params')}")
-                #logger.info(f"Full ZHA data: {json.dumps(event_data, indent=2)}")
-                logger.info("========================")
-                
-                # Handle switch button presses
-                device_id = event_data.get('device_id')
-                command = event_data.get('command')
-                args = event_data.get('args', {})
-                
-                # Skip raw "step" commands - we'll handle the processed button events instead
-                if command == "step":
-                    logger.info(f"Ignoring raw step command from device {device_id}")
-                    return
-                
-                # Check if args is a dict before trying to get button
-                button = None
-                if isinstance(args, dict):
-                    button = args.get('button')
-                
-                if device_id and command and button:
-                    await self.handle_zha_switch_press(device_id, command, button)
             
             # Handle device registry updates (when devices are added/removed/modified)
             elif event_type == "device_registry_updated":
                 action = event_data.get("action")
                 device_id = event_data.get("device_id")
-                
+
                 logger.info(f"Device registry updated: action={action}, device_id={device_id}")
-                
+
                 # Trigger resync if a device was added, removed, or updated
                 if action in ["create", "update", "remove"]:
                     await self.sync_zha_groups()  # This includes parity cache refresh
@@ -1157,18 +1058,6 @@ class HomeAssistantWebSocketClient:
                     self.sun_data = new_state.get("attributes", {})
                     logger.info(f"Updated sun data: elevation={self.sun_data.get('elevation')}")
                 
-                # Handle switch button presses - look for entities with "Switch" label
-                if isinstance(new_state, dict):
-                    attributes = new_state.get("attributes", {})
-                    friendly_name = attributes.get("name_by_user", "")
-                    
-                    if "Switch" in friendly_name:
-                        new_state_value = new_state.get("state")
-                        old_state_value = old_state.get("state") if old_state and isinstance(old_state, dict) else None
-                        
-                        # Detect button press (state change to a press state)
-                        if new_state_value in ["on_press", "initial_press"] and old_state_value != new_state_value:
-                            logger.info(f"Switch button press detected via state change: {entity_id} -> {new_state_value}")
                 
                 #if isinstance(new_state, dict):
                 #    logger.info(f"State changed: {entity_id} -> {new_state.get('state')}")
@@ -1180,45 +1069,11 @@ class HomeAssistantWebSocketClient:
             msg_id = message.get("id")
             result = message.get("result")
             
-            # Handle device registry result
+            # Handle states result
             if result and isinstance(result, list) and len(result) > 0:
-                # Check if this is device registry data
                 first_item = result[0]
-                if isinstance(first_item, dict) and "id" in first_item and "area_id" in first_item:
-                    # This is device registry data
-                    for device in result:
-                        #logger.info(f"{device}")
-                        device_id = device.get("id")
-                        area_id = device.get("area_id")
-                        name = (device.get("name_by_user") or "")
-                        model = device.get("model", "")
-                        
-                        if device_id and area_id and "switch" in name.lower():
-                            self.device_to_area_mapping[device_id] = area_id
-                            logger.info(f"Mapped switch device {device_id} ({name}, {model}) to area '{area_id}'")
-                    
-                    # Log summary of discovered switches
-                    if self.device_to_area_mapping:
-                        logger.info("=== Discovered Switches ===")
-                        logger.info(f"Found {len(self.device_to_area_mapping)} switches:")
-                        for dev_id, area in self.device_to_area_mapping.items():
-                            logger.info(f"  - Device ID: {dev_id} -> Area: {area}")
-                        logger.info("=========================")
-                        
-                        # Don't automatically enable magic mode - let it be controlled by switch presses
-                        areas_with_switches = set(self.device_to_area_mapping.values())
-                        logger.info(f"Found {len(areas_with_switches)} areas with switches")
-                        
-                        # Note: Parity checking now happens dynamically in turn_on_lights_adaptive
-                        logger.info("=== Switch -> Light Control Method ===")
-                        logger.info(f"Areas with switches will use either ZHA group (if all lights are ZHA)")
-                        logger.info(f"or area-based control (if any non-ZHA lights present)")
-                        logger.info("="*50)
-                    else:
-                        logger.warning("No switches found in device registry")
-                
                 # Check if this is states data
-                elif isinstance(first_item, dict) and "entity_id" in first_item:
+                if isinstance(first_item, dict) and "entity_id" in first_item:
                     # This is states data - update our cache
                     self.cached_states.clear()
                     for state in result:
@@ -1432,17 +1287,14 @@ class HomeAssistantWebSocketClient:
                     else:
                         logger.warning("⚠ No ZHA groups found (looking for 'Magic_' pattern in light names)")
                 
-                # Get device registry to map devices to areas (now waits for completion)
-                device_mapping = await self.get_device_registry()
                 
                 # Get Home Assistant configuration (lat/lng/tz)
                 config_loaded = await self.get_config()
                 if not config_loaded:
                     logger.warning("⚠ Failed to load Home Assistant configuration - adaptive lighting may not work correctly")
                 
-                # Sync ZHA groups with areas that have switches (includes parity cache refresh)
-                # Don't refresh devices since we just loaded them
-                await self.sync_zha_groups(refresh_devices=False)
+                # Sync ZHA groups with all areas (includes parity cache refresh)
+                await self.sync_zha_groups()
                 
                 # Subscribe to all events
                 await self.subscribe_events()

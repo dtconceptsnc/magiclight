@@ -1,5 +1,15 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.5
+**Bugs + UI Backend**
+
+**BREAKING**: Removed automatic ZHA switch detection and handling
+- Addon now operates exclusively through Home Assistant integration service calls
+- Periodic light updates now target all areas in magic mode instead of areas with switches
+
+**Improvements:**
+- UI now uses python backend for data instead of separate calculations in the JS
+
 ## 4.0.4
 **Bug Fix - Solar Midnight Recall Offset Reset**
 

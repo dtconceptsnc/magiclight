@@ -12,9 +12,6 @@ import pytest
 magiclight_path = Path(__file__).parent.parent.parent / 'magiclight'
 sys.path.insert(0, str(magiclight_path))
 
-# Create mock modules before importing
-sys.modules['switch'] = Mock()
-sys.modules['switch'].SwitchCommandProcessor = Mock
 
 from light_controller import ZigBeeController, Protocol, HomeAssistantController, MultiProtocolController, LightCommand
 from brain import ColorMode
@@ -258,8 +255,7 @@ class TestZHAParity:
         ]
         
         # Run sync
-        areas_with_switches = {"room1", "room2"}
-        success, areas_dict = await zigbee_controller.sync_zha_groups_with_areas(areas_with_switches)
+        success, areas_dict = await zigbee_controller.sync_zha_groups_with_areas()
         
         assert success is True
         # Verify that only room1 got a group (has ZHA parity)

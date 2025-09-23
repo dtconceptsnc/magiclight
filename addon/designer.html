@@ -406,36 +406,87 @@ function sampleHalf(dir, startT, endT, hoursArr, briArr, cctArr, sunArr, anchorH
   }
 }
 
-function compute(){
-  const {solarNoon, solarMidnight, sunrise, sunset} = getSolarTimes();
+async function compute(){
+  try {
+    // Send current UI parameters (excluding location data which comes from server)
+    const uiParams = {
+      month: params.month,
+      min_color_temp: params.min_color_temp,
+      max_color_temp: params.max_color_temp,
+      min_brightness: params.min_brightness,
+      max_brightness: params.max_brightness,
+      mid_bri_up: params.mid_bri_up,
+      steep_bri_up: params.steep_bri_up,
+      mid_cct_up: params.mid_cct_up,
+      steep_cct_up: params.steep_cct_up,
+      mid_bri_dn: params.mid_bri_dn,
+      steep_bri_dn: params.steep_bri_dn,
+      mid_cct_dn: params.mid_cct_dn,
+      steep_cct_dn: params.steep_cct_dn,
+      mirror_up: params.mirror_up,
+      mirror_dn: params.mirror_dn
+    };
 
-  const briBounds=[params.min_brightness, params.max_brightness];
-  const cctBounds=[params.min_color_temp, params.max_color_temp];
+    // Build query string with UI parameters
+    const queryParams = new URLSearchParams();
+    Object.entries(uiParams).forEach(([key, value]) => {
+      queryParams.append(key, value.toString());
+    });
 
-  const mHours=[], mBri=[], mCct=[], mSun=[];
-  // Build morning without an anchor first (0 → ~12)
-  sampleHalf(+1, 0, 12 - SAMPLE_STEP, mHours, mBri, mCct, mSun, null, briBounds, cctBounds);
-  // Append a noon anchor at the *end* so time stays monotonic
-  mHours.push(getSolarTimes().solarNoon);
-  mBri.push(params.max_brightness);
-  mCct.push(params.max_color_temp);
-  mSun.push(clearSkyGHI(getSolarTimes().solarNoon, params.month, params.latitude, params.longitude, params.timezone));
+    // Fetch curve data from Python API with current UI parameters
+    const response = await fetch(`api/curve?${queryParams.toString()}`);
 
-  const eHours=[], eBri=[], eCct=[], eSun=[];
-  sampleHalf(-1, 12 + SAMPLE_STEP, 24.0001, eHours, eBri, eCct, eSun, solarNoon, briBounds, cctBounds);
-  eBri[eBri.length-1] = params.min_brightness;
-  eCct[eCct.length-1] = params.min_color_temp;
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
 
-  const hours=[...mHours,...eHours], bri=[...mBri,...eBri], cct=[...mCct,...eCct], sun=[...mSun,...eSun];
-  const idx=hours.map((_,i)=>i).sort((a,b)=>hours[a]-hours[b]);
-  const H=idx.map(i=>hours[i]), B=idx.map(i=>bri[i]), C=idx.map(i=>cct[i]), S=idx.map(i=>sun[i]);
+    const data = await response.json();
 
-  return {
-    hours:H, bris:B, ccts:C, sunPower:S,
-    morn:{hours:mHours, bris:mBri, ccts:mCct},
-    eve: {hours:eHours, bris:eBri, ccts:eCct},
-    solar:{sunrise, sunset, solarNoon, solarMidnight}
-  };
+    // Return data in the expected format
+    return {
+      hours: data.hours,
+      bris: data.bris,
+      ccts: data.ccts,
+      sunPower: data.sunPower,
+      morn: data.morn,
+      eve: data.eve,
+      solar: data.solar
+    };
+
+  } catch (error) {
+    console.error('Error fetching curve data from API:', error);
+
+    // Fallback to local computation if API fails
+    const {solarNoon, solarMidnight, sunrise, sunset} = getSolarTimes();
+
+    const briBounds=[params.min_brightness, params.max_brightness];
+    const cctBounds=[params.min_color_temp, params.max_color_temp];
+
+    const mHours=[], mBri=[], mCct=[], mSun=[];
+    // Build morning without an anchor first (0 → ~12)
+    sampleHalf(+1, 0, 12 - SAMPLE_STEP, mHours, mBri, mCct, mSun, null, briBounds, cctBounds);
+    // Append a noon anchor at the *end* so time stays monotonic
+    mHours.push(getSolarTimes().solarNoon);
+    mBri.push(params.max_brightness);
+    mCct.push(params.max_color_temp);
+    mSun.push(clearSkyGHI(getSolarTimes().solarNoon, params.month, params.latitude, params.longitude, params.timezone));
+
+    const eHours=[], eBri=[], eCct=[], eSun=[];
+    sampleHalf(-1, 12 + SAMPLE_STEP, 24.0001, eHours, eBri, eCct, eSun, solarNoon, briBounds, cctBounds);
+    eBri[eBri.length-1] = params.min_brightness;
+    eCct[eCct.length-1] = params.min_color_temp;
+
+    const hours=[...mHours,...eHours], bri=[...mBri,...eBri], cct=[...mCct,...eCct], sun=[...mSun,...eSun];
+    const idx=hours.map((_,i)=>i).sort((a,b)=>hours[a]-hours[b]);
+    const H=idx.map(i=>hours[i]), B=idx.map(i=>bri[i]), C=idx.map(i=>cct[i]), S=idx.map(i=>sun[i]);
+
+    return {
+      hours:H, bris:B, ccts:C, sunPower:S,
+      morn:{hours:mHours, bris:mBri, ccts:mCct},
+      eve: {hours:eHours, bris:eBri, ccts:eCct},
+      solar:{sunrise, sunset, solarNoon, solarMidnight}
+    };
+  }
 }
 
 /* =========================
@@ -506,104 +557,146 @@ function rebuildHalfArcCaches(morn, eve){
 }
 
 /* =========================
-   Stepper (simplified brightness-based)
+   Stepper - Now uses Python backend API
 ========================= */
-function brightnessStepSize(){
-  const steps = Math.max(1, Math.min(500,
-    parseInt(document.getElementById('step-count')?.value || '10', 10)
-  ));
-  return (params.max_brightness - params.min_brightness) / steps;
-}
+// DEPRECATED: These functions are no longer used - stepping is handled by Python backend
+// Keeping them commented for reference during transition period
 
-function findHourForBrightnessOnHalf(targetBri, half){
-  const ref = (half === 'morning') ? morningArc : eveningArc;
-  if (!ref) return null;
-  const H = ref.hours, B = ref.bris;
+// function brightnessStepSize(){
+//   const steps = Math.max(1, Math.min(500,
+//     parseInt(document.getElementById('step-count')?.value || '10', 10)
+//   ));
+//   return (params.max_brightness - params.min_brightness) / steps;
+// }
 
-  for (let i=1; i<H.length; i++){
-    const b0 = B[i-1], b1 = B[i];
-    const between = (b0 <= b1)
-      ? (targetBri >= b0 && targetBri <= b1)
-      : (targetBri <= b0 && targetBri >= b1);
-    if (between && b1 !== b0){
-      const t = (targetBri - b0) / (b1 - b0);
-      const h = H[i-1] + t * (H[i] - H[i-1]);
-      return clampToHalf(h, half);
+// function findHourForBrightnessOnHalf(targetBri, half){
+//   const ref = (half === 'morning') ? morningArc : eveningArc;
+//   if (!ref) return null;
+//   const H = ref.hours, B = ref.bris;
+
+//   for (let i=1; i<H.length; i++){
+//     const b0 = B[i-1], b1 = B[i];
+//     const between = (b0 <= b1)
+//       ? (targetBri >= b0 && targetBri <= b1)
+//       : (targetBri <= b0 && targetBri >= b1);
+//     if (between && b1 !== b0){
+//       const t = (targetBri - b0) / (b1 - b0);
+//       const h = H[i-1] + t * (H[i] - H[i-1]);
+//       return clampToHalf(h, half);
+//     }
+//   }
+//   const end = (Math.abs(targetBri - B[0]) < Math.abs(targetBri - B[B.length-1])) ? 0 : B.length-1;
+//   return clampToHalf(H[end], half);
+// }
+
+// function computeActionTarget(action){
+//   if (!morningArc || !eveningArc) return null;
+//   const half = activeHalf || detectHalfSticky(selectedHour, activeHalf);
+
+//   // Get the current brightness
+//   const bNow = interpAtHour(arc.hours, arc.bris, selectedHour);
+//   const step = brightnessStepSize();
+//   const dir = (action === 'brighten') ? +1 : -1;
+
+//   // Get the actual brightness range for the current half-curve
+//   const ref = (half === 'morning') ? morningArc : eveningArc;
+//   if (!ref) return null;
+
+//   const halfBrightnesses = ref.bris;
+//   const halfMinB = Math.min(...halfBrightnesses);
+//   const halfMaxB = Math.max(...halfBrightnesses);
+
+//   // Check if we're already at the boundary of this half-curve
+//   if ((dir > 0 && bNow >= halfMaxB - 1e-9) || (dir < 0 && bNow <= halfMinB + 1e-9)) {
+//     return null; // Already at boundary, can't step further
+//   }
+
+//   // Calculate target brightness
+//   let bTgt = bNow + dir * step;
+
+//   // Clamp to the half-curve boundaries (not global boundaries)
+//   bTgt = Math.max(halfMinB, Math.min(halfMaxB, bTgt));
+
+//   // Also respect global bounds as a safety net
+//   bTgt = Math.max(params.min_brightness, Math.min(params.max_brightness, bTgt));
+
+//   return findHourForBrightnessOnHalf(bTgt, half);
+// }
+
+async function stepArc(action){
+  try {
+    // Get step count from UI
+    const stepCount = parseInt(document.getElementById('step-count')?.value || '10', 10);
+
+    // Fetch step position from Python API
+    const response = await fetch(`api/steps?hour=${selectedHour}&max_steps=${stepCount}`);
+
+    if (!response.ok) {
+      console.error(`Failed to get step position: ${response.status}`);
+      return;
     }
-  }
-  const end = (Math.abs(targetBri - B[0]) < Math.abs(targetBri - B[B.length-1])) ? 0 : B.length-1;
-  return clampToHalf(H[end], half);
-}
 
-function computeActionTarget(action){
-  if (!morningArc || !eveningArc) return null;
-  const half = activeHalf || detectHalfSticky(selectedHour, activeHalf);
+    const data = await response.json();
 
-  const minB = params.min_brightness;
-  const maxB = params.max_brightness;
-  const step = brightnessStepSize();
+    // Get the first step in the requested direction
+    const steps = (action === 'brighten') ? data.step_up?.steps : data.step_down?.steps;
 
-  const bNow = interpAtHour(arc.hours, arc.bris, selectedHour);
-  const dir  = (action === 'brighten') ? +1 : -1;
+    if (steps && steps.length > 1) {
+      // Skip the first step (current position) and use the second step (actual next position)
+      setCursorRef(steps[1].hour);
+    }
+    // If no next step available, we're at boundary - do nothing
 
-  if ((dir > 0 && bNow >= maxB - 1e-9) || (dir < 0 && bNow <= minB + 1e-9)) return null;
-
-  let bTgt = bNow + dir * step;
-  bTgt = Math.max(minB, Math.min(maxB, bTgt));
-  return findHourForBrightnessOnHalf(bTgt, half);
-}
-
-function stepArc(action){
-  const hTarget=computeActionTarget(action);
-  if(hTarget==null) return;
-  setCursorRef(hTarget);
-}
-
-/* boundaries + sequences for callouts */
-function getHalfBounds(half){
-  const { solarNoon, solarMidnight } = getSolarTimes();
-  if (half === 'morning'){
-    const startHour = solarMidnight + 1e-3;
-    const endHour   = solarNoon - 1e-3;
-    return {
-      startHour: clampToHalf(startHour,'morning'),
-      endHour:   clampToHalf(endHour,'morning'),
-      startBri: interpAtHour(arc.hours, arc.bris, startHour),
-      endBri:   interpAtHour(arc.hours, arc.bris, endHour)
-    };
-  } else {
-    const startHour = solarNoon + 1e-3;
-    const endHour   = (solarMidnight + 24 - 1e-3) % 24;
-    return {
-      startHour: clampToHalf(startHour,'evening'),
-      endHour:   clampToHalf(endHour,'evening'),
-      startBri: interpAtHour(arc.hours, arc.bris, startHour),
-      endBri:   interpAtHour(arc.hours, arc.bris, endHour)
-    };
+  } catch (error) {
+    console.error('Error calculating step:', error);
   }
 }
 
-/* simulate pressing step repeatedly toward a boundary brightness */
-function sequenceTowardBoundary(currentBri, boundaryBri, half){
-  const step = brightnessStepSize();
-  const dir  = (boundaryBri >= currentBri) ? +1 : -1;
-  const xs=[], ys=[];
-  let b = currentBri;
-  let guard = 0;
-  while (guard++ < 1000){
-    let next = b + dir*step;
-    if ((dir > 0 && next > boundaryBri) || (dir < 0 && next < boundaryBri)) next = boundaryBri;
-    if (Math.abs(next - b) < 1e-9) break;
-    const h = findHourForBrightnessOnHalf(next, half);
-    if (h == null) break;
-    xs.push(h);
-    ys.push(next);
-    b = next;
-    if (Math.abs(b - boundaryBri) < 1e-9) break;
-    if (xs.length > 600) break;
-  }
-  return { x: xs, y: ys };
-}
+/* DEPRECATED: boundaries + sequences - now handled by Python backend */
+// function getHalfBounds(half){
+//   const { solarNoon, solarMidnight } = getSolarTimes();
+//   if (half === 'morning'){
+//     const startHour = solarMidnight + 1e-3;
+//     const endHour   = solarNoon - 1e-3;
+//     return {
+//       startHour: clampToHalf(startHour,'morning'),
+//       endHour:   clampToHalf(endHour,'morning'),
+//       startBri: interpAtHour(arc.hours, arc.bris, startHour),
+//       endBri:   interpAtHour(arc.hours, arc.bris, endHour)
+//     };
+//   } else {
+//     const startHour = solarNoon + 1e-3;
+//     const endHour   = (solarMidnight + 24 - 1e-3) % 24;
+//     return {
+//       startHour: clampToHalf(startHour,'evening'),
+//       endHour:   clampToHalf(endHour,'evening'),
+//       startBri: interpAtHour(arc.hours, arc.bris, startHour),
+//       endBri:   interpAtHour(arc.hours, arc.bris, endHour)
+//     };
+//   }
+// }
+
+// /* simulate pressing step repeatedly toward a boundary brightness */
+// function sequenceTowardBoundary(currentBri, boundaryBri, half){
+//   const step = brightnessStepSize();
+//   const dir  = (boundaryBri >= currentBri) ? +1 : -1;
+//   const xs=[], ys=[];
+//   let b = currentBri;
+//   let guard = 0;
+//   while (guard++ < 1000){
+//     let next = b + dir*step;
+//     if ((dir > 0 && next > boundaryBri) || (dir < 0 && next < boundaryBri)) next = boundaryBri;
+//     if (Math.abs(next - b) < 1e-9) break;
+//     const h = findHourForBrightnessOnHalf(next, half);
+//     if (h == null) break;
+//     xs.push(h);
+//     ys.push(next);
+//     b = next;
+//     if (Math.abs(b - boundaryBri) < 1e-9) break;
+//     if (xs.length > 600) break;
+//   }
+//   return { x: xs, y: ys };
+// }
 
 /* =========================
    Interp + formatting
@@ -662,72 +755,113 @@ function fmtTimeDelta(hNew,hOld){
 /* =========================
    Plot rendering
 ========================= */
-/* build callout traces for both directions */
-function buildStepCalloutsTraces(currentHour){
-  const half = activeHalf || detectHalfSticky(currentHour, activeHalf);
-  const bNow = interpAtHour(arc.hours, arc.bris, currentHour);
-  const bounds = getHalfBounds(half);
+/* build callout traces for both directions using Python API */
+async function buildStepCalloutsTraces(currentHour){
+  try {
+    // Get step count from UI
+    const stepCount = parseInt(document.getElementById('step-count')?.value || '10', 10);
 
-  const upSeq = sequenceTowardBoundary(bNow, bounds.startBri, half);
-  const dnSeq = sequenceTowardBoundary(bNow, bounds.endBri,   half);
+    // Fetch step sequences from Python API
+    const response = await fetch(`api/steps?hour=${currentHour}&max_steps=${stepCount}`);
 
-  // Per-point marker colors from curve
-  const upColors = calloutFillColors(upSeq.x);
-  const dnColors = calloutFillColors(dnSeq.x);
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
 
-  // Build per-point labels ("step up 2x", time string, CCT)
-  const buildMeta = (xs, ys, dir) => {
-    const labels = xs.map((_, i) => {
-      const base = (dir === 'up') ? 'step up' : 'step down';
-      return i === 0 ? base : `${base} ${i+1}x`;
-    });
-    const times = xs.map(h => formatTime(h, params.use12Hour));
-    const ccts  = xs.map(h => Math.round(interpAtHour(arc.hours, arc.ccts, h)));
-    const texts = xs.map((_, i) => {
-      const pct = Math.round(ys[i]);
-      return `${labels[i]}<br>${times[i]} • ${pct}% • ${ccts[i]} K`;
-    });
-    return { labels, times, ccts, texts };
-  };
+    const data = await response.json();
 
-  const upMeta = buildMeta(upSeq.x, upSeq.y, 'up');
-  const dnMeta = buildMeta(dnSeq.x, dnSeq.y, 'dn');
+    // Transform API data to format needed for plotting
+    const buildTraceFromAPIData = (apiData, direction) => {
+      const steps = apiData.steps || [];
 
-  const upTrace = {
-    type:'scatter', mode:'markers',
-    x: upSeq.x, y: upSeq.y,
-    name:'step-up path',
-    text: upMeta.texts,                              // per-point hover text
-    hovertemplate: '%{text}<extra></extra>',         // show our formatted text
-    marker:{
-      size:10,
-      color: upColors,
-      line:{ width:3, color: upColors },
-      symbol:'circle'
-    },
-    hoverlabel: { bgcolor: upColors },               // hover box uses curve color
-    showlegend:false,
-    visible: calloutsVisible()
-  };
+      if (steps.length === 0) {
+        return { x: [], y: [], marker: { color: [] }, text: [] };
+      }
 
-  const dnTrace = {
-    type:'scatter', mode:'markers',
-    x: dnSeq.x, y: dnSeq.y,
-    name:'step-down path',
-    text: dnMeta.texts,
-    hovertemplate: '%{text}<extra></extra>',
-    marker:{
-      size:10,
-      color: dnColors,
-      line:{ width:3, color: dnColors },
-      symbol:'circle'
-    },
-    hoverlabel: { bgcolor: dnColors },
-    showlegend:false,
-    visible: calloutsVisible()
-  };
+      const xs = steps.map(s => s.hour);
+      const ys = steps.map(s => s.brightness);
+      const colors = steps.map(s => `rgb(${s.rgb.join(',')})`);
 
-  return { upTrace, dnTrace };
+      // Build labels and text
+      const labels = steps.map((_, i) => {
+        const base = (direction === 'up') ? 'step up' : 'step down';
+        return i === 0 ? base : `${base} ${i+1}x`;
+      });
+
+      const times = xs.map(h => formatTime(h, params.use12Hour));
+      const texts = steps.map((step, i) => {
+        const pct = Math.round(step.brightness);
+        const kelvin = Math.round(step.kelvin);
+        return `${labels[i]}<br>${times[i]} • ${pct}% • ${kelvin} K`;
+      });
+
+      return { x: xs, y: ys, colors, texts };
+    };
+
+    const upTrace = buildTraceFromAPIData(data.step_up, 'up');
+    const dnTrace = buildTraceFromAPIData(data.step_down, 'down');
+
+    // Build the final trace objects for Plotly
+    const upMeta = {
+      labels: upTrace.texts.map(t => t.split('<br>')[0]),
+      times: upTrace.x.map(h => formatTime(h, params.use12Hour)),
+      ccts: upTrace.x.map((_, i) => Math.round(data.step_up.steps[i]?.kelvin || 3000)),
+      texts: upTrace.texts
+    };
+
+    const dnMeta = {
+      labels: dnTrace.texts.map(t => t.split('<br>')[0]),
+      times: dnTrace.x.map(h => formatTime(h, params.use12Hour)),
+      ccts: dnTrace.x.map((_, i) => Math.round(data.step_down.steps[i]?.kelvin || 3000)),
+      texts: dnTrace.texts
+    };
+
+    // Build final trace objects for Plotly
+    const upPlotlyTrace = {
+      type:'scatter', mode:'markers',
+      x: upTrace.x, y: upTrace.y,
+      name:'step-up path',
+      text: upTrace.texts,
+      hovertemplate: '%{text}<extra></extra>',
+      marker:{
+        size:10,
+        color: upTrace.colors,
+        line:{ width:3, color: upTrace.colors },
+        symbol:'circle'
+      },
+      hoverlabel: { bgcolor: upTrace.colors },
+      showlegend:false,
+      visible: calloutsVisible()
+    };
+
+    const dnPlotlyTrace = {
+      type:'scatter', mode:'markers',
+      x: dnTrace.x, y: dnTrace.y,
+      name:'step-down path',
+      text: dnTrace.texts,
+      hovertemplate: '%{text}<extra></extra>',
+      marker:{
+        size:10,
+        color: dnTrace.colors,
+        line:{ width:3, color: dnTrace.colors },
+        symbol:'circle'
+      },
+      hoverlabel: { bgcolor: dnTrace.colors },
+      showlegend:false,
+      visible: calloutsVisible()
+    };
+
+    return { upTrace: upPlotlyTrace, dnTrace: dnPlotlyTrace };
+
+  } catch (error) {
+    console.error('Error fetching step sequences from API:', error);
+
+    // Fall back to empty traces if API fails
+    return {
+      upTrace: { type:'scatter', mode:'markers', x:[], y:[], marker:{}, showlegend:false, visible:false },
+      dnTrace: { type:'scatter', mode:'markers', x:[], y:[], marker:{}, showlegend:false, visible:false }
+    };
+  }
 }
 
 function buildMagicLightColored(x,bri,cct){
@@ -803,7 +937,7 @@ function updateNowMarker(){
   }
 }
 
-function renderPlot(series){
+async function renderPlot(series){
   const {hours,ccts,bris,morn,eve,solar,sunPower}=series;
   rebuildHalfArcCaches(morn, eve);
 
@@ -857,7 +991,7 @@ function renderPlot(series){
     marker:{size:12,color:cctToRGB(selCCT),line:{width:2,color:'#fff'}},hoverinfo:'skip',showlegend:false };
   const cursorShape={type:'line',xref:'x',x0:selectedHour,x1:selectedHour,yref:'paper',y0:0,y1:1,line:{color:'#1e90ff',width:2}};
 
-  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+  const { upTrace, dnTrace } = await buildStepCalloutsTraces(selectedHour);
 
   const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, nowMarker, selectionMarker, upTrace, dnTrace];
 
@@ -905,7 +1039,7 @@ function renderPlot(series){
     // if we crossed morning/evening boundary, swap the button roles/labels
     if (activeHalf !== prevHalf) updateStepButtons();
 
-    refreshCallouts(); // always refresh callouts on cursor changes
+    refreshCallouts().catch(console.error); // always refresh callouts on cursor changes
   }
   setCursorRef=setCursor;
 
@@ -914,7 +1048,7 @@ function renderPlot(series){
       CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
       CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
       nowMarkerIndex = plotDivRef.data.findIndex(t => t && t.name === 'now');
-      refreshCallouts(); // make sure first paint uses the new per-point colors
+      refreshCallouts().catch(console.error); // make sure first paint uses the new per-point colors
 
       // Add pulsing effect to now marker
       setTimeout(() => {
@@ -935,7 +1069,7 @@ function renderPlot(series){
       CALL_UP_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-up path');
       CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
       nowMarkerIndex = plotDivRef.data.findIndex(t => t && t.name === 'now');
-      refreshCallouts(); // first paint
+      refreshCallouts().catch(console.error); // first paint
 
       // Add pulsing effect to now marker
       setTimeout(() => {
@@ -952,7 +1086,7 @@ function renderPlot(series){
 }
 
 /* recompute/paint the callouts */
-function refreshCallouts(){
+async function refreshCallouts(){
   if(!plotDivRef) return;
 
   // Resolve indices once if needed
@@ -961,7 +1095,7 @@ function refreshCallouts(){
     CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
   }
 
-  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+  const { upTrace, dnTrace } = await buildStepCalloutsTraces(selectedHour);
   const vis = calloutsVisible();
 
   if (CALL_UP_IDX !== -1){
@@ -1041,7 +1175,7 @@ function bindInteractionsOnce(){
   updateStepButtons();
 
   // Wire up step count changes to refresh callouts
-  document.getElementById('step-count').addEventListener('input', ()=>{ refreshCallouts(); });
+  document.getElementById('step-count').addEventListener('input', async ()=>{ await refreshCallouts(); });
   
   // Wire up show steps checkbox
   const showSteps = document.getElementById('show-steps');
@@ -1079,7 +1213,7 @@ function resetSlider(key){
   ui.input.value = def;
   ui.val.textContent = ui.format ? ui.format(def) : def;
   maybeMirrorParam(key);
-  draw();
+  draw().catch(console.error);
 }
 
 function addSliderRow(parent,{ label, key, min, max, step, format, def }){
@@ -1112,7 +1246,7 @@ function addSliderRow(parent,{ label, key, min, max, step, format, def }){
   const apply = (v)=>{
     params[key]=v; val.textContent = fmt(v);
     maybeMirrorParam(key);
-    draw();
+    draw().catch(console.error);
   };
 
   input.oninput = (e)=> apply(parseFloat(e.target.value));
@@ -1218,7 +1352,7 @@ function addMorningEveningUI() {
       if(ui){ ui.input.value=params[k]; ui.val.textContent=ui.format?ui.format(params[k]):params[k]; ui._repositionPin?.(); }
     });
     if (params.mirror_up) setCCTMirrorUI('up', true);
-    draw();
+    draw().catch(console.error);
   };
   document.getElementById('reset-evening').onclick = () => {
     ['mid_bri_dn','steep_bri_dn','mid_cct_dn','steep_cct_dn'].forEach(k=>{
@@ -1227,14 +1361,14 @@ function addMorningEveningUI() {
       if(ui){ ui.input.value=params[k]; ui.val.textContent=ui.format?ui.format(params[k]):params[k]; ui._repositionPin?.(); }
     });
     if (params.mirror_dn) setCCTMirrorUI('dn', true);
-    draw();
+    draw().catch(console.error);
   };
 
   // Mirror toggles
   const upChk = document.getElementById('mirror-up');
   const dnChk = document.getElementById('mirror-dn');
-  if (upChk) { upChk.checked = params.mirror_up; upChk.onchange = (e)=>{ params.mirror_up = e.target.checked; setCCTMirrorUI('up', params.mirror_up); draw(); }; setCCTMirrorUI('up', params.mirror_up); }
-  if (dnChk) { dnChk.checked = params.mirror_dn; dnChk.onchange = (e)=>{ params.mirror_dn = e.target.checked; setCCTMirrorUI('dn', params.mirror_dn); draw(); }; setCCTMirrorUI('dn', params.mirror_dn); }
+  if (upChk) { upChk.checked = params.mirror_up; upChk.onchange = (e)=>{ params.mirror_up = e.target.checked; setCCTMirrorUI('up', params.mirror_up); draw().catch(console.error); }; setCCTMirrorUI('up', params.mirror_up); }
+  if (dnChk) { dnChk.checked = params.mirror_dn; dnChk.onchange = (e)=>{ params.mirror_dn = e.target.checked; setCCTMirrorUI('dn', params.mirror_dn); draw().catch(console.error); }; setCCTMirrorUI('dn', params.mirror_dn); }
 }
 
 
@@ -1263,7 +1397,7 @@ function addRangesUI(){
     params.min_brightness=+minI.value; params.max_brightness=+maxI.value;
     minTVal.textContent=params.min_color_temp; maxTVal.textContent=params.max_color_temp;
     minIVal.textContent=params.min_brightness; maxIVal.textContent=params.max_brightness;
-    updateTempFill(); updateIntFill(); draw();
+    updateTempFill(); updateIntFill(); draw().catch(console.error);
   }
   minT.oninput=commit; maxT.oninput=commit; minI.oninput=commit; maxI.oninput=commit;
   commit();
@@ -1274,13 +1408,13 @@ function addSunUI(){
   const selMonth=document.getElementById('month'); const mLabel=document.getElementById('month-label');
   selMonth.innerHTML=''; ['January','February','March','April','May','June','July','August','September','October','November','December']
     .forEach((n,i)=>{ const o=document.createElement('option'); o.value=String(i+1); o.textContent=n; if(i+1===params.month) o.selected=true; selMonth.appendChild(o); });
-  selMonth.onchange=e=>{ params.month=+e.target.value; mLabel.textContent=selMonth.options[selMonth.selectedIndex].text; _solarCache=null; draw(); refreshFormattedSliderValues();  };
+  selMonth.onchange=async e=>{ params.month=+e.target.value; mLabel.textContent=selMonth.options[selMonth.selectedIndex].text; _solarCache=null; await draw(); refreshFormattedSliderValues();  };
   mLabel.textContent=selMonth.options[selMonth.selectedIndex]?.text || '';
 
   // 12-hour format toggle
   const fmt12=document.getElementById('fmt12'), f12L=document.getElementById('fmt12-label');
   fmt12.checked=params.use12Hour; f12L.textContent=params.use12Hour?'Enabled':'Disabled';
-  fmt12.onchange=e=>{ params.use12Hour=e.target.checked; f12L.textContent=params.use12Hour?'Enabled':'Disabled'; draw();   refreshFormattedSliderValues();  };
+  fmt12.onchange=e=>{ params.use12Hour=e.target.checked; f12L.textContent=params.use12Hour?'Enabled':'Disabled'; draw().catch(console.error);   refreshFormattedSliderValues();  };
   
   // Update location display
   updateLocationDisplay();
@@ -1388,7 +1522,7 @@ async function loadConfiguration() {
       addRangesUI();
       addSunUI();
       updateLocationDisplay();
-      draw();
+      draw().catch(console.error);
     }
   } catch (error) {
     console.error('Error loading configuration:', error);
@@ -1402,14 +1536,14 @@ async function loadConfiguration() {
     addMorningEveningUI();
     addRangesUI();
     addSunUI();
-    draw();
+    draw().catch(console.error);
   }
 }
 
 /* =========================
    Draw & reset
 ========================= */
-function draw(){ const series=compute(); renderPlot(series); updateStepButtons(); }
+async function draw(){ const series=await compute(); await renderPlot(series); updateStepButtons(); }
 function resetAll(){
   Object.keys(defaults).forEach(k=>params[k]=defaults[k]);
   selectedHour = new Date().getHours()+new Date().getMinutes()/60;
@@ -1421,7 +1555,7 @@ function resetAll(){
 
   document.getElementById('step-count').value='10';
   updateLocationDisplay();
-  draw();
+  draw().catch(console.error);
   refreshFormattedSliderValues();  
 }
 

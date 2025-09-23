@@ -78,15 +78,15 @@ class TestMagicLightPrimitives:
         """Test step_up respects time offset bounds."""
         area_id = "test_area"
         self.mock_client.magic_mode_areas.add(area_id)
-        self.mock_client.magic_mode_time_offsets[area_id] = 700  # Near upper bound
+        self.mock_client.magic_mode_time_offsets[area_id] = 1000  # Near upper bound
 
-        mock_dimming_result = {'time_offset_minutes': 100, 'kelvin': 4000, 'brightness': 85}
+        mock_dimming_result = {'time_offset_minutes': 200, 'kelvin': 4000, 'brightness': 85}
 
         with patch('primitives.calculate_dimming_step', return_value=mock_dimming_result):
             await self.primitives.step_up(area_id)
 
-        # Should be clamped to 720 (12 hours)
-        assert self.mock_client.magic_mode_time_offsets[area_id] == 720
+        # Should be clamped to 1080 (+18 hours)
+        assert self.mock_client.magic_mode_time_offsets[area_id] == 1080
 
     @pytest.mark.asyncio
     async def test_step_up_magic_mode_calculation_error(self):

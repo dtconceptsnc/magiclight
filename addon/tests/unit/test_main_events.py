@@ -19,8 +19,6 @@ class TestMainEventHandling:
         )
 
         # Mock components
-        self.client.switch_processor = MagicMock()
-        self.client.switch_processor.process_button_press = AsyncMock()
         self.client.primitives = MagicMock()
         self.client.primitives.magiclight_on = AsyncMock()
         self.client.primitives.magiclight_off = AsyncMock()
@@ -30,120 +28,7 @@ class TestMainEventHandling:
         self.client.primitives.step_down = AsyncMock()
         self.client.primitives.reset = AsyncMock()
 
-        # Set up device mapping
-        self.client.device_to_area_mapping = {
-            "00:12:34:56:78:90": "kitchen",
-            "aa:bb:cc:dd:ee:ff": "living_room"
-        }
 
-    @pytest.mark.asyncio
-    async def test_handle_zha_event_on_press(self):
-        """Test handling ZHA event for on_press."""
-        message = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "on_press",
-                    "args": {"press_type": "press", "button": "on"}
-                }
-            }
-        }
-
-        await self.client.handle_message(message)
-
-        # Should call switch processor
-        self.client.switch_processor.process_button_press.assert_called_once_with(
-            "device_123", "on_press", "on"
-        )
-
-    @pytest.mark.asyncio
-    async def test_handle_zha_event_off_press(self):
-        """Test handling ZHA event for off_press."""
-        message = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_456",
-                    "device_ieee": "aa:bb:cc:dd:ee:ff",
-                    "command": "off_press",
-                    "args": {"press_type": "press", "button": "off"}
-                }
-            }
-        }
-
-        await self.client.handle_message(message)
-
-        self.client.switch_processor.process_button_press.assert_called_once_with(
-            "device_456", "off_press", "off"
-        )
-
-    @pytest.mark.asyncio
-    async def test_handle_zha_event_up_down_press(self):
-        """Test handling ZHA event for up/down press."""
-        # Test up press
-        message_up = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "up_press",
-                    "args": {"press_type": "press", "button": "up"}
-                }
-            }
-        }
-
-        await self.client.handle_message(message_up)
-
-        self.client.switch_processor.process_button_press.assert_called_with(
-            "device_123", "up_press", "up"
-        )
-
-        # Test down press
-        message_down = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "down_press",
-                    "args": {"press_type": "press", "button": "down"}
-                }
-            }
-        }
-
-        await self.client.handle_message(message_down)
-
-        self.client.switch_processor.process_button_press.assert_called_with(
-            "device_123", "down_press", "down"
-        )
-
-    @pytest.mark.asyncio
-    async def test_handle_zha_event_unsupported_command(self):
-        """Test handling ZHA event with unsupported command."""
-        message = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "unsupported_command",
-                    "args": {}
-                }
-            }
-        }
-
-        await self.client.handle_message(message)
-
-        # Should not call switch processor for unsupported commands
-        self.client.switch_processor.process_button_press.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_magiclight_service_on(self):
@@ -405,50 +290,6 @@ class TestMainEventHandling:
         # Should not call any primitives
         self.client.primitives.magiclight_on.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_zha_event_button_extraction(self):
-        """Test ZHA event button extraction from args."""
-        # Test with button in args
-        message = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "on_press",
-                    "args": {"button": "on", "press_type": "press"}
-                }
-            }
-        }
-
-        await self.client.handle_message(message)
-
-        self.client.switch_processor.process_button_press.assert_called_once_with(
-            "device_123", "on_press", "on"
-        )
-
-    @pytest.mark.asyncio
-    async def test_zha_event_button_from_command(self):
-        """Test ZHA event button extraction from command when args missing."""
-        # Test with no button in args, should NOT be processed without button
-        message = {
-            "type": "event",
-            "event": {
-                "event_type": "zha_event",
-                "data": {
-                    "device_id": "device_123",
-                    "device_ieee": "00:12:34:56:78:90",
-                    "command": "off_hold",
-                    "args": {}
-                }
-            }
-        }
-
-        await self.client.handle_message(message)
-
-        # Should NOT call switch processor without button in args
-        self.client.switch_processor.process_button_press.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_message_with_logging(self):

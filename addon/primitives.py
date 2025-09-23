@@ -53,11 +53,25 @@ class MagicLightPrimitives:
                     max_steps=max_steps,
                     **curve_params
                 )
-                
+
+                # Get dynamic min/max values from curve_params
+                max_brightness = curve_params.get('max_brightness', 100)
+                max_kelvin = curve_params.get('max_color_temp', 6500)
+
+                # Check if this would put us at maximum values (stuck on plateau)
+                # If brightening result is already at maximum, don't apply the offset change
+                if dimming_result['brightness'] >= max_brightness and dimming_result['kelvin'] >= max_kelvin:
+                    logger.info(f"Step up would reach maximum plateau ({max_brightness}%, {max_kelvin}K) - stopping at current offset {current_offset:.1f} minutes")
+                    # Don't change the offset, just return current state
+                    lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                    await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+                    return
+
                 # Update the TimeLocation (stored offset)
                 new_offset = current_offset + dimming_result['time_offset_minutes']
-                # Limit offset to reasonable bounds (-12 hours to +12 hours)
-                new_offset = max(-720, min(720, new_offset))
+                # Limit offset to reasonable bounds (-6 hours to +18 hours from solar noon)
+                # This keeps us within meaningful parts of the solar day curve
+                new_offset = max(-360, min(1080, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
                 
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
@@ -137,11 +151,25 @@ class MagicLightPrimitives:
                     max_steps=max_steps,
                     **curve_params
                 )
-                
+
+                # Get dynamic min/max values from curve_params
+                min_brightness = curve_params.get('min_brightness', 1)
+                min_kelvin = curve_params.get('min_color_temp', 500)
+
+                # Check if this would put us at minimum values (stuck on plateau)
+                # If dimming result is already at minimum, don't apply the offset change
+                if dimming_result['brightness'] <= min_brightness and dimming_result['kelvin'] <= min_kelvin:
+                    logger.info(f"Step down would reach minimum plateau ({min_brightness}%, {min_kelvin}K) - stopping at current offset {current_offset:.1f} minutes")
+                    # Don't change the offset, just return current state
+                    lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+                    await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
+                    return
+
                 # Update the TimeLocation (stored offset)
                 new_offset = current_offset + dimming_result['time_offset_minutes']
-                # Limit offset to reasonable bounds (-12 hours to +12 hours)
-                new_offset = max(-720, min(720, new_offset))
+                # Limit offset to reasonable bounds (-6 hours to +18 hours from solar noon)
+                # This keeps us within meaningful parts of the solar day curve
+                new_offset = max(-360, min(1080, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
                 
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")

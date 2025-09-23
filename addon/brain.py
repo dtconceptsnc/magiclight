@@ -383,40 +383,93 @@ class AdaptiveLighting:
         solar_time = self.get_solar_time(now)
         is_morning = solar_time < 12
         
-        # Get current brightness
+        # Get current brightness and kelvin
         current_brightness = self.calculate_brightness(now)
-        
+        current_kelvin = self.calculate_color_temperature(now)
+
         # Calculate step size (matches JavaScript: brightnessStepSize function)
         step_size = (self.max_brightness - self.min_brightness) / max(1, min(500, max_steps))
-        
+
         # Determine direction
         direction = 1 if action == 'brighten' else -1
-        
+
+        # Get curve boundaries to prevent stepping beyond plateaus
+        boundaries = self.find_curve_boundaries()
+
+        # Check if we're already at or past the meaningful boundaries
+        tolerance = 0.1  # Small tolerance for floating point comparisons
+
+        if direction < 0:  # Dimming/stepping down
+            # Check if we're at minimum values (on the plateau)
+            at_min_brightness = current_brightness <= self.min_brightness + tolerance
+            at_min_kelvin = current_kelvin <= self.min_color_temp + tolerance
+
+            # Check if we're past the solar time boundaries where curve plateaus
+            if is_morning:
+                past_boundary = solar_time <= boundaries.get('min_brightness_morning', 0) + 0.1
+            else:
+                past_boundary = solar_time >= boundaries.get('min_brightness_evening', 24) - 0.1
+
+            if (at_min_brightness and at_min_kelvin) or past_boundary:
+                logger.debug(f"Already at minimum boundary: brightness={current_brightness:.1f}%, kelvin={current_kelvin}K, solar_time={solar_time:.2f}h")
+                return now, {
+                    'kelvin': int(current_kelvin),
+                    'brightness': int(current_brightness),
+                    'rgb': self.color_temperature_to_rgb(int(current_kelvin)),
+                    'xy': self.color_temperature_to_xy(int(current_kelvin)),
+                    'solar_time': solar_time
+                }
+
+        elif direction > 0:  # Brightening/stepping up
+            # Check if we're at maximum values (on the plateau)
+            at_max_brightness = current_brightness >= self.max_brightness - tolerance
+            at_max_kelvin = current_kelvin >= self.max_color_temp - tolerance
+
+            # Check if we're past the solar time boundaries where curve plateaus
+            if is_morning:
+                past_boundary = solar_time >= boundaries.get('max_brightness_morning', 12) - 0.1
+            else:
+                past_boundary = solar_time <= boundaries.get('max_brightness_evening', 12) + 0.1
+
+            if (at_max_brightness and at_max_kelvin) or past_boundary:
+                logger.debug(f"Already at maximum boundary: brightness={current_brightness:.1f}%, kelvin={current_kelvin}K, solar_time={solar_time:.2f}h")
+                return now, {
+                    'kelvin': int(current_kelvin),
+                    'brightness': int(current_brightness),
+                    'rgb': self.color_temperature_to_rgb(int(current_kelvin)),
+                    'xy': self.color_temperature_to_xy(int(current_kelvin)),
+                    'solar_time': solar_time
+                }
+
         # Calculate target brightness
         target_brightness = current_brightness + (direction * step_size)
-        
-        # Check boundaries
-        if (direction > 0 and current_brightness >= self.max_brightness - 1e-9) or \
-           (direction < 0 and current_brightness <= self.min_brightness + 1e-9):
-            # Already at boundary
-            logger.debug(f"Already at brightness boundary: {current_brightness}%")
-            return now, {
-                'kelvin': self.calculate_color_temperature(now),
-                'brightness': int(current_brightness),
-                'rgb': self.color_temperature_to_rgb(self.calculate_color_temperature(now)),
-                'xy': self.color_temperature_to_xy(self.calculate_color_temperature(now)),
-                'solar_time': solar_time
-            }
         
         # Clamp target brightness to valid range
         target_brightness = max(self.min_brightness, min(self.max_brightness, target_brightness))
         
         # Find solar time that produces this brightness (matches findHourForBrightnessOnHalf)
-        target_solar_time = self._find_solar_time_for_brightness(target_brightness, is_morning)
-        
+        target_solar_time = self._find_solar_time_for_brightness(target_brightness, is_morning, direction)
+
         if target_solar_time is None:
             # Couldn't find matching time, use current
             target_solar_time = solar_time
+
+        # Constrain target solar time to meaningful curve boundaries
+        # This prevents stepping beyond the plateau points
+        if direction < 0:  # Dimming
+            if is_morning:
+                min_boundary = boundaries.get('min_brightness_morning', 0)
+                target_solar_time = max(target_solar_time, min_boundary)
+            else:
+                max_boundary = boundaries.get('min_brightness_evening', 24)
+                target_solar_time = min(target_solar_time, max_boundary)
+        else:  # Brightening
+            if is_morning:
+                max_boundary = boundaries.get('max_brightness_morning', 12)
+                target_solar_time = min(target_solar_time, max_boundary)
+            else:
+                min_boundary = boundaries.get('max_brightness_evening', 12)
+                target_solar_time = max(target_solar_time, min_boundary)
         
         # Calculate color temperature at target time
         if target_solar_time < 12:
@@ -455,15 +508,17 @@ class AdaptiveLighting:
             'solar_time': target_solar_time
         }
     
-    def _find_solar_time_for_brightness(self, target_brightness: float, is_morning: bool) -> Optional[float]:
+    def _find_solar_time_for_brightness(self, target_brightness: float, is_morning: bool,
+                                        direction: int = 0) -> Optional[float]:
         """Find the solar time that produces the target brightness.
-        
+
         This matches the JavaScript findHourForBrightnessOnHalf function.
-        
+
         Args:
             target_brightness: Target brightness percentage
             is_morning: Whether to search morning (True) or evening (False) curve
-            
+            direction: Step direction (1 for brightening, -1 for dimming, 0 for closest)
+
         Returns:
             Solar time (0-24) that produces the target brightness, or None if not found
         """
@@ -503,11 +558,101 @@ class AdaptiveLighting:
                 target_time = t0 + interp * (t1 - t0)
                 return target_time
         
-        # If not found in curve, return closest endpoint
-        if abs(target_brightness - samples[0][1]) < abs(target_brightness - samples[-1][1]):
-            return samples[0][0]
+        # If not found in curve, return appropriate endpoint based on direction
+        # For morning: samples[0] is start (darkest), samples[-1] is end (brightest)
+        # For evening: samples[0] is start (brightest), samples[-1] is end (darkest)
+
+        if direction < 0:  # Dimming - prefer the darker end
+            if is_morning:
+                return samples[0][0]  # Morning start (darkest)
+            else:
+                return samples[-1][0]  # Evening end (darkest)
+        elif direction > 0:  # Brightening - prefer the brighter end
+            if is_morning:
+                return samples[-1][0]  # Morning end (brightest)
+            else:
+                return samples[0][0]  # Evening start (brightest)
+        else:  # No direction specified, use closest by brightness
+            if abs(target_brightness - samples[0][1]) < abs(target_brightness - samples[-1][1]):
+                return samples[0][0]
+            else:
+                return samples[-1][0]
+
+    def find_curve_boundaries(self) -> Dict[str, float]:
+        """Find the solar times where curves reach minimum/maximum values.
+
+        This finds the 'plateau' points where stepping further won't change the lighting.
+
+        Returns:
+            Dict with keys: 'min_brightness_morning', 'min_brightness_evening',
+                           'min_kelvin_morning', 'min_kelvin_evening',
+                           'max_brightness_morning', 'max_brightness_evening',
+                           'max_kelvin_morning', 'max_kelvin_evening'
+        """
+        boundaries = {}
+
+        # Find minimum brightness points (where curve first reaches min_brightness)
+        boundaries['min_brightness_morning'] = self._find_solar_time_for_brightness(
+            self.min_brightness + 0.1, is_morning=True)  # Slight tolerance
+        boundaries['min_brightness_evening'] = self._find_solar_time_for_brightness(
+            self.min_brightness + 0.1, is_morning=False)
+
+        # Find maximum brightness points
+        boundaries['max_brightness_morning'] = self._find_solar_time_for_brightness(
+            self.max_brightness - 0.1, is_morning=True)
+        boundaries['max_brightness_evening'] = self._find_solar_time_for_brightness(
+            self.max_brightness - 0.1, is_morning=False)
+
+        # For color temperature, we need to sample and find plateaus
+        # Morning: find where it reaches min kelvin
+        for t in [i * 0.05 for i in range(int(12 / 0.05) + 1)]:
+            kelvin = self.map_half(
+                t, self.mid_cct_up, self.steep_cct_up,
+                self.min_color_temp, self.max_color_temp, direction=+1
+            )
+            if kelvin <= self.min_color_temp + 1:  # Tolerance for floating point
+                boundaries['min_kelvin_morning'] = t
+                break
         else:
-            return samples[-1][0]
+            boundaries['min_kelvin_morning'] = 0.0
+
+        # Morning: find where it reaches max kelvin
+        for t in [i * 0.05 for i in range(int(12 / 0.05) + 1)]:
+            kelvin = self.map_half(
+                t, self.mid_cct_up, self.steep_cct_up,
+                self.min_color_temp, self.max_color_temp, direction=+1
+            )
+            if kelvin >= self.max_color_temp - 1:
+                boundaries['max_kelvin_morning'] = t
+                break
+        else:
+            boundaries['max_kelvin_morning'] = 12.0
+
+        # Evening: find where it reaches min kelvin
+        for t in [12 + i * 0.05 for i in range(int(12 / 0.05) + 1)]:
+            kelvin = self.map_half(
+                t, self.mid_cct_dn, self.steep_cct_dn,
+                self.min_color_temp, self.max_color_temp, direction=-1
+            )
+            if kelvin <= self.min_color_temp + 1:
+                boundaries['min_kelvin_evening'] = t
+                break
+        else:
+            boundaries['min_kelvin_evening'] = 24.0
+
+        # Evening: find where it reaches max kelvin
+        for t in [12 + i * 0.05 for i in range(int(12 / 0.05) + 1)]:
+            kelvin = self.map_half(
+                t, self.mid_cct_dn, self.steep_cct_dn,
+                self.min_color_temp, self.max_color_temp, direction=-1
+            )
+            if kelvin >= self.max_color_temp - 1:
+                boundaries['max_kelvin_evening'] = t
+                break
+        else:
+            boundaries['max_kelvin_evening'] = 12.0
+
+        return boundaries
 
     @staticmethod
     def rgb_to_xy(rgb: Tuple[int, int, int]) -> Tuple[float, float]:
@@ -625,8 +770,8 @@ def calculate_dimming_step(
     # Calculate time offset in minutes
     time_offset_minutes = (target_time - now).total_seconds() / 60
     
-    logger.info(f"Dimming step: {action} from {now.isoformat()} to {target_time.isoformat()}")
-    logger.info(f"Target values: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+    logger.debug(f"Dimming step: {action} from {now.isoformat()} to {target_time.isoformat()}")
+    logger.debug(f"Target values: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
     
     return {
         **lighting_values,
