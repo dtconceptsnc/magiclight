@@ -253,6 +253,11 @@ const SUN_LINE = { width: 0.6, alpha: 0.35, dash: 'dot' }; // dimmed sun curve
 
 const UI = { sliders: {} };
 
+// Track in-flight computations to keep UI responsive when sliders spam updates
+let computeAbortController = null;
+let computeRequestId = 0;
+let drawRequestId = 0;
+
 
 /* trace indices for callout markers */
 let CALL_UP_IDX = -1;   // "step up → beginning" path
@@ -407,35 +412,56 @@ function sampleHalf(dir, startT, endT, hoursArr, briArr, cctArr, sunArr, anchorH
   }
 }
 
-async function compute(){
-  try {
-    // Send current UI parameters (excluding location data which comes from server)
-    const uiParams = {
-      month: params.month,
-      min_color_temp: params.min_color_temp,
-      max_color_temp: params.max_color_temp,
-      min_brightness: params.min_brightness,
-      max_brightness: params.max_brightness,
-      mid_bri_up: params.mid_bri_up,
-      steep_bri_up: params.steep_bri_up,
-      mid_cct_up: params.mid_cct_up,
-      steep_cct_up: params.steep_cct_up,
-      mid_bri_dn: params.mid_bri_dn,
-      steep_bri_dn: params.steep_bri_dn,
-      mid_cct_dn: params.mid_cct_dn,
-      steep_cct_dn: params.steep_cct_dn,
-      mirror_up: params.mirror_up,
-      mirror_dn: params.mirror_dn
-    };
+const UI_NUMERIC_PARAM_KEYS = [
+  'month',
+  'min_color_temp', 'max_color_temp',
+  'min_brightness', 'max_brightness',
+  'mid_bri_up', 'steep_bri_up', 'mid_cct_up', 'steep_cct_up',
+  'mid_bri_dn', 'steep_bri_dn', 'mid_cct_dn', 'steep_cct_dn'
+];
+const UI_BOOLEAN_PARAM_KEYS = ['mirror_up', 'mirror_dn'];
 
-    // Build query string with UI parameters
-    const queryParams = new URLSearchParams();
-    Object.entries(uiParams).forEach(([key, value]) => {
+function buildUIQueryParams(extraParams = {}){
+  const queryParams = new URLSearchParams();
+
+  UI_NUMERIC_PARAM_KEYS.forEach((key) => {
+    const value = params[key];
+    if (value !== undefined && value !== null) {
       queryParams.append(key, value.toString());
-    });
+    }
+  });
+
+  UI_BOOLEAN_PARAM_KEYS.forEach((key) => {
+    if (params[key] !== undefined) {
+      queryParams.append(key, params[key] ? 'true' : 'false');
+    }
+  });
+
+  Object.entries(extraParams).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      queryParams.set(key, value.toString());
+    }
+  });
+
+  return queryParams;
+}
+
+async function compute(){
+  const requestId = ++computeRequestId;
+
+  // Abort any in-flight request so only the latest slider state renders
+  if (computeAbortController) {
+    computeAbortController.abort();
+  }
+  const controller = new AbortController();
+  computeAbortController = controller;
+
+  try {
+    // Build query string with current UI parameters
+    const queryParams = buildUIQueryParams();
 
     // Fetch curve data from Python API with current UI parameters
-    const response = await fetch(`api/curve?${queryParams.toString()}`);
+    const response = await fetch(`api/curve?${queryParams.toString()}`, { signal: controller.signal });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -443,7 +469,11 @@ async function compute(){
 
     const data = await response.json();
 
-    // Return data in the expected format
+    // Only return data if this request is still the latest one
+    if (requestId !== computeRequestId) {
+      return null;
+    }
+
     return {
       hours: data.hours,
       bris: data.bris,
@@ -455,6 +485,10 @@ async function compute(){
     };
 
   } catch (error) {
+    if (error.name === 'AbortError') {
+      throw error;
+    }
+
     console.error('Error fetching curve data from API:', error);
 
     // Fallback to local computation if API fails
@@ -481,12 +515,20 @@ async function compute(){
     const idx=hours.map((_,i)=>i).sort((a,b)=>hours[a]-hours[b]);
     const H=idx.map(i=>hours[i]), B=idx.map(i=>bri[i]), C=idx.map(i=>cct[i]), S=idx.map(i=>sun[i]);
 
+    if (requestId !== computeRequestId) {
+      return null;
+    }
+
     return {
       hours:H, bris:B, ccts:C, sunPower:S,
       morn:{hours:mHours, bris:mBri, ccts:mCct},
       eve: {hours:eHours, bris:eBri, ccts:eCct},
       solar:{sunrise, sunset, solarNoon, solarMidnight}
     };
+  } finally {
+    if (computeAbortController === controller) {
+      computeAbortController = null;
+    }
   }
 }
 
@@ -682,8 +724,10 @@ async function stepArc(action){
     // Get step count from UI
     const stepCount = parseInt(document.getElementById('step-count')?.value || '10', 10);
 
+    const queryParams = buildUIQueryParams({ hour: selectedHour, max_steps: stepCount });
+
     // Fetch step position from Python API
-    const response = await fetch(`api/steps?hour=${selectedHour}&max_steps=${stepCount}`);
+    const response = await fetch(`api/steps?${queryParams.toString()}`);
 
     if (!response.ok) {
       console.error(`Failed to get step position: ${response.status}`);
@@ -815,8 +859,10 @@ async function buildStepCalloutsTraces(currentHour){
     // Get step count from UI
     const stepCount = parseInt(document.getElementById('step-count')?.value || '10', 10);
 
+    const queryParams = buildUIQueryParams({ hour: currentHour, max_steps: stepCount });
+
     // Fetch step sequences from Python API
-    const response = await fetch(`api/steps?hour=${currentHour}&max_steps=${stepCount}`);
+    const response = await fetch(`api/steps?${queryParams.toString()}`);
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -1596,7 +1642,28 @@ async function loadConfiguration() {
 /* =========================
    Draw & reset
 ========================= */
-async function draw(){ const series=await compute(); await renderPlot(series); updateStepButtons(); }
+async function draw(){
+  const requestId = ++drawRequestId;
+
+  try {
+    const series = await compute();
+    if (!series || requestId !== drawRequestId) {
+      return;
+    }
+
+    await renderPlot(series);
+    if (requestId !== drawRequestId) {
+      return;
+    }
+
+    updateStepButtons();
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return;
+    }
+    throw error;
+  }
+}
 function resetAll(){
   Object.keys(defaults).forEach(k=>params[k]=defaults[k]);
   selectedHour = getCurrentHour();
