@@ -1,5 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.8
+**Bug Fix - Light Designer Interface**
+
+**Bug Fixes:**
+- Fixed designer bug affecting the Light Designer interface functionality
+
 ## 4.0.7
 **Simplification - Remove Recall Offset Concept**
 
