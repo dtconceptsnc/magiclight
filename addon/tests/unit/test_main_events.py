@@ -26,6 +26,8 @@ class TestMainEventHandling:
         self.client.primitives.magiclight_toggle_multiple = AsyncMock()
         self.client.primitives.step_up = AsyncMock()
         self.client.primitives.step_down = AsyncMock()
+        self.client.primitives.dim_up = AsyncMock()
+        self.client.primitives.dim_down = AsyncMock()
         self.client.primitives.reset = AsyncMock()
 
 
@@ -147,6 +149,45 @@ class TestMainEventHandling:
         await self.client.handle_message(message)
 
         self.client.primitives.step_down.assert_called_once_with("living_room", "service_call")
+
+    @pytest.mark.asyncio
+    async def test_handle_magiclight_service_dim_up(self):
+        """Test handling magiclight.dim_up service call."""
+        message = {
+            "type": "event",
+            "event": {
+                "event_type": "call_service",
+                "data": {
+                    "domain": "magiclight",
+                    "service": "dim_up",
+                    "service_data": {"area_id": "den"}
+                }
+            }
+        }
+
+        await self.client.handle_message(message)
+
+        self.client.primitives.dim_up.assert_called_once_with("den", "service_call")
+
+    @pytest.mark.asyncio
+    async def test_handle_magiclight_service_dim_down(self):
+        """Test handling magiclight.dim_down service call."""
+        message = {
+            "type": "event",
+            "event": {
+                "event_type": "call_service",
+                "data": {
+                    "domain": "magiclight",
+                    "service": "dim_down",
+                    "service_data": {"area_id": ["den", "hall"]}
+                }
+            }
+        }
+
+        await self.client.handle_message(message)
+
+        self.client.primitives.dim_down.assert_any_call("den", "service_call")
+        self.client.primitives.dim_down.assert_any_call("hall", "service_call")
 
     @pytest.mark.asyncio
     async def test_handle_magiclight_service_reset(self):

@@ -20,6 +20,14 @@ class MagicLightPrimitives:
             websocket_client: Reference to the HomeAssistantWebSocketClient instance
         """
         self.client = websocket_client
+
+        # Ensure the client exposes the brightness adjustment helpers we depend on
+        if not hasattr(self.client, 'magic_mode_brightness_offsets'):
+            self.client.magic_mode_brightness_offsets = {}
+        if not hasattr(self.client, 'get_brightness_step_pct'):
+            self.client.get_brightness_step_pct = lambda: 100 / DEFAULT_MAX_DIM_STEPS
+        if not hasattr(self.client, 'get_brightness_bounds'):
+            self.client.get_brightness_bounds = lambda: (1, 100)
         
     async def step_up(self, area_id: str, source: str = "service_call"):
         """Step up - Adjust TimeLocation to brighten and cool lights one step up the MagicLight curve.
@@ -105,18 +113,24 @@ class MagicLightPrimitives:
             any_light_on = await self.client.any_lights_on_in_area(area_id)
             
             if not any_light_on:
-                logger.info(f"No lights are on in area {area_id}, not turning on lights")
+                logger.info(f"No lights are on in area {area_id}, nothing to brighten")
                 return
             
+            step_pct = self.client.get_brightness_step_pct()
+            ha_step_pct = int(round(step_pct)) or (1 if step_pct > 0 else 0)
+            if ha_step_pct == 0:
+                logger.info(f"Calculated brightness_step_pct is 0 for area {area_id}, skipping")
+                return
+
             # Increase brightness
             target_type, target_value = await self.client.determine_light_target(area_id)
             service_data = {
-                "brightness_step_pct": 17,
+                "brightness_step_pct": ha_step_pct,
                 "transition": 1
             }
             target = {target_type: target_value}
             await self.client.call_service("light", "turn_on", service_data, target)
-            logger.info(f"Brightness increased by 17% in area {area_id}")
+            logger.info(f"Brightness increased by {ha_step_pct}% in area {area_id}")
         
     async def step_down(self, area_id: str, source: str = "service_call"):
         """Step down - Adjust TimeLocation to dim and warm lights one step down the MagicLight curve.
@@ -208,16 +222,100 @@ class MagicLightPrimitives:
                 logger.info(f"No lights are on in area {area_id}, nothing to dim")
                 return
             
-            # Just decrease brightness by 17% - Home Assistant handles minimum brightness
+            step_pct = self.client.get_brightness_step_pct()
+            ha_step_pct = int(round(step_pct)) or (1 if step_pct > 0 else 0)
+            if ha_step_pct == 0:
+                logger.info(f"Calculated brightness_step_pct is 0 for area {area_id}, skipping")
+                return
+
+            # Decrease brightness by configured amount - Home Assistant handles minimum brightness
             target_type, target_value = await self.client.determine_light_target(area_id)
             service_data = {
-                "brightness_step_pct": -17,  # Negative value to decrease
+                "brightness_step_pct": -ha_step_pct,  # Negative value to decrease
                 "transition": 0.5
             }
             target = {target_type: target_value}
             await self.client.call_service("light", "turn_on", service_data, target)
-            logger.info(f"Brightness decreased by 17% in area {area_id}")
-    
+            logger.info(f"Brightness decreased by {ha_step_pct}% in area {area_id}")
+
+    async def dim_up(self, area_id: str, source: str = "service_call"):
+        """Increase the brightness curve while keeping color in sync."""
+        await self._adjust_brightness_curve(area_id, direction=1, source=source)
+
+    async def dim_down(self, area_id: str, source: str = "service_call"):
+        """Decrease the brightness curve while keeping color in sync."""
+        await self._adjust_brightness_curve(area_id, direction=-1, source=source)
+
+    async def _adjust_brightness_curve(self, area_id: str, direction: int, source: str) -> None:
+        """Adjust stored brightness offset for an area."""
+        step_pct = self.client.get_brightness_step_pct()
+        if step_pct <= 0:
+            logger.info(f"[{source}] Brightness step percent is not positive; skipping curve adjustment for {area_id}")
+            return
+
+        offsets = self.client.magic_mode_brightness_offsets
+        current_offset = offsets.get(area_id, 0.0)
+
+        if area_id in self.client.magic_mode_areas:
+            min_bri, max_bri = self.client.get_brightness_bounds()
+            base_values = await self.client.get_adaptive_lighting_for_area(
+                area_id,
+                apply_brightness_adjustment=False,
+            )
+            base_brightness = base_values.get('brightness', 0)
+
+            new_offset = current_offset + (direction * step_pct)
+            target_brightness = base_brightness + new_offset
+
+            if target_brightness > max_bri:
+                target_brightness = max_bri
+                new_offset = target_brightness - base_brightness
+                logger.info(
+                    f"[{source}] dim_up would exceed max brightness for area {area_id}; clamping to {target_brightness}%"
+                )
+            elif target_brightness < min_bri:
+                target_brightness = min_bri
+                new_offset = target_brightness - base_brightness
+                logger.info(
+                    f"[{source}] dim_down would exceed min brightness for area {area_id}; clamping to {target_brightness}%"
+                )
+
+            offsets[area_id] = round(new_offset, 4)
+            logger.info(
+                f"[{source}] Adjusted brightness curve for {area_id}: base {base_brightness}% -> "
+                f"{target_brightness}% (offset {offsets[area_id]:+.2f}%)"
+            )
+
+            lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+            await self.client.turn_on_lights_adaptive(
+                area_id,
+                lighting_values,
+                transition=0.4,
+                include_color=False,
+            )
+
+        else:
+            any_light_on = await self.client.any_lights_on_in_area(area_id)
+            if not any_light_on:
+                logger.info(f"[{source}] No lights are on in area {area_id}, nothing to adjust")
+                return
+
+            target_type, target_value = await self.client.determine_light_target(area_id)
+            ha_step_pct = int(round(step_pct)) or (1 if step_pct > 0 else 0)
+            if ha_step_pct == 0:
+                logger.info(f"[{source}] Calculated brightness step is 0 for area {area_id}, skipping")
+                return
+
+            service_data = {
+                "brightness_step_pct": ha_step_pct if direction > 0 else -ha_step_pct,
+                "transition": 0.4
+            }
+            target = {target_type: target_value}
+            await self.client.call_service("light", "turn_on", service_data, target)
+            logger.info(
+                f"[{source}] Applied direct brightness change of {service_data['brightness_step_pct']}% for area {area_id}"
+            )
+
     async def magiclight_on(self, area_id: str, source: str = "service_call"):
         """MagicLight On - Enable MagicLight mode and set lights to current time position.
         
@@ -362,6 +460,14 @@ class MagicLightPrimitives:
 
         # Reset time offset to 0 (sets TimeLocation to current time)
         self.client.magic_mode_time_offsets[area_id] = 0
+
+        # Clear any stored brightness adjustments so curve returns to baseline
+        if hasattr(self.client, 'magic_mode_brightness_offsets'):
+            previous_offset = self.client.magic_mode_brightness_offsets.pop(area_id, None)
+            if previous_offset:
+                logger.info(
+                    f"[{source}] Cleared brightness adjustment of {previous_offset:+.2f}% for area {area_id}"
+                )
 
         # Enable magic mode (MagicLight = true)
         # This ensures the area will track time going forward

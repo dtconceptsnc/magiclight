@@ -14,6 +14,8 @@ from .const import (
     DOMAIN,
     SERVICE_STEP_UP,
     SERVICE_STEP_DOWN,
+    SERVICE_DIM_UP,
+    SERVICE_DIM_DOWN,
     SERVICE_RESET,
     SERVICE_MAGICLIGHT_ON,
     SERVICE_MAGICLIGHT_OFF,
@@ -87,6 +89,20 @@ async def _register_services(hass: HomeAssistant) -> None:
         
         _LOGGER.info("[%s] step_down called: area_id=%s", DOMAIN, area_id)
         # The addon will receive this as a call_service event and handle it
+
+    async def handle_dim_up(call: ServiceCall) -> None:
+        """Handle the dim_up service call."""
+        area_id = call.data.get(ATTR_AREA_ID)
+
+        _LOGGER.info("[%s] dim_up called: area_id=%s", DOMAIN, area_id)
+        # The addon will receive this as a call_service event and handle it
+
+    async def handle_dim_down(call: ServiceCall) -> None:
+        """Handle the dim_down service call."""
+        area_id = call.data.get(ATTR_AREA_ID)
+
+        _LOGGER.info("[%s] dim_down called: area_id=%s", DOMAIN, area_id)
+        # The addon will receive this as a call_service event and handle it
     
     async def handle_reset(call: ServiceCall) -> None:
         """Handle the reset service call.
@@ -147,6 +163,14 @@ async def _register_services(hass: HomeAssistant) -> None:
     )
     _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_STEP_DOWN)
     hass.services.async_register(
+        DOMAIN, SERVICE_DIM_UP, handle_dim_up, schema=area_schema
+    )
+    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_DIM_UP)
+    hass.services.async_register(
+        DOMAIN, SERVICE_DIM_DOWN, handle_dim_down, schema=area_schema
+    )
+    _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_DIM_DOWN)
+    hass.services.async_register(
         DOMAIN, SERVICE_RESET, handle_reset, schema=area_schema
     )
     _LOGGER.debug("[%s] Registered service: %s.%s", DOMAIN, DOMAIN, SERVICE_RESET)
@@ -182,6 +206,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Unregister services only if no config entries remain
         hass.services.async_remove(DOMAIN, SERVICE_STEP_UP)
         hass.services.async_remove(DOMAIN, SERVICE_STEP_DOWN)
+        hass.services.async_remove(DOMAIN, SERVICE_DIM_UP)
+        hass.services.async_remove(DOMAIN, SERVICE_DIM_DOWN)
         hass.services.async_remove(DOMAIN, SERVICE_RESET)
         hass.services.async_remove(DOMAIN, SERVICE_MAGICLIGHT_ON)
         hass.services.async_remove(DOMAIN, SERVICE_MAGICLIGHT_OFF)

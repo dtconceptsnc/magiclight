@@ -36,6 +36,26 @@
         }
       }
     },
+    "dim_up": {
+      "name": "Dim Up",
+      "description": "Raise the brightness curve without changing MagicLight color",
+      "fields": {
+        "area_id": {
+          "name": "Area",
+          "description": "The area(s) to brighten"
+        }
+      }
+    },
+    "dim_down": {
+      "name": "Dim Down",
+      "description": "Lower the brightness curve without changing MagicLight color",
+      "fields": {
+        "area_id": {
+          "name": "Area",
+          "description": "The area(s) to dim"
+        }
+      }
+    },
     "reset": {
       "name": "Reset",
       "description": "Reset area to current time, enable MagicLight, and apply magic",

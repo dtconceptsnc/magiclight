@@ -19,27 +19,31 @@ class TestMagicLightPrimitives:
         self.mock_client = MagicMock()
         self.mock_client.magic_mode_areas = set()
         self.mock_client.magic_mode_time_offsets = {}
+        self.mock_client.magic_mode_brightness_offsets = {}
         self.mock_client.config = {"max_dim_steps": DEFAULT_MAX_DIM_STEPS}
         self.mock_client.curve_params = {}
 
         # Mock async methods
         self.mock_client.turn_on_lights_adaptive = AsyncMock()
-        self.mock_client.get_adaptive_lighting_for_area = AsyncMock()
+        async def fake_get_adaptive(area_id, *args, **kwargs):
+            return {
+                'kelvin': 3000,
+                'brightness': 80,
+                'rgb': [255, 200, 150],
+                'xy': [0.5, 0.4]
+            }
+
+        self.mock_client.get_adaptive_lighting_for_area = AsyncMock(side_effect=fake_get_adaptive)
         self.mock_client.any_lights_on_in_area = AsyncMock()
         self.mock_client.determine_light_target = AsyncMock()
         self.mock_client.call_service = AsyncMock()
         self.mock_client.disable_magic_mode = AsyncMock()
         self.mock_client.enable_magic_mode = MagicMock()
+        self.mock_client.get_brightness_step_pct = MagicMock(return_value=100 / DEFAULT_MAX_DIM_STEPS)
+        self.mock_client.get_brightness_bounds = MagicMock(return_value=(1, 100))
 
         # Set default return values
         self.mock_client.determine_light_target.return_value = ("area_id", "test_area")
-        self.mock_client.get_adaptive_lighting_for_area.return_value = {
-            'kelvin': 3000,
-            'brightness': 80,
-            'rgb': [255, 200, 150],
-            'xy': [0.5, 0.4]
-        }
-
         self.primitives = MagicLightPrimitives(self.mock_client)
 
     @pytest.mark.asyncio
@@ -119,7 +123,7 @@ class TestMagicLightPrimitives:
         # Should increase brightness
         self.mock_client.call_service.assert_called_once_with(
             "light", "turn_on",
-            {"brightness_step_pct": 17, "transition": 1},
+            {"brightness_step_pct": 10, "transition": 1},
             {"area_id": "test_area"}
         )
 
@@ -193,9 +197,60 @@ class TestMagicLightPrimitives:
         # Should decrease brightness
         self.mock_client.call_service.assert_called_once_with(
             "light", "turn_on",
-            {"brightness_step_pct": -17, "transition": 0.5},
+            {"brightness_step_pct": -10, "transition": 0.5},
             {"area_id": "test_area"}
         )
+
+    @pytest.mark.asyncio
+    async def test_dim_up_magic_mode(self):
+        """Test dim_up adjusts brightness curve in magic mode."""
+        area_id = "test_area"
+        self.mock_client.magic_mode_areas.add(area_id)
+
+        await self.primitives.dim_up(area_id)
+
+        assert pytest.approx(self.mock_client.magic_mode_brightness_offsets[area_id], rel=1e-3) == 10
+        assert self.mock_client.turn_on_lights_adaptive.await_count == 1
+        _, kwargs = self.mock_client.turn_on_lights_adaptive.call_args
+        assert kwargs.get('include_color') is False
+
+    @pytest.mark.asyncio
+    async def test_dim_down_magic_mode_clamped(self):
+        """Test dim_down clamps to minimum brightness."""
+        area_id = "test_area"
+        self.mock_client.magic_mode_areas.add(area_id)
+        self.mock_client.get_brightness_bounds.return_value = (75, 100)
+
+        await self.primitives.dim_down(area_id)
+
+        assert pytest.approx(self.mock_client.magic_mode_brightness_offsets[area_id], rel=1e-3) == -5
+        assert self.mock_client.turn_on_lights_adaptive.await_count == 1
+        _, kwargs = self.mock_client.turn_on_lights_adaptive.call_args
+        assert kwargs.get('include_color') is False
+
+    @pytest.mark.asyncio
+    async def test_dim_up_non_magic_mode(self):
+        """Test dim_up falls back to direct brightness change when not in magic mode."""
+        area_id = "test_area"
+        self.mock_client.any_lights_on_in_area.return_value = True
+
+        await self.primitives.dim_up(area_id)
+
+        self.mock_client.call_service.assert_called_with(
+            "light", "turn_on",
+            {"brightness_step_pct": 10, "transition": 0.4},
+            {"area_id": "test_area"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_dim_down_non_magic_mode_no_lights(self):
+        """Test dim_down exits early when no lights are on."""
+        area_id = "test_area"
+        self.mock_client.any_lights_on_in_area.return_value = False
+
+        await self.primitives.dim_down(area_id)
+
+        self.mock_client.call_service.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_magiclight_on_not_enabled(self):
@@ -327,7 +382,12 @@ class TestMagicLightPrimitives:
         self.mock_client.get_adaptive_lighting_for_area.assert_called_once_with(area_id)
         self.mock_client.turn_on_lights_adaptive.assert_called_once_with(
             area_id,
-            self.mock_client.get_adaptive_lighting_for_area.return_value,
+            {
+                'kelvin': 3000,
+                'brightness': 80,
+                'rgb': [255, 200, 150],
+                'xy': [0.5, 0.4]
+            },
             transition=1
         )
 

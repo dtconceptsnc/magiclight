@@ -13,7 +13,13 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 
 from primitives import MagicLightPrimitives
-from brain import get_adaptive_lighting, ColorMode
+from brain import (
+    get_adaptive_lighting,
+    ColorMode,
+    DEFAULT_MAX_DIM_STEPS,
+    DEFAULT_MIN_BRIGHTNESS,
+    DEFAULT_MAX_BRIGHTNESS,
+)
 from light_controller import (
     LightControllerFactory,
     MultiProtocolController,
@@ -57,9 +63,15 @@ class HomeAssistantWebSocketClient:
         self.periodic_update_task = None  # Task for periodic light updates
         self.magic_mode_areas = set()  # Track which areas are in magic mode
         self.magic_mode_time_offsets = {}  # Track time offsets for dimming along curve
+        self.magic_mode_brightness_offsets = {}  # Track brightness adjustments (percentage) along the curve
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         self.area_parity_cache = {}  # Cache of area ZHA parity status
+
+        # Brightness curve configuration (populated from supervisor/designer config)
+        self.max_dim_steps = DEFAULT_MAX_DIM_STEPS
+        self.min_brightness = DEFAULT_MIN_BRIGHTNESS
+        self.max_brightness = DEFAULT_MAX_BRIGHTNESS
         
         # Color mode configuration - defaults to KELVIN (CT)
         color_mode_str = os.getenv("COLOR_MODE", "kelvin").lower()
@@ -284,13 +296,21 @@ class HomeAssistantWebSocketClient:
         logger.info(f"Using area-based control for area '{area_id}'")
         return "area_id", area_id
     
-    async def turn_on_lights_adaptive(self, area_id: str, adaptive_values: Dict[str, Any], transition: int = 1) -> None:
+    async def turn_on_lights_adaptive(
+        self,
+        area_id: str,
+        adaptive_values: Dict[str, Any],
+        transition: int = 1,
+        *,
+        include_color: bool = True,
+    ) -> None:
         """Turn on lights with adaptive values using the light controller.
         
         Args:
             area_id: The area ID to control lights in
             adaptive_values: Adaptive lighting values from get_adaptive_lighting
             transition: Transition time in seconds (default 1)
+            include_color: Whether to include color data when turning on lights
         """
         # Determine the best target for this area
         target_type, target_value = await self.determine_light_target(area_id)
@@ -305,13 +325,13 @@ class HomeAssistantWebSocketClient:
             service_data["brightness_pct"] = adaptive_values['brightness']
         
         # Add color data based on the configured color mode
-        if self.color_mode == ColorMode.KELVIN and 'kelvin' in adaptive_values:
+        if include_color and self.color_mode == ColorMode.KELVIN and 'kelvin' in adaptive_values:
             service_data["kelvin"] = adaptive_values['kelvin']
-        elif self.color_mode == ColorMode.RGB and 'rgb' in adaptive_values:
+        elif include_color and self.color_mode == ColorMode.RGB and 'rgb' in adaptive_values:
             service_data["rgb_color"] = adaptive_values['rgb']
-        elif self.color_mode == ColorMode.XY and 'xy' in adaptive_values:
+        elif include_color and self.color_mode == ColorMode.XY and 'xy' in adaptive_values:
             service_data["xy_color"] = adaptive_values['xy']
-        
+
         # Build target
         target = {target_type: target_value}
 
@@ -520,6 +540,10 @@ class HomeAssistantWebSocketClient:
             logger.info(f"Magic mode enabled for area {area_id}, offset set to 0")
         else:
             logger.info(f"Magic mode enabled for area {area_id}, keeping existing offset: {self.magic_mode_time_offsets[area_id]} minutes")
+
+        # Initialize brightness adjustment storage if needed
+        if area_id not in self.magic_mode_brightness_offsets:
+            self.magic_mode_brightness_offsets[area_id] = 0.0
     
     async def disable_magic_mode(self, area_id: str):
         """Disable magic mode for an area.
@@ -542,7 +566,22 @@ class HomeAssistantWebSocketClient:
 
         logger.info(f"Magic mode disabled for area {area_id}")
     
-    async def get_adaptive_lighting_for_area(self, area_id: str, current_time: Optional[datetime] = None, apply_time_offset: bool = True) -> Dict[str, Any]:
+    def get_brightness_step_pct(self) -> float:
+        """Return the configured brightness step size in percent."""
+        steps = max(1, int(self.max_dim_steps) if self.max_dim_steps else DEFAULT_MAX_DIM_STEPS)
+        return 100.0 / steps
+
+    def get_brightness_bounds(self) -> tuple[int, int]:
+        """Return the configured min/max brightness bounds."""
+        return int(self.min_brightness), int(self.max_brightness)
+
+    async def get_adaptive_lighting_for_area(
+        self,
+        area_id: str,
+        current_time: Optional[datetime] = None,
+        apply_time_offset: bool = True,
+        apply_brightness_adjustment: bool = True,
+    ) -> Dict[str, Any]:
         """Get adaptive lighting values for a specific area.
         
         This is the centralized method that should be used for all adaptive lighting calculations.
@@ -646,10 +685,22 @@ class HomeAssistantWebSocketClient:
             curve_params['max_brightness'] = int(merged_config['max_brightness'])
         elif os.getenv('MAX_BRIGHTNESS'):
             curve_params['max_brightness'] = int(os.getenv('MAX_BRIGHTNESS'))
-        
+
+        # Update cached brightness configuration for quick access elsewhere
+        if 'max_dim_steps' in merged_config:
+            try:
+                self.max_dim_steps = int(merged_config['max_dim_steps']) or DEFAULT_MAX_DIM_STEPS
+            except (TypeError, ValueError):
+                logger.debug(f"Invalid max_dim_steps '{merged_config.get('max_dim_steps')}', keeping {self.max_dim_steps}")
+
+        if 'min_brightness' in curve_params:
+            self.min_brightness = curve_params['min_brightness']
+        if 'max_brightness' in curve_params:
+            self.max_brightness = curve_params['max_brightness']
+
         # Store curve parameters for dimming calculations
         self.curve_params = curve_params
-        
+
         # Get adaptive lighting values with new morning/evening curves
         lighting_values = get_adaptive_lighting(
             latitude=self.latitude,
@@ -661,7 +712,31 @@ class HomeAssistantWebSocketClient:
         
         # Log the calculation
         logger.info(f"Adaptive lighting for area {area_id}: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
-        
+
+        if apply_brightness_adjustment:
+            brightness_offset = self.magic_mode_brightness_offsets.get(area_id, 0.0)
+            if brightness_offset:
+                min_bri, max_bri = self.get_brightness_bounds()
+                adjusted = max(min_bri, min(max_bri, lighting_values['brightness'] + brightness_offset))
+                if adjusted != lighting_values['brightness']:
+                    logger.info(
+                        f"Applying brightness curve adjustment for {area_id}: "
+                        f"base {lighting_values['brightness']}% -> {adjusted}% (offset {brightness_offset:+.2f}%)"
+                    )
+                    lighting_values = dict(lighting_values)
+                    lighting_values['brightness'] = int(round(adjusted))
+                else:
+                    # Even though the clamp didn't change the value, ensure int rounding
+                    lighting_values = dict(lighting_values)
+                    lighting_values['brightness'] = int(round(adjusted))
+            else:
+                # Ensure brightness is an int (brain already sends int, but keep consistency)
+                lighting_values = dict(lighting_values)
+                lighting_values['brightness'] = int(round(lighting_values['brightness']))
+        else:
+            lighting_values = dict(lighting_values)
+            lighting_values['brightness'] = int(round(lighting_values['brightness']))
+
         return lighting_values
     
     async def update_lights_in_magic_mode(self, area_id: str):
@@ -916,7 +991,31 @@ class HomeAssistantWebSocketClient:
                             await self.primitives.reset(area, "service_call")
                     else:
                         logger.warning("reset called without area_id")
-                        
+
+                elif service == "dim_up":
+                    area_id = service_data.get("area_id")
+                    logger.info(f"Received magiclight.dim_up service call for area: {area_id}")
+
+                    if area_id:
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing dim_up for area: {area}")
+                            await self.primitives.dim_up(area, "service_call")
+                    else:
+                        logger.warning("dim_up called without area_id")
+
+                elif service == "dim_down":
+                    area_id = service_data.get("area_id")
+                    logger.info(f"Received magiclight.dim_down service call for area: {area_id}")
+
+                    if area_id:
+                        area_list = area_id if isinstance(area_id, list) else [area_id]
+                        for area in area_list:
+                            logger.info(f"Processing dim_down for area: {area}")
+                            await self.primitives.dim_down(area, "service_call")
+                    else:
+                        logger.warning("dim_down called without area_id")
+
                 elif service == "magiclight_on":
                     area_id = service_data.get("area_id")
                     logger.info(f"Received magiclight.magiclight_on service call for area: {area_id}")

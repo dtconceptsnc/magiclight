@@ -26,6 +26,34 @@ step_down:
         area:
           multiple: true
 
+dim_up:
+  name: Dim Up
+  description: Raise the brightness curve without changing MagicLight color
+  icon: mdi:brightness-7
+  fields:
+    area_id:
+      name: Area
+      description: The area(s) to brighten
+      required: true
+      example: ["living_room", "kitchen"]
+      selector:
+        area:
+          multiple: true
+
+dim_down:
+  name: Dim Down
+  description: Lower the brightness curve without changing MagicLight color
+  icon: mdi:brightness-3
+  fields:
+    area_id:
+      name: Area
+      description: The area(s) to dim
+      required: true
+      example: ["living_room", "kitchen"]
+      selector:
+        area:
+          multiple: true
+
 reset:
   name: Reset
   description: Turn on lights to magic value of current time, enable MagicLight
