@@ -84,9 +84,9 @@
 
   /* Pulsing animation for live markers */
   @keyframes pulse {
-    0% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(1.1); }
-    100% { opacity: 1; transform: scale(1); }
+    0% { opacity: 1; stroke-width: 3px; }
+    50% { opacity: 0.6; stroke-width: 6px; }
+    100% { opacity: 1; stroke-width: 3px; }
   }
 </style>
 </head>
@@ -783,7 +783,6 @@ function updateNowMarker(){
     const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
     nowMarkerElements.forEach(el => {
       el.style.animation = 'pulse 2s ease-in-out infinite';
-      el.style.transformOrigin = 'center';
     });
   }, 100); // Small delay to ensure DOM is updated
 
@@ -919,7 +918,6 @@ function renderPlot(series){
         const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
         nowMarkerElements.forEach(el => {
           el.style.animation = 'pulse 2s ease-in-out infinite';
-          el.style.transformOrigin = 'center';
         });
       }, 200);
     });
@@ -938,7 +936,6 @@ function renderPlot(series){
         const nowMarkerElements = plotDivRef.querySelectorAll('.scatterlayer .trace:nth-child(' + (nowMarkerIndex + 1) + ') .points path');
         nowMarkerElements.forEach(el => {
           el.style.animation = 'pulse 2s ease-in-out infinite';
-          el.style.transformOrigin = 'center';
         });
       }, 200);
     });
