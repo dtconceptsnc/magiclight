@@ -1,5 +1,8 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.0.9
+ - Revert designer to client side curve render
+
 ## 4.0.8
 **Bug Fix - Light Designer Interface**
 
