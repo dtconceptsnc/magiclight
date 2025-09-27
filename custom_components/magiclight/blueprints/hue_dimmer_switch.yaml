@@ -26,6 +26,18 @@ blueprint:
             - integration: zha
               manufacturer: Signify Netherlands B.V.
               model: RDM002
+            - integration: zha
+              manufacturer: Signify Netherlands B.V.
+              model: ROM001
+            - integration: zha
+              manufacturer: Signify Netherlands B.V.
+              model: RDM003
+            - integration: zha
+              manufacturer: Philips
+              model: ROM001
+            - integration: zha
+              manufacturer: Philips
+              model: RDM003
             - integration: hue
               manufacturer: Signify Netherlands B.V.
               model: Hue dimmer switch (RWL022)
