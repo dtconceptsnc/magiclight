@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.1.0
+**Enhancement - Philips Hue Button Support**
+
+**Improvements:**
+- Added automatic handling for Philips/Signify ROM001 and RDM003 Hue buttons so they register with the MagicLight switch blueprint while avoiding Zigbee light grouping.
+- Prevented these button devices from being misidentified as lights when building ZHA groups, keeping Zigbee lighting parity accurate.
+
 ## 4.0.9
  - Revert designer to client side curve render
 
