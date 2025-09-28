@@ -237,6 +237,9 @@ let listenersBound=false;
 let rafId=0,lastClientX=null;
 let setCursorRef = ()=>{};
 let selectedHour = new Date().getHours() + new Date().getMinutes()/60;
+let calloutAutoFollow = true;
+let autoCalloutHour = selectedHour;
+let autoCalloutHalf = null;
 
 // Time progression tracking
 let nowMarkerInterval = null;
@@ -556,6 +559,7 @@ function computeActionTarget(action){
 function stepArc(action){
   const hTarget=computeActionTarget(action);
   if(hTarget==null) return;
+  calloutAutoFollow = false;
   setCursorRef(hTarget);
 }
 
@@ -648,6 +652,13 @@ function calloutsVisible(){
   const el = document.getElementById('show-steps');
   return !el || !!el.checked;
 }
+function resolveCalloutContext(){
+  const hasAutoHour = calloutAutoFollow && Number.isFinite(autoCalloutHour);
+  return {
+    hour: hasAutoHour ? autoCalloutHour : selectedHour,
+    halfOverride: calloutAutoFollow ? autoCalloutHalf : null
+  };
+}
 function fmtSigned(n,unit){
   const sign=n>0?'+':(n<0?'−':'±'); const abs=Math.abs(Math.round(n));
   return `${sign}${abs}${unit}`;
@@ -663,8 +674,11 @@ function fmtTimeDelta(hNew,hOld){
    Plot rendering
 ========================= */
 /* build callout traces for both directions */
-function buildStepCalloutsTraces(currentHour){
-  const half = activeHalf || detectHalfSticky(currentHour, activeHalf);
+function buildStepCalloutsTraces(currentHour, halfOverride){
+  let half = halfOverride;
+  if (!half) {
+    half = activeHalf || detectHalfSticky(currentHour, activeHalf);
+  }
   const bNow = interpAtHour(arc.hours, arc.bris, currentHour);
   const bounds = getHalfBounds(half);
 
@@ -798,6 +812,17 @@ function updateNowMarker(){
     upd[`annotations[${nowAnnotationIndex}].text`] = `now ${formatTime(nowHour, params.use12Hour).toLowerCase()}`;
     Plotly.relayout(plotDivRef, upd);
   }
+
+  autoCalloutHour = nowHour;
+  autoCalloutHalf = detectHalfSticky(nowHour, autoCalloutHalf || activeHalf);
+
+  if (calloutAutoFollow) {
+    if (autoCalloutHalf && autoCalloutHalf !== activeHalf) {
+      activeHalf = autoCalloutHalf;
+      updateStepButtons();
+    }
+    refreshCallouts();
+  }
 }
 
 function renderPlot(series){
@@ -854,7 +879,8 @@ function renderPlot(series){
     marker:{size:12,color:cctToRGB(selCCT),line:{width:2,color:'#fff'}},hoverinfo:'skip',showlegend:false };
   const cursorShape={type:'line',xref:'x',x0:selectedHour,x1:selectedHour,yref:'paper',y0:0,y1:1,line:{color:'#1e90ff',width:2}};
 
-  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+  const { hour, halfOverride } = resolveCalloutContext();
+  const { upTrace, dnTrace } = buildStepCalloutsTraces(hour, halfOverride);
 
   const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, upTrace, dnTrace, selectionMarker, nowMarker];
 
@@ -952,7 +978,8 @@ function refreshCallouts(){
     CALL_DN_IDX = plotDivRef.data.findIndex(t => t && t.name === 'step-down path');
   }
 
-  const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
+  const { hour, halfOverride } = resolveCalloutContext();
+  const { upTrace, dnTrace } = buildStepCalloutsTraces(hour, halfOverride);
   const vis = calloutsVisible();
 
   if (CALL_UP_IDX !== -1){
@@ -1008,16 +1035,17 @@ function bindInteractionsOnce(){
 
   let dragging=false;
   const tick=()=>{ if(lastClientX==null){rafId=0;return;} setCursorRef(mapClientXToHour(lastClientX)); rafId=0; };
-  const onPointerDown=e=>{ dragging=true; document.body.classList.add('dragging'); lastClientX=e.clientX; if(!rafId) rafId=requestAnimationFrame(tick); };
+  const onPointerDown=e=>{ calloutAutoFollow=false; dragging=true; document.body.classList.add('dragging'); lastClientX=e.clientX; if(!rafId) rafId=requestAnimationFrame(tick); };
   const onPointerMove=e=>{ if(!dragging) return; lastClientX=e.clientX; if(!rafId) rafId=requestAnimationFrame(tick); };
   const onPointerUp=()=>{ dragging=false; document.body.classList.remove('dragging'); lastClientX=null; };
-  const onClick=e=> setCursorRef(mapClientXToHour(e.clientX));
+  const onClick=e=> { calloutAutoFollow=false; setCursorRef(mapClientXToHour(e.clientX)); };
 
   const area=plotDivRef;
   area.addEventListener('pointerdown', onPointerDown, {passive:true});
   window.addEventListener('pointermove', onPointerMove, {passive:true});
   window.addEventListener('pointerup', onPointerUp, {passive:true});
   plotDivRef.on('plotly_click', (ev) => {
+    calloutAutoFollow=false;
     const x = ev?.points?.[0]?.x;
     if (typeof x === 'number') setCursorRef(x);
   });
@@ -1405,6 +1433,10 @@ function resetAll(){
   Object.keys(defaults).forEach(k=>params[k]=defaults[k]);
   selectedHour = new Date().getHours()+new Date().getMinutes()/60;
   _solarCache=null;
+  calloutAutoFollow = true;
+  autoCalloutHour = selectedHour;
+  autoCalloutHalf = detectHalfSticky(selectedHour, null);
+  activeHalf = autoCalloutHalf;
 
   addMorningEveningUI();
   addRangesUI();
