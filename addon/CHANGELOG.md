@@ -1,11 +1,18 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.1.01
+**Fix - Designer Now Marker Layering**
+
+**Bug Fixes:**
+- Ensured the pulsing "now" indicator renders above step markers so it remains visible while stepping through the curve.
+
 ## 4.1.0
 **Enhancement - Philips Hue Button Support**
 
 **Improvements:**
 - Added automatic handling for Philips/Signify ROM001 and RDM003 Hue buttons so they register with the MagicLight switch blueprint while avoiding Zigbee light grouping.
 - Prevented these button devices from being misidentified as lights when building ZHA groups, keeping Zigbee lighting parity accurate.
+- Added optional triple-press action that triggers a random-color splash while pausing MagicLight control.
 
 ## 4.0.9
  - Revert designer to client side curve render

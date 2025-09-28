@@ -856,7 +856,7 @@ function renderPlot(series){
 
   const { upTrace, dnTrace } = buildStepCalloutsTraces(selectedHour);
 
-  const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, nowMarker, selectionMarker, upTrace, dnTrace];
+  const data=[...segs, homeLegend, sunLegend, hoverProxy, ...sunSegs, upTrace, dnTrace, selectionMarker, nowMarker];
 
   const layout={
     dragmode:'pan', hovermode:'closest',

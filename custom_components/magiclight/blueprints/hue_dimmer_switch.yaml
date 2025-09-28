@@ -77,6 +77,11 @@ trigger:
     event_data:
       command: "down_press"
     id: zha_down
+  - platform: event
+    event_type: zha_event
+    event_data:
+      command: "off_triple_press"
+    id: zha_triple_off
 
   # Hue Bridge (Philips Hue integration) — short_release per button:
   # subtype 1=ON, 2=UP, 3=DOWN, 4=OFF
@@ -128,6 +133,7 @@ trigger:
 variables:
   areas: !input target_areas
   switches: !input switch_device
+  area_targets: "{{ (areas if areas is iterable and areas is not string else [areas]) | to_json }}"
 
 # ── Actions ───────────────────────────────────────────────────────────────────
 action:
@@ -150,7 +156,7 @@ action:
         sequence:
           - service: magiclight.magiclight_toggle
             data:
-              area_id: "{{ areas }}"
+              area_id: "{{ area_targets | from_json }}"
 
       # OFF -> reset
       - conditions:
@@ -165,7 +171,7 @@ action:
         sequence:
           - service: magiclight.reset
             data:
-              area_id: "{{ areas }}"
+              area_id: "{{ area_targets | from_json }}"
 
       # UP -> step up
       - conditions:
@@ -180,7 +186,7 @@ action:
         sequence:
           - service: magiclight.step_up
             data:
-              area_id: "{{ areas }}"
+              area_id: "{{ area_targets | from_json }}"
 
       # DOWN -> step down
       - conditions:
@@ -195,4 +201,25 @@ action:
         sequence:
           - service: magiclight.step_down
             data:
-              area_id: "{{ areas }}"
+              area_id: "{{ area_targets | from_json }}"
+
+      # Triple OFF -> random color blast
+      - conditions:
+          - condition: trigger
+            id: zha_triple_off
+        sequence:
+          - service: magiclight.magiclight_off
+            data:
+              area_id: "{{ area_targets | from_json }}"
+          - repeat:
+              for_each: "{{ area_targets | from_json }}"
+              sequence:
+                - service: light.turn_on
+                  target:
+                    area_id: "{{ repeat.item }}"
+                  data:
+                    transition: 1
+                    brightness_pct: 100
+                    hs_color:
+                      - "{{ range(0, 360) | random }}"
+                      - 100
