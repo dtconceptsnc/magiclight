@@ -14,6 +14,9 @@ from typing import Dict, List, Optional, Any, Union
 
 logger = logging.getLogger(__name__)
 
+# Known Hue/Signify button devices that expose a faux light entity via ZHA.
+ZHA_BUTTON_MODELS = {"rom001", "rdm003"}
+
 
 class Protocol(Enum):
     """Supported lighting protocols."""
@@ -360,75 +363,136 @@ class ZigBeeController(LightController):
                 entity_id = state.get('entity_id', '')
                 if entity_id.startswith('light.'):
                     attributes = state.get('attributes', {})
-                    
+                    device_id = entity_to_device.get(entity_id)
+
+                    manufacturer_attr = (attributes.get('manufacturer') or '').lower()
+                    model_attr = (attributes.get('model') or '').lower()
+
+                    # Fall back to device registry info if attributes are missing
+                    if (not manufacturer_attr or not model_attr) and device_id and device_id in device_by_id:
+                        ha_device = device_by_id[device_id]
+                        if not manufacturer_attr:
+                            manufacturer_attr = (ha_device.get('manufacturer') or '').lower()
+                        if not model_attr:
+                            model_attr = (ha_device.get('model') or '').lower()
+
+                    if model_attr in ZHA_BUTTON_MODELS:
+                        logger.info(
+                            "Skipping non-light ZHA button entity %s (manufacturer=%s, model=%s)",
+                            entity_id,
+                            manufacturer_attr or "unknown",
+                            model_attr or "unknown",
+                        )
+                        continue
+
                     # Try to get area_id from attributes first
                     area_id = attributes.get('area_id')
-                    
+
                     # If not in attributes, try to get from device
-                    if not area_id:
-                        device_id = entity_to_device.get(entity_id)
-                        if device_id and device_id in device_by_id:
-                            area_id = device_by_id[device_id].get('area_id')
-                    
+                    if not area_id and device_id and device_id in device_by_id:
+                        area_id = device_by_id[device_id].get('area_id')
+
                     if area_id and area_id in areas:
-                        areas[area_id]['lights'].append(entity_id)
-                        
-                        # Check if it's a ZHA light
-                        device_id = entity_to_device.get(entity_id)
+                        area_name = areas[area_id]['name']
+                        skip_entity = False
+                        pending_zha_entry = None
                         is_zha = False
+
                         if device_id and device_id in device_by_id:
                             ha_device = device_by_id[device_id]
-                            
+
                             # Check if this is a ZHA device by looking at identifiers
                             ha_identifiers = ha_device.get('identifiers', [])
                             for identifier in ha_identifiers:
-                                if isinstance(identifier, list) and len(identifier) >= 2:
-                                    if identifier[0] == 'zha':
-                                        is_zha = True
-                                        # This is a ZHA device - identifier[1] is the IEEE
-                                        zha_ieee = identifier[1].lower()  # Convert to lowercase
-                                        
-                                        # Try to find this device in our ZHA devices list
-                                        zha_dev = zha_device_by_ieee.get(zha_ieee)
-                                        
-                                        if zha_dev:
-                                            # Use centralized endpoint detection
-                                            endpoint_id = self.determine_light_endpoint(
-                                                zha_device=zha_dev,
-                                                manufacturer=attributes.get('manufacturer', ''),
-                                                model=attributes.get('model', '')
+                                if isinstance(identifier, list) and len(identifier) >= 2 and identifier[0] == 'zha':
+                                    is_zha = True
+                                    # This is a ZHA device - identifier[1] is the IEEE
+                                    zha_ieee = identifier[1].lower()  # Convert to lowercase
+
+                                    # Try to find this device in our ZHA devices list
+                                    zha_dev = zha_device_by_ieee.get(zha_ieee)
+
+                                    if zha_dev:
+                                        zha_model = (zha_dev.get('model') or '').lower()
+                                        if zha_model in ZHA_BUTTON_MODELS:
+                                            logger.info(
+                                                "Skipping ZHA button device %s (IEEE: %s, model: %s)",
+                                                entity_id,
+                                                zha_ieee,
+                                                zha_model,
                                             )
-                                            logger.debug(f"Selected endpoint {endpoint_id} for {entity_id} (IEEE: {zha_ieee})")
-                                            
-                                            areas[area_id]['zha_lights'].append({
-                                                'entity_id': entity_id,
-                                                'ieee': zha_ieee,
-                                                'endpoint_id': endpoint_id
-                                            })
-                                            logger.debug(f"Found ZHA light in area {area_name}: {entity_id} (IEEE: {zha_ieee})")
-                                        else:
-                                            # Even if we don't have full ZHA device info, we have the IEEE
-                                            # Use centralized endpoint detection with manufacturer/model fallback
-                                            manufacturer = attributes.get('manufacturer', '')
-                                            model = attributes.get('model', '')
-                                            
-                                            # Log for debugging
-                                            logger.info(f"Light {entity_id}: manufacturer='{manufacturer}', model='{model}'")
-                                            
-                                            endpoint_id = self.determine_light_endpoint(
-                                                zha_device=None,
-                                                manufacturer=manufacturer,
-                                                model=model
+                                            skip_entity = True
+                                            break
+
+                                        endpoint_id = self.determine_light_endpoint(
+                                            zha_device=zha_dev,
+                                            manufacturer=attributes.get('manufacturer', ''),
+                                            model=attributes.get('model', '')
+                                        )
+                                        logger.debug(f"Selected endpoint {endpoint_id} for {entity_id} (IEEE: {zha_ieee})")
+
+                                        pending_zha_entry = {
+                                            'entity_id': entity_id,
+                                            'ieee': zha_ieee,
+                                            'endpoint_id': endpoint_id
+                                        }
+                                        logger.debug(
+                                            "Found ZHA light in area %s: %s (IEEE: %s)",
+                                            area_name,
+                                            entity_id,
+                                            zha_ieee,
+                                        )
+                                    else:
+                                        if model_attr in ZHA_BUTTON_MODELS:
+                                            logger.info(
+                                                "Skipping ZHA button entity without device info %s (model: %s)",
+                                                entity_id,
+                                                model_attr,
                                             )
-                                            
-                                            areas[area_id]['zha_lights'].append({
-                                                'entity_id': entity_id,
-                                                'ieee': zha_ieee,
-                                                'endpoint_id': endpoint_id
-                                            })
-                                            logger.info(f"Found ZHA light by identifier in area {area_name}: {entity_id} (IEEE: {zha_ieee}, endpoint: {endpoint_id}, manufacturer: '{manufacturer}', model: '{model}')")
-                                        break
-                        
+                                            skip_entity = True
+                                            break
+                                        # Even if we don't have full ZHA device info, we have the IEEE
+                                        # Use centralized endpoint detection with manufacturer/model fallback
+                                        manufacturer = attributes.get('manufacturer', '')
+                                        model = attributes.get('model', '')
+
+                                        logger.info(
+                                            "Light %s: manufacturer='%s', model='%s'",
+                                            entity_id,
+                                            manufacturer,
+                                            model,
+                                        )
+
+                                        endpoint_id = self.determine_light_endpoint(
+                                            zha_device=None,
+                                            manufacturer=manufacturer,
+                                            model=model
+                                        )
+
+                                        pending_zha_entry = {
+                                            'entity_id': entity_id,
+                                            'ieee': zha_ieee,
+                                            'endpoint_id': endpoint_id
+                                        }
+                                        logger.info(
+                                            "Found ZHA light by identifier in area %s: %s (IEEE: %s, endpoint: %s, manufacturer: '%s', model: '%s')",
+                                            area_name,
+                                            entity_id,
+                                            zha_ieee,
+                                            endpoint_id,
+                                            manufacturer,
+                                            model,
+                                        )
+                                    break
+
+                            if skip_entity:
+                                continue
+
+                        areas[area_id]['lights'].append(entity_id)
+
+                        if pending_zha_entry:
+                            areas[area_id]['zha_lights'].append(pending_zha_entry)
+
                         # If not a ZHA light, add to non-ZHA lights list
                         if not is_zha:
                             areas[area_id]['non_zha_lights'].append(entity_id)

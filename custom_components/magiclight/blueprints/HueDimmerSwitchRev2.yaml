@@ -1,7 +1,7 @@
 blueprint:
-  name: MagicLight Hue Dimmer Switch
+  name: MagicLight Hue Dimmer Switch (Test)
   description: >
-    Control Hue Dimmer Switches via MagicLight
+    Experimental Hue Dimmer Switch controls for MagicLight with extended dimming tests
   domain: automation
   input:
     switch_device:
@@ -77,6 +77,17 @@ trigger:
     event_data:
       command: "down_press"
     id: zha_down
+  # ZHA double-press events (requires firmware that emits *_double_press)
+  - platform: event
+    event_type: zha_event
+    event_data:
+      command: "up_double_press"
+    id: zha_up_double
+  - platform: event
+    event_type: zha_event
+    event_data:
+      command: "down_double_press"
+    id: zha_down_double
   - platform: event
     event_type: zha_event
     event_data:
@@ -109,6 +120,19 @@ trigger:
       type: short_release
       subtype: 3
     id: hue_down
+  # Hue Bridge double short release events (subtype 2=UP, 3=DOWN)
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: double_short_release
+      subtype: 2
+    id: hue_up_double
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: double_short_release
+      subtype: 3
+    id: hue_down_double
 
   # (Optional) Older/alt Hue payloads some users still see (1002 style).
   # Uncomment if your bridge reports numeric 'event' codes:
@@ -173,7 +197,7 @@ action:
             data:
               area_id: "{{ area_targets | from_json }}"
 
-      # UP -> step up
+      # UP single -> dim up
       - conditions:
           - condition: or
             conditions:
@@ -184,11 +208,11 @@ action:
               # - condition: trigger
               #   id: hue_up_legacy
         sequence:
-          - service: magiclight.step_up
+          - service: magiclight.dim_up
             data:
               area_id: "{{ area_targets | from_json }}"
 
-      # DOWN -> step down
+      # DOWN single -> dim down
       - conditions:
           - condition: or
             conditions:
@@ -198,6 +222,32 @@ action:
                 id: hue_down
               # - condition: trigger
               #   id: hue_down_legacy
+        sequence:
+          - service: magiclight.dim_down
+            data:
+              area_id: "{{ area_targets | from_json }}"
+
+      # UP double -> step up
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_up_double
+              - condition: trigger
+                id: hue_up_double
+        sequence:
+          - service: magiclight.step_up
+            data:
+              area_id: "{{ area_targets | from_json }}"
+
+      # DOWN double -> step down
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_down_double
+              - condition: trigger
+                id: hue_down_double
         sequence:
           - service: magiclight.step_down
             data:

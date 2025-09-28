@@ -473,6 +473,33 @@ class LightDesignerServer:
                 status=500
             )
 
+    def apply_query_overrides(self, config: dict, query) -> dict:
+        """Apply UI query parameters to a config dict for live previews."""
+        numeric_params = [
+            'month',
+            'min_color_temp', 'max_color_temp',
+            'min_brightness', 'max_brightness',
+            'mid_bri_up', 'steep_bri_up', 'mid_cct_up', 'steep_cct_up',
+            'mid_bri_dn', 'steep_bri_dn', 'mid_cct_dn', 'steep_cct_dn'
+        ]
+
+        for param_name in numeric_params:
+            if param_name in query:
+                raw_value = query[param_name]
+                try:
+                    if param_name == 'month':
+                        config[param_name] = int(float(raw_value))
+                    else:
+                        config[param_name] = float(raw_value)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid value for {param_name}: {raw_value}")
+
+        for param_name in ['mirror_up', 'mirror_dn']:
+            if param_name in query:
+                config[param_name] = query[param_name].lower() in ('true', '1', 'yes', 'on')
+
+        return config
+
     async def get_step_sequences(self, request: Request) -> Response:
         """Calculate step sequences for visualization."""
         try:
@@ -482,6 +509,9 @@ class LightDesignerServer:
 
             # Load current configuration
             config = await self.load_config()
+
+            # Apply overrides from UI for live preview
+            config = self.apply_query_overrides(config, request.query)
 
             # Calculate step sequences in both directions
             step_up_sequence = calculate_step_sequence(current_hour, 'brighten', max_steps, config)
@@ -503,23 +533,7 @@ class LightDesignerServer:
             config = await self.load_config()
 
             # Override with UI parameters from query string
-            for param_name in ['month', 'min_color_temp', 'max_color_temp', 'min_brightness', 'max_brightness',
-                              'mid_bri_up', 'steep_bri_up', 'mid_cct_up', 'steep_cct_up',
-                              'mid_bri_dn', 'steep_bri_dn', 'mid_cct_dn', 'steep_cct_dn']:
-                if param_name in request.query:
-                    try:
-                        # Convert to appropriate type
-                        if param_name == 'month':
-                            config[param_name] = int(request.query[param_name])
-                        else:
-                            config[param_name] = float(request.query[param_name])
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"Invalid value for {param_name}: {request.query[param_name]}")
-
-            # Handle boolean parameters
-            for param_name in ['mirror_up', 'mirror_dn']:
-                if param_name in request.query:
-                    config[param_name] = request.query[param_name].lower() in ('true', '1', 'yes')
+            config = self.apply_query_overrides(config, request.query)
 
             # Generate curve data using the merged configuration
             curve_data = generate_curve_data(config)
