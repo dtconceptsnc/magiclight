@@ -9,14 +9,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}"
 ADDON_DIR="${REPO_ROOT}/addon"
-CONTEXT_COMPONENTS_DIR="${ADDON_DIR}/custom_components"
-SOURCE_COMPONENTS_DIR="${REPO_ROOT}/custom_components"
-
-cleanup() {
-    rm -rf "${CONTEXT_COMPONENTS_DIR}"
-}
-
-trap cleanup EXIT
 
 # Default values
 RUN_AFTER_BUILD=false
@@ -60,11 +52,6 @@ if [[ ! -d "${ADDON_DIR}" ]]; then
     exit 1
 fi
 
-if [[ ! -d "${SOURCE_COMPONENTS_DIR}" ]]; then
-    echo "Error: custom_components directory not found at ${SOURCE_COMPONENTS_DIR}"
-    exit 1
-fi
-
 # Detect current architecture
 case $(uname -m) in
     x86_64)
@@ -84,12 +71,6 @@ esac
 
 echo "Building MagicLight addon for $ARCH (no cache)..."
 echo "Using repository root as Docker build context: ${REPO_ROOT}"
-
-# Prepare custom components inside addon directory for Docker build context
-echo "Preparing custom_components bundle for Docker build..."
-rm -rf "${CONTEXT_COMPONENTS_DIR}"
-mkdir -p "${ADDON_DIR}"
-cp -a "${SOURCE_COMPONENTS_DIR}" "${CONTEXT_COMPONENTS_DIR%/*}"
 
 docker run --rm -it --name builder --privileged \
     -v "${REPO_ROOT}":/data \

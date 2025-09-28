@@ -9,16 +9,34 @@
 # ---------------------------------------------------------------
 MAGICLIGHT_SOURCE="/opt/magiclight/custom_components/magiclight"
 MAGICLIGHT_DEST_BASE="/config/custom_components"
-MAGICLIGHT_DEST="${MAGICLIGHT_DEST_BASE}/magiclight"
-MAGICLIGHT_MARKER="${MAGICLIGHT_DEST}/.managed_by_magiclight_addon"
+MAGICLIGHT_DEST=""
+MAGICLIGHT_MARKER=""
+
+build_default_download_url() {
+    local repo branch
+
+    repo="$(bashio::config 'integration_repo')"
+    if [ "${repo}" = "null" ] || [ -z "${repo}" ]; then
+        repo="dtconceptsnc/test-magiclight"
+    fi
+
+    branch="main"
+    if echo "${repo}" | grep -q '#'; then
+        branch="${repo#*#}"
+        repo="${repo%%#*}"
+    fi
+
+    echo "https://codeload.github.com/${repo}/tar.gz/refs/heads/${branch}"
+}
 
 download_integration_source() {
-    local tmp_dir archive_path source_path download_url
+    local target_path download_url tmp_dir archive_path source_path
 
-    download_url="$1"
+    target_path="$1"
+    download_url="$2"
 
     if [ -z "${download_url}" ]; then
-        download_url="https://codeload.github.com/dtconceptsnc/magiclight/tar.gz/refs/heads/main"
+        download_url="$(build_default_download_url)"
     fi
 
     tmp_dir="$(mktemp -d)"
@@ -46,13 +64,59 @@ download_integration_source() {
         return 1
     fi
 
-    cp -r "${source_path}" "${MAGICLIGHT_DEST_BASE}/"
+    if [ -e "${target_path}" ]; then
+        rm -rf "${target_path}"
+    fi
+
+    mkdir -p "$(dirname "${target_path}")"
+
+    if ! mv "${source_path}" "${target_path}"; then
+        bashio::log.error "Failed to move integration files into ${target_path}."
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+
     rm -rf "${tmp_dir}"
     return 0
 }
 
+prepare_destination() {
+    local base="${MAGICLIGHT_DEST_BASE}"
+
+    if mkdir -p "${base}" 2>/dev/null; then
+        bashio::log.info "Ensured Home Assistant custom_components directory at ${base}."
+    fi
+
+    MAGICLIGHT_DEST="${base}/magiclight"
+    MAGICLIGHT_MARKER="${MAGICLIGHT_DEST}/.managed_by_magiclight_addon"
+
+    bashio::log.info "Using custom_components directory: ${base}"
+}
+
+copy_bundled_integration() {
+    local target_path
+
+    target_path="$1"
+
+    if [ ! -d "${MAGICLIGHT_SOURCE}" ]; then
+        return 1
+    fi
+
+    if [ -e "${target_path}" ]; then
+        rm -rf "${target_path}"
+    fi
+
+    mkdir -p "$(dirname "${target_path}")"
+
+    if ! cp -a "${MAGICLIGHT_SOURCE}" "${target_path}"; then
+        return 1
+    fi
+
+    return 0
+}
+
 manage_magiclight_integration() {
-    local manage_integration download_url
+    local manage_integration download_url expected_source current_source current_version addon_version
     manage_integration="$(bashio::config 'manage_integration')"
 
     if [ "${manage_integration}" = "null" ] || [ -z "${manage_integration}" ]; then
@@ -69,9 +133,39 @@ manage_magiclight_integration() {
         return
     fi
 
-    if ! bashio::fs.directory_exists "${MAGICLIGHT_DEST_BASE}"; then
-        bashio::log.info "Creating Home Assistant custom_components directory..."
-        mkdir -p "${MAGICLIGHT_DEST_BASE}"
+    prepare_destination
+
+    addon_version="$(bashio::addon.version)"
+
+    download_url="$(bashio::config 'integration_download_url')"
+    if [ "${download_url}" = "null" ]; then
+        download_url=""
+    fi
+
+    if [ -n "${download_url}" ]; then
+        expected_source="${download_url}"
+    elif [ -d "${MAGICLIGHT_SOURCE}" ]; then
+        expected_source="bundled"
+    else
+        expected_source="$(build_default_download_url)"
+    fi
+
+    if [ -f "${MAGICLIGHT_MARKER}" ]; then
+        current_source=$(sed -n 's/^source=//p' "${MAGICLIGHT_MARKER}")
+        current_version=$(sed -n 's/^addon_version=//p' "${MAGICLIGHT_MARKER}")
+    else
+        current_source=""
+        current_version=""
+    fi
+
+    if bashio::fs.directory_exists "${MAGICLIGHT_DEST}" && \
+       [ "${current_source}" = "${expected_source}" ] && \
+        [ "${current_version}" = "${addon_version}" ]; then
+        bashio::log.info "MagicLight integration already up to date (source: ${expected_source})."
+        if [ -d "${MAGICLIGHT_FALLBACK_BASE}/magiclight" ]; then
+            bashio::log.info "Mirror already present at ${MAGICLIGHT_FALLBACK_BASE}/magiclight."
+        fi
+        return
     fi
 
     if bashio::fs.directory_exists "${MAGICLIGHT_DEST}"; then
@@ -85,29 +179,58 @@ manage_magiclight_integration() {
         bashio::log.info "Installing MagicLight custom integration..."
     fi
 
-    download_url="$(bashio::config 'integration_download_url')"
-    if [ "${download_url}" = "null" ]; then
-        download_url=""
-    fi
-
     if [ -n "${download_url}" ]; then
-        if ! download_integration_source "${download_url}"; then
+        if ! download_integration_source "${MAGICLIGHT_DEST}" "${download_url}"; then
             bashio::log.error "Unable to deploy MagicLight integration from ${download_url}."
             return
         fi
     elif [ -d "${MAGICLIGHT_SOURCE}" ]; then
         bashio::log.info "Copying MagicLight integration bundled with the add-on..."
-        cp -r "${MAGICLIGHT_SOURCE}" "${MAGICLIGHT_DEST_BASE}/"
+        if ! copy_bundled_integration "${MAGICLIGHT_DEST}"; then
+            bashio::log.error "Bundled MagicLight integration missing; attempting download instead."
+            if ! download_integration_source "${MAGICLIGHT_DEST}" ""; then
+                bashio::log.error "Unable to deploy MagicLight integration."
+                return
+            fi
+        fi
     else
-        bashio::log.warning "Bundled MagicLight integration not found; attempting to download latest main branch."
-        if ! download_integration_source ""; then
+        bashio::log.info "Downloading MagicLight integration from main branch..."
+        if ! download_integration_source "${MAGICLIGHT_DEST}" ""; then
             bashio::log.error "Unable to deploy MagicLight integration."
             return
         fi
     fi
 
-    touch "${MAGICLIGHT_MARKER}"
+    {
+        echo "addon_version=${addon_version}"
+        echo "source=${expected_source}"
+        echo "updated_at=$(date -Iseconds)"
+    } > "${MAGICLIGHT_MARKER}"
+
+    if ! bashio::fs.directory_exists "${MAGICLIGHT_DEST}"; then
+        bashio::log.error "MagicLight integration deployment failed; destination not found after copy."
+        return
+    fi
+
+    if [ ! -f "${MAGICLIGHT_DEST}/manifest.json" ]; then
+        bashio::log.warning "MagicLight integration manifest not found at ${MAGICLIGHT_DEST}/manifest.json."
+        bashio::log.warning "Directory contents: $(ls -A "${MAGICLIGHT_DEST}" 2>/dev/null || echo '(empty)')"
+    else
+        bashio::log.info "MagicLight integration manifest detected at ${MAGICLIGHT_DEST}/manifest.json."
+    fi
+
     bashio::log.info "MagicLight integration deployed to ${MAGICLIGHT_DEST}."
+
+    discovery_payload='{"service":"magiclight","config":{}}'
+    bashio::log.info "Publishing discovery payload to supervisor..."
+    if curl -sS -X POST "http://supervisor/addons/self/discovery" \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "${discovery_payload}" >/dev/null; then
+        bashio::log.info "Supervisor discovery payload sent successfully."
+    else
+        bashio::log.warning "Failed to send supervisor discovery payload."
+    fi
 }
 
 manage_magiclight_integration

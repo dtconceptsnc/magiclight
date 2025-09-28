@@ -16,9 +16,6 @@ RUN apk add --no-cache python3 py3-pip py3-aiohttp py3-aiofiles tzdata curl
 WORKDIR /app
 COPY *.py *.html requirements.txt ./
 
-# Bundle Home Assistant integration source so the addon can deploy it
-COPY custom_components /opt/magiclight/custom_components
-
 # Install only the packages not available from Alpine repos
 RUN pip3 install --no-cache-dir websockets==12.0 python-dateutil==2.8.2 astral==3.2
 
