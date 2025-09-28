@@ -21,5 +21,7 @@ panel_title: MagicLight
 panel_admin: false
 options:
   color_mode: "kelvin"
+  manage_integration: true
 schema:
   color_mode: list(kelvin|rgb|xy)
+  manage_integration: bool

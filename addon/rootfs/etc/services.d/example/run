@@ -5,6 +5,56 @@
 # ==============================================================================
 
 # ---------------------------------------------------------------
+# 0. Ensure MagicLight integration files are installed
+# ---------------------------------------------------------------
+MAGICLIGHT_SOURCE="/opt/magiclight/custom_components/magiclight"
+MAGICLIGHT_DEST_BASE="/config/custom_components"
+MAGICLIGHT_DEST="${MAGICLIGHT_DEST_BASE}/magiclight"
+MAGICLIGHT_MARKER="${MAGICLIGHT_DEST}/.managed_by_magiclight_addon"
+
+manage_magiclight_integration() {
+    local manage_integration
+    manage_integration="$(bashio::config 'manage_integration')"
+
+    if [ "${manage_integration}" = "null" ] || [ -z "${manage_integration}" ]; then
+        manage_integration="true"
+    fi
+
+    if [ "${manage_integration}" = "false" ]; then
+        bashio::log.info "Skipping MagicLight integration management (disabled in options)."
+        return
+    fi
+
+    if [ ! -d "${MAGICLIGHT_SOURCE}" ]; then
+        bashio::log.error "Bundled MagicLight integration source is missing at ${MAGICLIGHT_SOURCE}."
+        bashio::log.error "The add-on cannot install the custom integration automatically."
+        return
+    fi
+
+    if ! bashio::fs.directory_exists "${MAGICLIGHT_DEST_BASE}"; then
+        bashio::log.info "Creating Home Assistant custom_components directory..."
+        mkdir -p "${MAGICLIGHT_DEST_BASE}"
+    fi
+
+    if bashio::fs.directory_exists "${MAGICLIGHT_DEST}"; then
+        if [ -f "${MAGICLIGHT_MARKER}" ]; then
+            bashio::log.info "Updating existing MagicLight integration managed by the add-on..."
+        else
+            bashio::log.warning "MagicLight integration already present; replacing with add-on bundled copy."
+        fi
+        rm -rf "${MAGICLIGHT_DEST}"
+    else
+        bashio::log.info "Installing MagicLight custom integration..."
+    fi
+
+    cp -r "${MAGICLIGHT_SOURCE}" "${MAGICLIGHT_DEST_BASE}/"
+    touch "${MAGICLIGHT_MARKER}"
+    bashio::log.info "MagicLight integration deployed to ${MAGICLIGHT_DEST}."
+}
+
+manage_magiclight_integration
+
+# ---------------------------------------------------------------
 # 1. Detect mode
 #    - If SUPERVISOR_TOKEN is present → ADDON
 #    - Else → STANDALONE
