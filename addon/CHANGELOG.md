@@ -6,12 +6,9 @@
 **Improvements:**
 - Add-on now deploys the `magiclight` custom integration on startup by default, installing updates automatically and removing the managed copy when the toggle is disabled.
 - Added `manage_integration` option to let advanced users opt out of automatic deployment while still providing a clean uninstall path.
-- Added `integration_download_url` override so testers can point the add-on at alternate branches or releases of the integration source.
 - Added `integration_repo` option (branch via optional `owner/repo#branch` format) so release vs. staging sources can be switched without rebuilding the add-on.
 - Relocated the local build helper to the repository root to package both add-on and integration assets from a single entry point.
 - Added dedicated `dim_up`/`dim_down` primitives for smoother curve-based dimming without relying on switch automations.
-- Integration redeploy now runs only when the add-on version or source URL changes, avoiding unnecessary downloads on each startup.
-- Deployment now mirrors the HACS installer behavior, targeting `/homeassistant/custom_components` (with fallback) and verifying the integration folder after copy.
 
 ## 4.1.01
 **Fix - Designer Now Marker Layering**

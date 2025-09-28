@@ -17,7 +17,7 @@ build_default_download_url() {
 
     repo="$(bashio::config 'integration_repo')"
     if [ "${repo}" = "null" ] || [ -z "${repo}" ]; then
-        repo="dtconceptsnc/test-magiclight"
+        repo="dtconceptsnc/magiclight"
     fi
 
     branch="main"

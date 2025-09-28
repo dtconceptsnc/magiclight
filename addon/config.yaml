@@ -24,7 +24,7 @@ panel_admin: false
 options:
   color_mode: "kelvin"
   manage_integration: true
-  integration_repo: dtconceptsnc/test-magiclight
+  integration_repo: dtconceptsnc/magiclight
 schema:
   color_mode: list(kelvin|rgb|xy)
   manage_integration: bool
