@@ -157,7 +157,7 @@ trigger:
 variables:
   areas: !input target_areas
   switches: !input switch_device
-  area_targets: "{{ (areas if areas is iterable and areas is not string else [areas]) | to_json }}"
+  area_targets: "{{ areas if areas is iterable and areas is not string else [areas] }}"
 
 # ── Actions ───────────────────────────────────────────────────────────────────
 action:
@@ -180,7 +180,7 @@ action:
         sequence:
           - service: magiclight.magiclight_toggle
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # OFF -> reset
       - conditions:
@@ -195,7 +195,7 @@ action:
         sequence:
           - service: magiclight.reset
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # UP single -> dim up
       - conditions:
@@ -210,7 +210,7 @@ action:
         sequence:
           - service: magiclight.dim_up
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # DOWN single -> dim down
       - conditions:
@@ -225,7 +225,7 @@ action:
         sequence:
           - service: magiclight.dim_down
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # UP double -> step up
       - conditions:
@@ -238,7 +238,7 @@ action:
         sequence:
           - service: magiclight.step_up
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # DOWN double -> step down
       - conditions:
@@ -251,7 +251,7 @@ action:
         sequence:
           - service: magiclight.step_down
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
 
       # Triple OFF -> random color blast
       - conditions:
@@ -260,9 +260,9 @@ action:
         sequence:
           - service: magiclight.magiclight_off
             data:
-              area_id: "{{ area_targets | from_json }}"
+              area_id: "{{ area_targets }}"
           - repeat:
-              for_each: "{{ area_targets | from_json }}"
+              for_each: "{{ area_targets }}"
               sequence:
                 - service: light.turn_on
                   target:

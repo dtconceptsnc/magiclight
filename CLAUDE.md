@@ -178,7 +178,7 @@ GitHub Actions workflows (`.github/workflows/`):
 - `reset`: Reset to current time position
 
 ## Blueprint Automation
-`custom_components/magiclight/blueprints/blueprint.yaml`:
+`blueprints/automation/magiclight/hue_dimmer_switch.yaml`:
 - Multiple ZHA switch support
 - Multiple area targeting
 - Button mappings to service primitives

@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.007
+**Enhancement - Blueprint Deployment Sync**
+
+**Improvements:**
+- Added runtime blueprint installer so add-on deployments (and remote repo downloads) copy `magiclight` automation/script blueprints into Home Assistant's `/config/blueprints` tree automatically.
+- Reorganized repository blueprints to follow Home Assistant's directory structure, eliminating duplicate storage and simplifying packaging.
+
 ## 4.2.0
 **Feature - Automatic Integration Management**
 

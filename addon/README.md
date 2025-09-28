@@ -67,7 +67,7 @@ When you press a ZHA-compatible switch:
 
 ### Switch Integration
 
-MagicLight supports Philips Hue Dimmer Switches via the included blueprint. Other switches require custom automations using the MagicLight integration services.
+MagicLight supports Philips Hue Dimmer Switches via the included blueprint. The add-on copies it into `/config/blueprints/automation/magiclight` on startup so it is ready for use without manual import. Other switches require custom automations using the MagicLight integration services.
 
 ### Light Control
 
