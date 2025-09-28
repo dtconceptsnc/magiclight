@@ -257,9 +257,9 @@ class HomeAssistantWebSocketClient:
         if final_target:
             service_msg["target"] = final_target
 
-        logger.info(f"Sending service call: {domain}.{service} (id: {message_id})")
+        logger.debug(f"Sending service call: {domain}.{service} (id: {message_id})")
         await self.websocket.send(json.dumps(service_msg))
-        logger.info(f"Called service: {domain}.{service} (id: {message_id})")
+        logger.debug(f"Called service: {domain}.{service} (id: {message_id})")
         
         return message_id
         
@@ -287,10 +287,10 @@ class HomeAssistantWebSocketClient:
         
         # If we have a ZHA group entity and parity, use the group
         if light_entity and has_parity:
-            logger.info(f"✓ Using ZHA group entity '{light_entity}' for area '{area_id}' (all lights are ZHA)")
+            logger.debug(f"✓ Using ZHA group entity '{light_entity}' for area '{area_id}' (all lights are ZHA)")
             return "entity_id", light_entity
         elif light_entity and not has_parity:
-            logger.info(f"⚠ Area '{area_id}' has non-ZHA lights, using area-based control for full coverage")
+            logger.debug(f"⚠ Area '{area_id}' has non-ZHA lights, using area-based control for full coverage")
         
         # Default to area-based control
         logger.info(f"Using area-based control for area '{area_id}'")
@@ -1203,7 +1203,7 @@ class HomeAssistantWebSocketClient:
                     if self.timezone:
                         os.environ["HASS_TIME_ZONE"] = self.timezone
             
-            logger.info(f"Result for message {msg_id}: {'success' if success else 'failed'}")
+            logger.debug(f"Result for message {msg_id}: {'success' if success else 'failed'}")
             
         else:
             logger.debug(f"Received message type: {msg_type}")

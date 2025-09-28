@@ -1,9 +1,22 @@
 #!/bin/bash
 
-# Quick build script for local testing
+# Quick build script for local testing from repository root
 # Builds for current architecture without cache
 
 set -e
+
+# Resolve important paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${SCRIPT_DIR}"
+ADDON_DIR="${REPO_ROOT}/addon"
+CONTEXT_COMPONENTS_DIR="${ADDON_DIR}/custom_components"
+SOURCE_COMPONENTS_DIR="${REPO_ROOT}/custom_components"
+
+cleanup() {
+    rm -rf "${CONTEXT_COMPONENTS_DIR}"
+}
+
+trap cleanup EXIT
 
 # Default values
 RUN_AFTER_BUILD=false
@@ -30,7 +43,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  -r, --run           Run the container after building"
             echo "  -p, --port <port>   Host port to map to 8099 (default: 8099)"
-            echo "  -h, --help   Display this help message"
+            echo "  -h, --help          Display this help message"
             exit 0
             ;;
         *)
@@ -40,6 +53,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Ensure addon directory exists
+if [[ ! -d "${ADDON_DIR}" ]]; then
+    echo "Error: addon directory not found at ${ADDON_DIR}"
+    exit 1
+fi
+
+if [[ ! -d "${SOURCE_COMPONENTS_DIR}" ]]; then
+    echo "Error: custom_components directory not found at ${SOURCE_COMPONENTS_DIR}"
+    exit 1
+fi
 
 # Detect current architecture
 case $(uname -m) in
@@ -59,12 +83,19 @@ case $(uname -m) in
 esac
 
 echo "Building MagicLight addon for $ARCH (no cache)..."
+echo "Using repository root as Docker build context: ${REPO_ROOT}"
+
+# Prepare custom components inside addon directory for Docker build context
+echo "Preparing custom_components bundle for Docker build..."
+rm -rf "${CONTEXT_COMPONENTS_DIR}"
+mkdir -p "${ADDON_DIR}"
+cp -a "${SOURCE_COMPONENTS_DIR}" "${CONTEXT_COMPONENTS_DIR%/*}"
 
 docker run --rm -it --name builder --privileged \
-    -v "$(pwd)":/data \
+    -v "${REPO_ROOT}":/data \
     -v /var/run/docker.sock:/var/run/docker.sock:ro \
     ghcr.io/home-assistant/amd64-builder \
-    -t /data \
+    -t /data/addon \
     --test \
     --${ARCH} \
     -i magiclight-${ARCH} \
@@ -79,35 +110,35 @@ if [ "$RUN_AFTER_BUILD" = true ]; then
     echo "Running MagicLight container..."
     echo "Press Ctrl+C to stop"
     echo ""
-    
-    # Check if .env file exists
-    if [ -f ".env" ]; then
-        ENV_FILE="--env-file .env"
-        echo "Using .env file for configuration"
+
+    # Determine if .env file exists at repo root
+    if [ -f "${REPO_ROOT}/.env" ]; then
+        ENV_FILE="--env-file ${REPO_ROOT}/.env"
+        echo "Using ${REPO_ROOT}/.env for configuration"
     else
-        echo "Warning: No .env file found. Using environment variables."
+        echo "Warning: No .env file found at ${REPO_ROOT}/.env. Using environment variables."
         ENV_FILE=""
-        
+
         # Check if HA_TOKEN is set
         if [ -z "${HA_TOKEN}" ]; then
             echo ""
             echo "ERROR: HA_TOKEN environment variable is not set!"
             echo ""
             echo "Please either:"
-            echo "1. Create .env file with HA_TOKEN=your_token_here"
+            echo "1. Create ${REPO_ROOT}/.env with HA_TOKEN=your_token_here"
             echo "2. Or set environment variable: export HA_TOKEN='your_token_here'"
             echo ""
             exit 1
         fi
     fi
-    
+
     # The builder creates images with 'local/' prefix
     docker run --rm -it \
         --name magiclight-test \
         ${ENV_FILE} \
         -p "${HOST_PORT}:8099" \
         local/magiclight-${ARCH}:latest
-    
+
     echo ""
     echo "Light Designer web UI should be available at: http://localhost:${HOST_PORT}"
 fi

@@ -12,8 +12,47 @@ MAGICLIGHT_DEST_BASE="/config/custom_components"
 MAGICLIGHT_DEST="${MAGICLIGHT_DEST_BASE}/magiclight"
 MAGICLIGHT_MARKER="${MAGICLIGHT_DEST}/.managed_by_magiclight_addon"
 
+download_integration_source() {
+    local tmp_dir archive_path source_path download_url
+
+    download_url="$1"
+
+    if [ -z "${download_url}" ]; then
+        download_url="https://codeload.github.com/dtconceptsnc/magiclight/tar.gz/refs/heads/main"
+    fi
+
+    tmp_dir="$(mktemp -d)"
+    archive_path="${tmp_dir}/magiclight.tar.gz"
+
+    bashio::log.info "Downloading MagicLight integration from ${download_url}..."
+
+    if ! curl -sSL -o "${archive_path}" "${download_url}"; then
+        bashio::log.error "Failed to download MagicLight integration archive."
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+
+    if ! tar -xzf "${archive_path}" -C "${tmp_dir}"; then
+        bashio::log.error "Failed to extract MagicLight integration archive."
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+
+    source_path="$(find "${tmp_dir}" -maxdepth 3 -type d -path '*/custom_components/magiclight' | head -n 1)"
+
+    if [ -z "${source_path}" ]; then
+        bashio::log.error "Could not locate custom_components/magiclight in downloaded archive."
+        rm -rf "${tmp_dir}"
+        return 1
+    fi
+
+    cp -r "${source_path}" "${MAGICLIGHT_DEST_BASE}/"
+    rm -rf "${tmp_dir}"
+    return 0
+}
+
 manage_magiclight_integration() {
-    local manage_integration
+    local manage_integration download_url
     manage_integration="$(bashio::config 'manage_integration')"
 
     if [ "${manage_integration}" = "null" ] || [ -z "${manage_integration}" ]; then
@@ -21,13 +60,12 @@ manage_magiclight_integration() {
     fi
 
     if [ "${manage_integration}" = "false" ]; then
-        bashio::log.info "Skipping MagicLight integration management (disabled in options)."
-        return
-    fi
-
-    if [ ! -d "${MAGICLIGHT_SOURCE}" ]; then
-        bashio::log.error "Bundled MagicLight integration source is missing at ${MAGICLIGHT_SOURCE}."
-        bashio::log.error "The add-on cannot install the custom integration automatically."
+        if bashio::fs.directory_exists "${MAGICLIGHT_DEST}" && [ -f "${MAGICLIGHT_MARKER}" ]; then
+            bashio::log.info "Removing MagicLight integration installed by the add-on..."
+            rm -rf "${MAGICLIGHT_DEST}"
+        else
+            bashio::log.info "Skipping MagicLight integration management (disabled in options)."
+        fi
         return
     fi
 
@@ -40,14 +78,34 @@ manage_magiclight_integration() {
         if [ -f "${MAGICLIGHT_MARKER}" ]; then
             bashio::log.info "Updating existing MagicLight integration managed by the add-on..."
         else
-            bashio::log.warning "MagicLight integration already present; replacing with add-on bundled copy."
+            bashio::log.warning "MagicLight integration already present; replacing with managed copy."
         fi
         rm -rf "${MAGICLIGHT_DEST}"
     else
         bashio::log.info "Installing MagicLight custom integration..."
     fi
 
-    cp -r "${MAGICLIGHT_SOURCE}" "${MAGICLIGHT_DEST_BASE}/"
+    download_url="$(bashio::config 'integration_download_url')"
+    if [ "${download_url}" = "null" ]; then
+        download_url=""
+    fi
+
+    if [ -n "${download_url}" ]; then
+        if ! download_integration_source "${download_url}"; then
+            bashio::log.error "Unable to deploy MagicLight integration from ${download_url}."
+            return
+        fi
+    elif [ -d "${MAGICLIGHT_SOURCE}" ]; then
+        bashio::log.info "Copying MagicLight integration bundled with the add-on..."
+        cp -r "${MAGICLIGHT_SOURCE}" "${MAGICLIGHT_DEST_BASE}/"
+    else
+        bashio::log.warning "Bundled MagicLight integration not found; attempting to download latest main branch."
+        if ! download_integration_source ""; then
+            bashio::log.error "Unable to deploy MagicLight integration."
+            return
+        fi
+    fi
+
     touch "${MAGICLIGHT_MARKER}"
     bashio::log.info "MagicLight integration deployed to ${MAGICLIGHT_DEST}."
 }

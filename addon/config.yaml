@@ -22,6 +22,8 @@ panel_admin: false
 options:
   color_mode: "kelvin"
   manage_integration: true
+  integration_download_url: ""
 schema:
   color_mode: list(kelvin|rgb|xy)
   manage_integration: bool
+  integration_download_url: str?

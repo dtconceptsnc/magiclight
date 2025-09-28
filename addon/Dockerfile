@@ -10,7 +10,7 @@ RUN \
 
 # Install Python and dependencies
 # py3-aiohttp provides pre-built aiohttp package - much faster!
-RUN apk add --no-cache python3 py3-pip py3-aiohttp py3-aiofiles tzdata
+RUN apk add --no-cache python3 py3-pip py3-aiohttp py3-aiofiles tzdata curl
 
 # Copy Python app
 WORKDIR /app
