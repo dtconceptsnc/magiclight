@@ -241,7 +241,8 @@ manage_magiclight_integration() {
        [ "${current_source}" = "${expected_source}" ] && \
         [ "${current_version}" = "${addon_version}" ]; then
         bashio::log.info "MagicLight integration already up to date (source: ${expected_source})."
-        if [ -d "${MAGICLIGHT_FALLBACK_BASE}/magiclight" ]; then
+        if [ -n "${MAGICLIGHT_FALLBACK_BASE:-}" ] && \
+           [ -d "${MAGICLIGHT_FALLBACK_BASE}/magiclight" ]; then
             bashio::log.info "Mirror already present at ${MAGICLIGHT_FALLBACK_BASE}/magiclight."
         fi
         return

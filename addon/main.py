@@ -944,7 +944,7 @@ class HomeAssistantWebSocketClient:
             
             # Log more details for call_service events
             if event_type == "call_service":
-                logger.info(f"Service called: {event_data.get('domain')}.{event_data.get('service')} with data: {event_data.get('service_data')}")
+                logger.debug(f"Service called: {event_data.get('domain')}.{event_data.get('service')} with data: {event_data.get('service_data')}")
             
             # logger.debug(f"Event data: {json.dumps(event_data, indent=2)}")
             

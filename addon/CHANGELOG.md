@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.007-alpha
+**Maintenance - Alpha Tag & Hotfix**
+
+**Bug Fixes:**
+- Guarded the optional fallback mirror check so the add-on no longer crashes when `MAGICLIGHT_FALLBACK_BASE` is unset during integration sync.
+
+**Documentation:**
+- Simplified installation instructions to focus on installing the add-on and restarting Home Assistant.
+
+**Notes:**
+- Carries forward the blueprint deployment enhancements introduced in 4.2.007 while we stabilize the release.
+
 ## 4.2.007
 **Enhancement - Blueprint Deployment Sync**
 

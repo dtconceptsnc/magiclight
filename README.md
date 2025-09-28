@@ -6,19 +6,15 @@ Transform your home's ambiance with MagicLight, the intelligent lighting system 
 
 ## ✨ Features
 
-- **Smart Switch Integration** - Provided blueprint sets up Hue Dimmer Switch functionality in minutes
+- **Smart Switch Automation** - Provided blueprint sets up Hue Dimmer Switch functionality in minutes
 - **Visual Light Designer** - Interactive web interface to perfect your lighting curves
 - **Magic Mode** - Automatically updates lights every minute to follow curve
 
 ## 📦 Installation
 
-> **⚠️ IMPORTANT**: MagicLight requires BOTH components to be installed for full functionality:
-> 1. **The Add-on** - Provides the adaptive lighting engine and Light Designer interface
-> 2. **The Integration** - Enables MagicLight services for automations and blueprints
->
-> Installing only one component will result in limited or non-functional features.
+> **⚠️ IMPORTANT**: Install the MagicLight Home Assistant add-on and then restart Home Assistant. The add-on includes the adaptive lighting engine, Light Designer, services, and blueprints—no separate integration required.
 
-### Step 1: Install the Home Assistant Add-on (Required)
+### Step 1: Install the Home Assistant Add-on
 
 [![Add MagicLight Repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fdtconceptsnc%2Fmagiclight)
 
@@ -27,14 +23,10 @@ Transform your home's ambiance with MagicLight, the intelligent lighting system 
 3. Find "MagicLight" and click Install
 4. Start the add-on and check the logs
 
-### Step 2: Install the HACS Integration (Required)
+### Step 2: Restart Home Assistant
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dtconceptsnc&repository=magiclight&category=integration)
-
-1. Ensure [HACS](https://hacs.xyz/) is installed
-2. Click the button above or search for "MagicLight" in HACS
-3. Click Install and restart Home Assistant
-4. Add MagicLight through **Settings** → **Devices & Services**
+1. Restart from **Settings** → **System** → **Restart** (or use the power menu)
+2. Wait for Home Assistant to come back online; MagicLight services will be ready
 
 ### Step 3: Import the Blueprint (Recommended)
 
@@ -57,7 +49,7 @@ The blueprint provides smart button mappings:
 
 ## 🚀 Quick Start
 
-1. **Install ALL components** following the installation steps above
+1. **Install the add-on and restart** following the steps above
 2. **Create an automation** from the blueprint for your switch devices
 3. **Press your configured switch** - lights in that area will automatically adjust
 4. **Open Light Designer** from the Home Assistant sidebar to customize your preferences
