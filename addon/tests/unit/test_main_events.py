@@ -350,11 +350,11 @@ class TestMainEventHandling:
         with patch('main.logger') as mock_logger:
             await self.client.handle_message(message)
 
-            # Should log service call details
-            mock_logger.info.assert_called()
-            log_call = mock_logger.info.call_args_list[0][0][0]
-            assert "Service called" in log_call
-            assert "light.turn_on" in log_call
+            # Should log service call details at debug level
+            mock_logger.debug.assert_any_call(
+                "Service called: light.turn_on with data: {'brightness': 100}"
+            )
+            mock_logger.info.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_sun_entity_state_update(self):
