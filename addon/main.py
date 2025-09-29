@@ -12,6 +12,8 @@ from typing import Dict, Any, List, Optional, Sequence, Union
 import websockets
 from websockets.client import WebSocketClientProtocol
 
+from ha_blueprint_manager import BlueprintAutomationManager
+
 from primitives import MagicLightPrimitives
 from brain import (
     get_adaptive_lighting,
@@ -67,6 +69,10 @@ class HomeAssistantWebSocketClient:
         self.cached_states = {}  # Cache of entity states
         self.last_states_update = None  # Timestamp of last states update
         self.area_parity_cache = {}  # Cache of area ZHA parity status
+
+        manage_blueprints_env = os.getenv("MANAGE_MAGICLIGHT_BLUEPRINTS", "true").lower()
+        self.manage_blueprints = manage_blueprints_env not in ("false", "0", "no")
+        self.blueprint_manager = BlueprintAutomationManager(self, enabled=self.manage_blueprints)
 
         # Brightness curve configuration (populated from supervisor/designer config)
         self.max_dim_steps = DEFAULT_MAX_DIM_STEPS
@@ -1347,7 +1353,10 @@ class HomeAssistantWebSocketClient:
                 
                 # Sync ZHA groups with all areas (includes parity cache refresh)
                 await self.sync_zha_groups()
-                
+
+                # Ensure managed blueprint automations are in place before event processing
+                await self.blueprint_manager.reconcile_now("startup")
+
                 # Subscribe to all events
                 await self.subscribe_events()
                 
@@ -1378,6 +1387,7 @@ class HomeAssistantWebSocketClient:
                     await self.periodic_update_task
                 except asyncio.CancelledError:
                     pass
+            await self.blueprint_manager.shutdown()
             self.websocket = None
             
     async def run(self):

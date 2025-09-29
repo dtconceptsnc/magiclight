@@ -32,8 +32,13 @@ MagicLight Add-on provides intelligent adaptive lighting control that automatica
 ### Add-on Options
 
 ```yaml
-color_mode: kelvin  # Options: kelvin, rgb, xy
+color_mode: kelvin          # Options: kelvin, rgb, xy
+manage_integration: true    # Keep the bundled MagicLight integration in sync automatically
+manage_blueprints: true     # Auto-apply the Hue Dimmer blueprint to supported switches
 ```
+
+- `manage_integration` keeps the MagicLight custom integration deployed in `/config/custom_components`.
+- `manage_blueprints` scans for compatible Hue dimmer switches and creates managed automations per area that contain lights.
 
 ### Light Designer
 

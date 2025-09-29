@@ -1,10 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
-## 4.2.007-alpha
+## 4.2.012-alpha
 **Maintenance - Alpha Tag & Hotfix**
 
-**Bug Fixes:**
-- Guarded the optional fallback mirror check so the add-on no longer crashes when `MAGICLIGHT_FALLBACK_BASE` is unset during integration sync.
+**Enhancements:**
+- Added `manage_blueprints` option so the add-on can automatically create Hue dimmer switch automations for every lit area.
+- Integration downloads now derive from `repository.yaml`; removed the legacy `integration_repo` option.
 
 **Documentation:**
 - Simplified installation instructions to focus on installing the add-on and restarting Home Assistant.
@@ -25,7 +26,7 @@
 **Improvements:**
 - Add-on now deploys the `magiclight` custom integration on startup by default, installing updates automatically and removing the managed copy when the toggle is disabled.
 - Added `manage_integration` option to let advanced users opt out of automatic deployment while still providing a clean uninstall path.
-- Added `integration_repo` option (branch via optional `owner/repo#branch` format) so release vs. staging sources can be switched without rebuilding the add-on.
+- Added `integration_repo` option (branch via optional `owner/repo#branch` format) so release vs. staging sources can be switched without rebuilding the add-on. *(Removed in 4.2.007-alpha; the add-on now infers the repository from `repository.yaml`.)*
 - Relocated the local build helper to the repository root to package both add-on and integration assets from a single entry point.
 - Added dedicated `dim_up`/`dim_down` primitives for smoother curve-based dimming without relying on switch automations.
 

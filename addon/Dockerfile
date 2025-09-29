@@ -17,7 +17,7 @@ WORKDIR /app
 COPY *.py *.html requirements.txt ./
 
 # Install only the packages not available from Alpine repos
-RUN pip3 install --no-cache-dir websockets==12.0 python-dateutil==2.8.2 astral==3.2
+RUN pip3 install --no-cache-dir websockets==12.0 python-dateutil==2.8.2 astral==3.2 PyYAML==6.0.1
 
 # Copy root filesystem
 COPY rootfs /

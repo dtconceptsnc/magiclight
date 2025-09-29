@@ -15,19 +15,37 @@ MAGICLIGHT_BLUEPRINT_NAMESPACE="magiclight"
 MAGICLIGHT_BLUEPRINT_AUT_DEST="/config/blueprints/automation/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
 MAGICLIGHT_BLUEPRINT_SCR_DEST="/config/blueprints/script/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
 MAGICLIGHT_BLUEPRINT_MARKER="${MAGICLIGHT_BLUEPRINT_AUT_DEST}/.managed_by_magiclight_addon"
+MAGICLIGHT_REPOSITORY_INFO="/opt/magiclight/repository.yaml"
+MAGICLIGHT_BUNDLED_BLUEPRINT_BASE="/opt/magiclight/blueprints"
+
+MANAGE_MAGICLIGHT_INTEGRATION="$(bashio::config 'manage_integration')"
+if [ "${MANAGE_MAGICLIGHT_INTEGRATION}" = "null" ] || [ -z "${MANAGE_MAGICLIGHT_INTEGRATION}" ]; then
+    MANAGE_MAGICLIGHT_INTEGRATION="true"
+fi
+export MANAGE_MAGICLIGHT_INTEGRATION
+
+MANAGE_MAGICLIGHT_BLUEPRINTS="$(bashio::config 'manage_blueprints')"
+if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "null" ] || [ -z "${MANAGE_MAGICLIGHT_BLUEPRINTS}" ]; then
+    MANAGE_MAGICLIGHT_BLUEPRINTS="true"
+fi
+export MANAGE_MAGICLIGHT_BLUEPRINTS
 
 build_default_download_url() {
-    local repo branch
+    local repo_url repo branch
 
-    repo="$(bashio::config 'integration_repo')"
-    if [ "${repo}" = "null" ] || [ -z "${repo}" ]; then
-        repo="dtconceptsnc/magiclight"
-    fi
-
+    repo_url="$(awk -F"'" '/^[[:space:]]*url:/ {print $2}' "${MAGICLIGHT_REPOSITORY_INFO}" 2>/dev/null)"
     branch="main"
-    if echo "${repo}" | grep -q '#'; then
-        branch="${repo#*#}"
-        repo="${repo%%#*}"
+
+    if [ -z "${repo_url}" ]; then
+        repo="dtconceptsnc/magiclight"
+    else
+        repo="${repo_url#https://github.com/}"
+        repo="${repo%.git}"
+        repo="${repo#/}"
+        repo="${repo%/}"
+        if [ -z "${repo}" ]; then
+            repo="dtconceptsnc/magiclight"
+        fi
     fi
 
     echo "https://codeload.github.com/${repo}/tar.gz/refs/heads/${branch}"
@@ -60,8 +78,19 @@ install_blueprints_from_directory() {
         return 1
     fi
 
+    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
+        bashio::log.info "Skipping MagicLight blueprint installation (${source_label}) (disabled in options)."
+        return 0
+    fi
+
     aut_source="${base}/automation/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
+    if [ ! -d "${aut_source}" ]; then
+        aut_source="${base}/automations/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
+    fi
     scr_source="${base}/script/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
+    if [ ! -d "${scr_source}" ]; then
+        scr_source="${base}/scripts/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
+    fi
     installed="false"
 
     if [ -d "${aut_source}" ]; then
@@ -194,15 +223,49 @@ copy_bundled_integration() {
     return 0
 }
 
-manage_magiclight_integration() {
-    local manage_integration download_url expected_source current_source current_version addon_version
-    manage_integration="$(bashio::config 'manage_integration')"
-
-    if [ "${manage_integration}" = "null" ] || [ -z "${manage_integration}" ]; then
-        manage_integration="true"
+bootstrap_magiclight_blueprints() {
+    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
+        if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
+            bashio::log.info "Removing MagicLight blueprints installed by the add-on (disabled in options)."
+            rm -rf "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
+            if [ -d "${MAGICLIGHT_BLUEPRINT_SCR_DEST}" ]; then
+                rm -rf "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
+            fi
+        else
+            bashio::log.info "Skipping MagicLight blueprint management (disabled in options)."
+        fi
+        return
     fi
 
-    if [ "${manage_integration}" = "false" ]; then
+    ensure_bundled_magiclight_blueprints
+}
+
+ensure_bundled_magiclight_blueprints() {
+    local current_source
+
+    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
+        return
+    fi
+
+    if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
+        current_source=$(sed -n 's/^source=//p' "${MAGICLIGHT_BLUEPRINT_MARKER}")
+        if echo "${current_source}" | grep -q '^download:'; then
+            bashio::log.debug "MagicLight blueprints already sourced from ${current_source}; skipping bundled refresh."
+            return
+        fi
+    fi
+
+    if [ -d "${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}" ]; then
+        install_blueprints_from_directory "${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}" "bundled"
+    else
+        bashio::log.debug "Bundled MagicLight blueprints not found at ${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}."
+    fi
+}
+
+manage_magiclight_integration() {
+    local download_url expected_source current_source current_version addon_version
+
+    if [ "${MANAGE_MAGICLIGHT_INTEGRATION}" = "false" ]; then
         if bashio::fs.directory_exists "${MAGICLIGHT_DEST}" && [ -f "${MAGICLIGHT_MARKER}" ]; then
             bashio::log.info "Removing MagicLight integration installed by the add-on..."
             rm -rf "${MAGICLIGHT_DEST}"
@@ -301,25 +364,32 @@ manage_magiclight_integration() {
 
     bashio::log.info "MagicLight integration deployed to ${MAGICLIGHT_DEST}."
 
-    discovery_payload='{"service":"magiclight","config":{}}'
-    bashio::log.info "Publishing discovery payload to supervisor..."
-    if curl -sS -X POST "http://supervisor/addons/self/discovery" \
-        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "${discovery_payload}" >/dev/null; then
-        bashio::log.info "Supervisor discovery payload sent successfully."
-    else
-        bashio::log.warning "Failed to send supervisor discovery payload."
+    if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+        discovery_payload='{"service":"magiclight","config":{}}'
+        bashio::log.info "Publishing discovery payload to supervisor..."
+        if curl -sS -X POST "http://supervisor/addons/self/discovery" \
+            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${discovery_payload}" >/dev/null; then
+            bashio::log.info "Supervisor discovery payload sent successfully."
+        else
+            bashio::log.warning "Failed to send supervisor discovery payload."
+        fi
     fi
 }
 
 manage_magiclight_integration
+bootstrap_magiclight_blueprints()
 
 # ---------------------------------------------------------------
 # 1. Detect mode
 #    - If SUPERVISOR_TOKEN is present → ADDON
 #    - Else → STANDALONE
 # ---------------------------------------------------------------
+if [ -z "${SUPERVISOR_TOKEN:-}" ] && [ -n "${SUPERVISOR_TOKEN_FILE:-}" ] && [ -f "${SUPERVISOR_TOKEN_FILE}" ]; then
+    SUPERVISOR_TOKEN="$(cat "${SUPERVISOR_TOKEN_FILE}")"
+fi
+
 if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
     MODE="ADDON"
     bashio::log.info "Running in addon mode (SUPERVISOR_TOKEN present)"
@@ -380,7 +450,7 @@ else
 fi
 
 # Check if token is set
-if [ -z "${HA_TOKEN}" ]; then
+if [ -z "${HA_TOKEN:-}" ]; then
     bashio::log.error "No Home Assistant token provided!"
     bashio::log.info "Set token in addon configuration or HA_TOKEN environment variable"
     exit 1

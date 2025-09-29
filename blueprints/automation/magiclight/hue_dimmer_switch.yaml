@@ -212,7 +212,7 @@ action:
             data:
               area_id: "{{ area_targets }}"
           - repeat:
-              for_each: "{{ area_targets | from_json }}"
+              for_each: "{{ area_targets }}"
               sequence:
                 - service: light.turn_on
                   target:

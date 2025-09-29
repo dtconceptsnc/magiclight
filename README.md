@@ -28,56 +28,17 @@ Transform your home's ambiance with MagicLight, the intelligent lighting system 
 1. Restart from **Settings** → **System** → **Restart** (or use the power menu)
 2. Wait for Home Assistant to come back online; MagicLight services will be ready
 
-### Step 3: Import the Blueprint (Recommended)
+## 🚀 Quick Start
 
-> The add-on automatically copies the Hue Dimmer blueprint into `/config/blueprints/automation/magiclight`. Use the button below if you prefer to import through the UI or run MagicLight without the add-on.
-
-[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fdtconceptsnc%2Fmagiclight%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fmagiclight%2Fhue_dimmer_switch.yaml)
-
-1. Click the button above to import the MagicLight Smart Switch Control blueprint
-2. Or manually import from: **Settings** → **Automations & Scenes** → **Blueprints** → **Import Blueprint**
-3. Use URL: `https://github.com/dtconceptsnc/magiclight/blob/main/blueprints/automation/magiclight/hue_dimmer_switch.yaml`
-4. Create an automation from the blueprint:
-   - Select your switch device(s) (supports ZHA and Hue Bridge)
-   - Choose target area(s) to control
-   - Save and activate the automation
+1. **Install the add-on and restart** following the steps above
+2. **Create an automation** from the automatically-installed blueprint
+3. **Press your configured switch** - lights in that area will automatically adjust
+4. **Enjoy** perfect lighting throughout the day!
 
 The blueprint provides smart button mappings:
 - **ON button**: Smart toggle (turns lights on with MagicLight or off)
 - **OFF button**: Reset to current time and enable MagicLight
 - **UP/DOWN buttons**: Step brightness along the adaptive curve
-
-## 🚀 Quick Start
-
-1. **Install the add-on and restart** following the steps above
-2. **Create an automation** from the blueprint for your switch devices
-3. **Press your configured switch** - lights in that area will automatically adjust
-4. **Open Light Designer** from the Home Assistant sidebar to customize your preferences
-5. **Enjoy** perfect lighting throughout the day!
-
-## 📊 Light Designer
-
-Access the Light Designer through your Home Assistant sidebar when the add-on is running. This intuitive interface lets you:
-
-- Preview your lighting curves in real-time
-- Adjust brightness and color temperature ranges
-- Fine-tune morning and evening transitions
-- Save configurations instantly
-
-## 🔧 Compatibility
-
-MagicLight works with:
-- **Smart Switches**: ZHA-compatible switches (Hue, IKEA, Aqara, etc.)
-- **Smart Lights**: ZigBee, Z-Wave, WiFi (Tuya, LIFX, etc.), Matter
-- **Home Assistant**: 2023.1 or newer
-
-## 📝 Configuration
-
-MagicLight works out of the box with sensible defaults. For advanced users, customize through:
-
-- **Add-on Configuration**: Adjust color modes and temperature ranges
-- **Light Designer**: Visual interface for curve customization
-- **YAML**: Advanced automation possibilities
 
 ## 🙏 Influences
 
@@ -94,6 +55,6 @@ MagicLight is released under the GNU General Public License v3.0. See [LICENSE](
 
 ---
 
-**Need Help?** Open an [issue](https://github.com/dtconceptsnc/magiclight/issues) or check our [documentation](https://github.com/dtconceptsnc/magiclight/wiki).
+**Need Help?** Join our [Discord community](https://discord.gg/TUvSrtRt), open an [issue](https://github.com/dtconceptsnc/magiclight/issues), or check our [documentation](https://github.com/dtconceptsnc/magiclight/wiki).
 
 **Love MagicLight?** Give us a ⭐ on GitHub!
