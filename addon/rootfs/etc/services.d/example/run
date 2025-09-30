@@ -378,6 +378,10 @@ manage_magiclight_integration() {
     fi
 }
 
+if [ "${MAGICLIGHT_SKIP_MAIN:-}" = "1" ]; then
+    return 0 2>/dev/null || exit 0
+fi
+
 manage_magiclight_integration
 bootstrap_magiclight_blueprints()
 
@@ -461,13 +465,78 @@ bashio::log.info "Starting Home Assistant WebSocket listener..."
 bashio::log.info "Mode: ${MODE}"
 bashio::log.info "WebSocket URL: ${HA_WEBSOCKET_URL}"
 
-# Get color_mode configuration
-COLOR_MODE=$(bashio::config 'color_mode')
-if [ "${COLOR_MODE}" != "null" ] && [ -n "${COLOR_MODE}" ]; then
-    export COLOR_MODE="${COLOR_MODE}"
-else
-    export COLOR_MODE="rgb"
+# Determine where the designer persists configuration (mirrors webserver.py)
+DATA_DIR="/data"
+if [ ! -d "${DATA_DIR}" ]; then
+    DATA_DIR="/app/.data"
 fi
+DESIGNER_CONFIG_PATH="${DATA_DIR}/designer_config.json"
+OPTIONS_JSON_PATH="${DATA_DIR}/options.json"
+
+read_color_mode_from_file() {
+    local path="$1"
+    if [ -f "${path}" ]; then
+        python3 - "${path}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+except Exception:
+    sys.exit(0)
+
+value = data.get('color_mode') if isinstance(data, dict) else None
+if isinstance(value, str):
+    value = value.strip()
+    if value:
+        print(value)
+PY
+    fi
+}
+
+# Prefer designer setting, then legacy supervisor options, then defaults
+COLOR_MODE_SOURCE=""
+COLOR_MODE=$(read_color_mode_from_file "${DESIGNER_CONFIG_PATH}")
+if [ -n "${COLOR_MODE}" ]; then
+    COLOR_MODE_SOURCE="designer_config"
+else
+    COLOR_MODE=$(read_color_mode_from_file "${OPTIONS_JSON_PATH}")
+    if [ -n "${COLOR_MODE}" ]; then
+        COLOR_MODE_SOURCE="options_json"
+    fi
+fi
+
+if [ -z "${COLOR_MODE}" ] || [ "${COLOR_MODE}" = "null" ]; then
+    COLOR_MODE="kelvin"
+    COLOR_MODE_SOURCE="default"
+fi
+
+COLOR_MODE=$(echo "${COLOR_MODE}" | tr '[:upper:]' '[:lower:]')
+case "${COLOR_MODE}" in
+    kelvin|rgb|xy)
+        ;;
+    *)
+        bashio::log.warning "Invalid color mode '${COLOR_MODE}' detected; defaulting to kelvin."
+        COLOR_MODE="kelvin"
+        COLOR_MODE_SOURCE="default"
+        ;;
+esac
+
+export COLOR_MODE="${COLOR_MODE}"
+
+case "${COLOR_MODE_SOURCE}" in
+    designer_config)
+        bashio::log.info "Loaded color mode from designer configuration (${COLOR_MODE})."
+        ;;
+    options_json)
+        bashio::log.warning "Using legacy color mode from options.json (${COLOR_MODE}); please save from the designer UI to migrate."
+        ;;
+    *)
+        bashio::log.info "Using default color mode (${COLOR_MODE})."
+        ;;
+esac
 
 # Get min_color_temp configuration
 MIN_COLOR_TEMP=$(bashio::config 'min_color_temp')

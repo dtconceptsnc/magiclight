@@ -2,17 +2,23 @@
 
 ## Configuration Options
 
-### color_mode
-Specifies how the add-on sends color information to lights. Options:
-- `kelvin` (default) - Uses color temperature in Kelvin. Most compatible with various bulb types.
-- `rgb` - Uses RGB color values
-- `xy` - Uses CIE xy color coordinates
+### manage_integration
+Automatically install and update the MagicLight custom integration inside Home Assistant.
 
-### min_color_temp
-Minimum color temperature in Kelvin (warmest/most orange). Default: 500K
+### manage_blueprints
+Ensure supported switches receive MagicLight Hue Dimmer automations in areas with lights.
 
-### max_color_temp  
-Maximum color temperature in Kelvin (coolest/most blue). Default: 6500K
+## Designer Settings
+
+The Light Designer UI (available via the add-on ingress panel) controls all lighting curve behaviour.
+Use the **Color Output** section to choose how commands are sent to your lights:
+
+- `kelvin` (default) – Sends color temperature values (most compatible across bulbs).
+- `rgb` – Sends RGB color values.
+- `xy` – Sends CIE xy coordinates.
+
+The same interface also exposes brightness and color-temperature range sliders along with the
+morning/evening curve parameters.
 
 ## How It Works
 

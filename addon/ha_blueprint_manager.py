@@ -577,11 +577,7 @@ class BlueprintAutomationManager:
         device_ids: Sequence[str],
         target_areas: Sequence[str],
     ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
+        return {
             "switch_device": list(device_ids),
+            "target_areas": list(target_areas),
         }
-        if len(target_areas) == 1:
-            payload["target_areas"] = target_areas[0]
-        else:
-            payload["target_areas"] = list(target_areas)
-        return payload

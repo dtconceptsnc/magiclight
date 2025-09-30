@@ -32,13 +32,13 @@ MagicLight Add-on provides intelligent adaptive lighting control that automatica
 ### Add-on Options
 
 ```yaml
-color_mode: kelvin          # Options: kelvin, rgb, xy
 manage_integration: true    # Keep the bundled MagicLight integration in sync automatically
 manage_blueprints: true     # Auto-apply the Hue Dimmer blueprint to supported switches
 ```
 
 - `manage_integration` keeps the MagicLight custom integration deployed in `/config/custom_components`.
 - `manage_blueprints` scans for compatible Hue dimmer switches and creates managed automations per area that contain lights.
+- Color handling (color mode, temperature range, curves) is managed from the Light Designer UI.
 
 ### Light Designer
 
@@ -52,11 +52,16 @@ Access the Light Designer through the Home Assistant sidebar when the add-on is 
    - Customize warmth progression
    - Fine-tune dimming behavior
 
-3. **Color Temperature**: Set the range from warm to cool
+3. **Color Output**: Choose how MagicLight drives your fixtures
+   - `kelvin` for color temperature commands (default)
+   - `rgb` for direct RGB output
+   - `xy` for CIE xy coordinates on capable lights
+
+4. **Color Temperature**: Set the range from warm to cool
    - Minimum: Warmest evening light
    - Maximum: Brightest daylight
 
-4. **Preview**: See real-time visualization of your settings
+5. **Preview**: See real-time visualization of your settings
    - Current sun position indicator
    - Step markers for dimming levels
 
@@ -126,7 +131,7 @@ View real-time activity:
 
 ### Color Issues
 
-1. Adjust `color_mode` in configuration
+1. Open the Light Designer and switch the **Color Output** mode
 2. Try different modes: kelvin → rgb → xy
 3. Check light capabilities in Home Assistant
 

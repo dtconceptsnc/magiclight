@@ -188,6 +188,19 @@
   </div>
 
   <div class="section">
+    <div class="section-head"><div class="section-title">Color Output</div></div>
+    <div class="controls-row">
+      <label for="color-mode">Color Mode</label>
+      <select id="color-mode">
+        <option value="kelvin">Kelvin (color temperature)</option>
+        <option value="rgb">RGB (red, green, blue)</option>
+        <option value="xy">CIE xy coordinates</option>
+      </select>
+      <div class="value" id="color-mode-label"></div>
+    </div>
+  </div>
+
+  <div class="section">
     <div class="section-head"><div class="section-title">Display Settings</div></div>
     <div class="controls-row">
       <label>Test Month</label>
@@ -293,6 +306,7 @@ function clampToHalf(hour, half){
    Params (simplified - no gain/offset)
 ========================= */
 const defaults = {
+  color_mode: 'kelvin',
   min_color_temp: 500, max_color_temp: 6500,
   min_brightness: 1,   max_brightness: 100,
   // Morning (up) — only midpoint & steepness
@@ -1288,6 +1302,35 @@ function addRangesUI(){
   commit();
 }
 
+function describeColorMode(mode){
+  switch((mode || '').toLowerCase()){
+    case 'rgb': return 'RGB values';
+    case 'xy': return 'CIE xy coordinates';
+    default: return 'Color temperature (Kelvin)';
+  }
+}
+
+function addColorModeUI(){
+  const selector=document.getElementById('color-mode');
+  const label=document.getElementById('color-mode-label');
+  if(!selector||!label){
+    return;
+  }
+
+  const valid=['kelvin','rgb','xy'];
+  const current=(params.color_mode||defaults.color_mode||'kelvin').toLowerCase();
+  const normalized=valid.includes(current)?current:'kelvin';
+  selector.value=normalized;
+  params.color_mode=normalized;
+  label.textContent=describeColorMode(normalized);
+
+  selector.onchange=e=>{
+    const value=(e.target.value||'').toLowerCase();
+    params.color_mode=valid.includes(value)?value:'kelvin';
+    label.textContent=describeColorMode(params.color_mode);
+  };
+}
+
 function addSunUI(){
   // Test month selector - for testing different seasons
   const selMonth=document.getElementById('month'); const mLabel=document.getElementById('month-label');
@@ -1331,6 +1374,7 @@ async function saveConfiguration() {
   try {
     // Prepare config object with simplified parameters (exclude month - it's just for testing)
     const config = {
+      color_mode: params.color_mode,
       min_color_temp: params.min_color_temp,
       max_color_temp: params.max_color_temp,
       min_brightness: params.min_brightness,
@@ -1405,6 +1449,7 @@ async function loadConfiguration() {
       // Rebuild UI with new values
       addMorningEveningUI();
       addRangesUI();
+      addColorModeUI();
       addSunUI();
       updateLocationDisplay();
       draw();
@@ -1420,6 +1465,7 @@ async function loadConfiguration() {
     // Rebuild UI with defaults
     addMorningEveningUI();
     addRangesUI();
+    addColorModeUI();
     addSunUI();
     draw();
   }
@@ -1440,6 +1486,7 @@ function resetAll(){
 
   addMorningEveningUI();
   addRangesUI();
+  addColorModeUI();
   addSunUI();
 
   document.getElementById('step-count').value='10';

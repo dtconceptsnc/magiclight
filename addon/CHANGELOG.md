@@ -1,5 +1,18 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.013-alpha
+**Enhancement - Designer Color Output Controls**
+
+**Improvements:**
+- Added a Color Output selector to the Light Designer UI, letting users choose Kelvin, RGB, or XY directly from the interface.
+- Startup now reads the chosen color mode from `designer_config.json`, keeping the runtime and designer in sync without relying on supervisor options.
+
+**Documentation:**
+- Updated README and docs to point users at the Designer for color behaviour and clarify remaining add-on options.
+
+**Notes:**
+- The legacy `color_mode` add-on option has been removed; saving settings from the Designer migrates existing installs automatically.
+
 ## 4.2.012-alpha
 **Maintenance - Alpha Tag & Hotfix**
 

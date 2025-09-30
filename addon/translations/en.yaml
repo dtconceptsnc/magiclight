@@ -1,7 +1,4 @@
 configuration:
-  color_mode:
-    name: Color Mode
-    description: How to send color commands to lights (kelvin for color temperature, rgb for RGB values, xy for CIE coordinates)
   min_color_temp:
     name: Minimum Color Temperature
     description: Minimum color temperature in Kelvin (warmest/most orange light)
