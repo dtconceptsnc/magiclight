@@ -898,8 +898,11 @@ class HomeAssistantWebSocketClient:
             # We've crossed solar midnight - reset all offsets
             logger.info(f"Solar midnight reached at {solar_midnight.strftime('%H:%M:%S')} - resetting all manual offsets to 0")
             
-            # Reset all area offsets
-            areas_with_offsets = list(self.magic_mode_time_offsets.keys())
+            # Reset all tracked offsets (time and brightness)
+            areas_with_offsets = list(
+                set(self.magic_mode_time_offsets.keys())
+                | set(self.magic_mode_brightness_offsets.keys())
+            )
 
             state_changed = False
             for area_id in areas_with_offsets:
@@ -908,6 +911,15 @@ class HomeAssistantWebSocketClient:
                 if old_offset != 0:
                     logger.info(f"Resetting offset for area {area_id}: {old_offset} -> 0 minutes")
                     self.magic_mode_time_offsets[area_id] = 0
+                    state_changed = True
+
+                # Reset brightness adjustment for the new solar day
+                brightness_offset = self.magic_mode_brightness_offsets.get(area_id, 0.0)
+                if abs(brightness_offset) > 1e-6:
+                    logger.info(
+                        f"Resetting brightness offset for area {area_id}: {brightness_offset:+.2f}% -> 0%"
+                    )
+                    self.magic_mode_brightness_offsets[area_id] = 0.0
                     state_changed = True
 
                 # Update lights in this area if it's in magic mode

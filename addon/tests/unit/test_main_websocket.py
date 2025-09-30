@@ -4,9 +4,13 @@
 import asyncio
 import json
 import os
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from websockets.client import WebSocketClientProtocol
+from zoneinfo import ZoneInfo
 
 from main import HomeAssistantWebSocketClient
 from brain import ColorMode
@@ -345,6 +349,47 @@ class TestHomeAssistantWebSocketClientAsync:
         result = await self.client.authenticate()
 
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_reset_offsets_at_solar_midnight_resets_brightness(self, monkeypatch):
+        """Solar midnight reset clears both time and brightness offsets."""
+
+        area_id = "office"
+        self.client.latitude = 35.0
+        self.client.longitude = -80.0
+        self.client.timezone = "UTC"
+        self.client.magic_mode_areas.add(area_id)
+        self.client.magic_mode_time_offsets[area_id] = 45.0
+        self.client.magic_mode_brightness_offsets[area_id] = -12.5
+
+        fake_now = datetime(2025, 9, 30, 18, 0, tzinfo=ZoneInfo("UTC"))
+        fake_solar_midnight = fake_now - timedelta(minutes=10)
+        fake_noon = fake_solar_midnight - timedelta(hours=12)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fake_now
+
+        monkeypatch.setattr("main.datetime", FixedDateTime)
+        monkeypatch.setattr("astral.LocationInfo", lambda **_: SimpleNamespace(observer=object()))
+        monkeypatch.setattr("astral.sun.sun", lambda observer, date, tzinfo: {"noon": fake_noon})
+
+        save_mock = MagicMock()
+        monkeypatch.setattr(self.client, "save_magic_mode_state", save_mock)
+        monkeypatch.setattr(
+            self.client,
+            "update_lights_in_magic_mode",
+            AsyncMock(),
+        )
+
+        last_check = fake_solar_midnight - timedelta(minutes=1)
+        new_last_check = await self.client.reset_offsets_at_solar_midnight(last_check)
+
+        assert self.client.magic_mode_time_offsets[area_id] == 0
+        assert self.client.magic_mode_brightness_offsets[area_id] == 0.0
+        save_mock.assert_called_once()
+        assert new_last_check == fake_now
 
     @pytest.mark.asyncio
     async def test_subscribe_events_all(self):
