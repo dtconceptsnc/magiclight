@@ -207,6 +207,67 @@ class TestHomeAssistantWebSocketClient:
         assert "home_office" in client.area_to_light_entity
         assert "home office" in client.area_to_light_entity
 
+    def test_load_magic_mode_state_from_file(self, tmp_path, monkeypatch):
+        """Magic mode state file should be restored on initialization."""
+
+        state_path = tmp_path / "magic_mode_state.json"
+        state_payload = {
+            "magic_mode_areas": ["AreaKitchen", "AreaOffice"],
+            "time_offsets": {"AreaKitchen": 45, "AreaBasement": "-30"},
+            "brightness_offsets": {"AreaOffice": "7.5"},
+        }
+        state_path.write_text(json.dumps(state_payload), encoding="utf-8")
+
+        # Redirect persistence helpers to our temp file
+        monkeypatch.setattr(
+            HomeAssistantWebSocketClient,
+            "_get_state_file_path",
+            lambda self: str(state_path),
+        )
+
+        client = HomeAssistantWebSocketClient(
+            host="localhost", port=8123, access_token="token"
+        )
+
+        # Areas are restored and defaults applied for missing offsets
+        assert client.magic_mode_areas == {"AreaKitchen", "AreaOffice"}
+        assert client.magic_mode_time_offsets["AreaKitchen"] == 45.0
+        assert client.magic_mode_time_offsets["AreaOffice"] == 0.0
+        # Entries not listed as active remain available in offsets
+        assert client.magic_mode_time_offsets["AreaBasement"] == -30.0
+        # Brightness offsets convert to floats and default to 0.0 when absent
+        assert client.magic_mode_brightness_offsets["AreaOffice"] == 7.5
+        assert client.magic_mode_brightness_offsets["AreaKitchen"] == 0.0
+
+    def test_save_magic_mode_state_writes_file(self, tmp_path, monkeypatch):
+        """Saving magic mode state should emit the expected payload."""
+
+        state_path = tmp_path / "magic_mode_state.json"
+        monkeypatch.setattr(
+            HomeAssistantWebSocketClient,
+            "_get_state_file_path",
+            lambda self: str(state_path),
+        )
+
+        client = HomeAssistantWebSocketClient(
+            host="localhost", port=8123, access_token="token"
+        )
+
+        client.magic_mode_areas.update({"AreaKitchen", "AreaOffice"})
+        client.magic_mode_time_offsets.update({"AreaKitchen": 45, "AreaOffice": 0})
+        client.magic_mode_brightness_offsets.update({"AreaKitchen": 2.5})
+
+        client.save_magic_mode_state()
+
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+
+        assert set(payload["magic_mode_areas"]) == {"AreaKitchen", "AreaOffice"}
+        assert payload["time_offsets"] == {
+            "AreaKitchen": 45.0,
+            "AreaOffice": 0.0,
+        }
+        assert payload["brightness_offsets"] == {"AreaKitchen": 2.5}
+
     def test_components_initialization(self):
         """Test that all required components are initialized."""
         import sys

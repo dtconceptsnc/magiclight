@@ -1,5 +1,12 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.015-alpha
+**Feature - Magic Mode State Persistence**
+
+**Improvements:**
+- Persist magic mode areas, time offsets, and brightness offsets in `magic_mode_state.json` so active rooms and their positioning survive restarts.
+- Load saved state during startup and resave automatically whenever offsets change, including solar-midnight resets and manual dimming adjustments.
+
 ## 4.2.014-alpha
 **Enhancement - Brightness Offset Handling**
 

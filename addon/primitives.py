@@ -81,6 +81,7 @@ class MagicLightPrimitives:
                 # This keeps us within meaningful parts of the solar day curve
                 new_offset = max(-360, min(1080, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
+                self.client.save_magic_mode_state()
                 
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
                 
@@ -101,6 +102,7 @@ class MagicLightPrimitives:
                 new_offset = current_offset + 30
                 new_offset = max(-720, min(720, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
+                self.client.save_magic_mode_state()
                 
                 lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
@@ -185,7 +187,8 @@ class MagicLightPrimitives:
                 # This keeps us within meaningful parts of the solar day curve
                 new_offset = max(-360, min(1080, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
-                
+                self.client.save_magic_mode_state()
+
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
                 
                 # Apply the lighting values
@@ -205,6 +208,7 @@ class MagicLightPrimitives:
                 new_offset = current_offset - 30
                 new_offset = max(-720, min(720, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
+                self.client.save_magic_mode_state()
                 
                 lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
                 lighting_values = lighting_values.copy()
@@ -300,6 +304,7 @@ class MagicLightPrimitives:
                 )
 
             offsets[area_id] = round(new_offset, 4)
+            self.client.save_magic_mode_state()
 
             lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
             await self.client.turn_on_lights_adaptive(

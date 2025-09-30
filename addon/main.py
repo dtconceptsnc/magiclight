@@ -70,6 +70,9 @@ class HomeAssistantWebSocketClient:
         self.last_states_update = None  # Timestamp of last states update
         self.area_parity_cache = {}  # Cache of area ZHA parity status
 
+        # Restore previously persisted magic mode state (if any)
+        self._load_magic_mode_state()
+
         manage_blueprints_env = os.getenv("MANAGE_MAGICLIGHT_BLUEPRINTS", "true").lower()
         self.manage_blueprints = manage_blueprints_env not in ("false", "0", "no")
         self.blueprint_manager = BlueprintAutomationManager(self, enabled=self.manage_blueprints)
@@ -441,6 +444,88 @@ class HomeAssistantWebSocketClient:
             data_dir = os.path.join(os.path.dirname(__file__), ".data")
             os.makedirs(data_dir, exist_ok=True)
             return data_dir
+
+    def _get_state_file_path(self) -> str:
+        """Return the path used for persisting magic mode state."""
+        return os.path.join(self._get_data_directory(), "magic_mode_state.json")
+
+    def _load_magic_mode_state(self) -> None:
+        """Load previously saved magic mode state from disk."""
+
+        path = self._get_state_file_path()
+
+        if not os.path.exists(path):
+            logger.debug("No persisted magic mode state found at %s", path)
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        except Exception as err:  # noqa: B902 - broad to avoid crash on malformed file
+            logger.warning("Failed to load magic mode state from %s: %s", path, err)
+            return
+
+        restored_areas: set[str] = set()
+
+        raw_areas = data.get("magic_mode_areas") or data.get("areas") or []
+        if isinstance(raw_areas, list):
+            restored_areas = {str(area) for area in raw_areas if isinstance(area, str) and area.strip()}
+
+        raw_time_offsets = data.get("time_offsets") or {}
+        if isinstance(raw_time_offsets, dict):
+            for area, value in raw_time_offsets.items():
+                area_key = str(area)
+                try:
+                    # Persisted values may be floats or ints; coerce to float for consistency
+                    offset_value = float(value)
+                except (TypeError, ValueError):
+                    logger.debug("Skipping invalid time offset for area %s: %s", area_key, value)
+                    continue
+                self.magic_mode_time_offsets[area_key] = offset_value
+
+        raw_brightness_offsets = data.get("brightness_offsets") or {}
+        if isinstance(raw_brightness_offsets, dict):
+            for area, value in raw_brightness_offsets.items():
+                area_key = str(area)
+                try:
+                    brightness_offset = float(value)
+                except (TypeError, ValueError):
+                    logger.debug("Skipping invalid brightness offset for area %s: %s", area_key, value)
+                    continue
+                self.magic_mode_brightness_offsets[area_key] = brightness_offset
+
+        if restored_areas:
+            for area in restored_areas:
+                self.magic_mode_time_offsets.setdefault(area, 0.0)
+                self.magic_mode_brightness_offsets.setdefault(area, 0.0)
+            self.magic_mode_areas.update(restored_areas)
+            logger.info(
+                "Restored magic mode state for %d area(s): %s",
+                len(restored_areas),
+                ", ".join(sorted(restored_areas)),
+            )
+        else:
+            logger.debug("Magic mode state file contained no active areas")
+
+    def save_magic_mode_state(self) -> None:
+        """Persist the current magic mode state to disk."""
+
+        path = self._get_state_file_path()
+
+        state_payload = {
+            "magic_mode_areas": sorted(self.magic_mode_areas),
+            "time_offsets": {area: float(value) for area, value in self.magic_mode_time_offsets.items()},
+            "brightness_offsets": {
+                area: float(value) for area, value in self.magic_mode_brightness_offsets.items()
+            },
+        }
+
+        try:
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(state_payload, file, indent=2, sort_keys=True)
+        except Exception as err:  # noqa: B902 - broad to avoid crashing the add-on
+            logger.error("Failed to save magic mode state to %s: %s", path, err)
+
     
     def _update_color_mode_from_config(self, merged_config: Dict[str, Any]):
         """Update color mode from configuration if available.
@@ -550,6 +635,8 @@ class HomeAssistantWebSocketClient:
         # Initialize brightness adjustment storage if needed
         if area_id not in self.magic_mode_brightness_offsets:
             self.magic_mode_brightness_offsets[area_id] = 0.0
+
+        self.save_magic_mode_state()
     
     async def disable_magic_mode(self, area_id: str):
         """Disable magic mode for an area.
@@ -571,6 +658,7 @@ class HomeAssistantWebSocketClient:
             return
 
         logger.info(f"Magic mode disabled for area {area_id}")
+        self.save_magic_mode_state()
     
     def get_brightness_step_pct(self) -> float:
         """Return the configured brightness step size in percent."""
@@ -813,16 +901,21 @@ class HomeAssistantWebSocketClient:
             # Reset all area offsets
             areas_with_offsets = list(self.magic_mode_time_offsets.keys())
 
+            state_changed = False
             for area_id in areas_with_offsets:
                 # Reset current offset
                 old_offset = self.magic_mode_time_offsets.get(area_id, 0)
                 if old_offset != 0:
                     logger.info(f"Resetting offset for area {area_id}: {old_offset} -> 0 minutes")
                     self.magic_mode_time_offsets[area_id] = 0
+                    state_changed = True
 
                 # Update lights in this area if it's in magic mode
                 if area_id in self.magic_mode_areas:
                     await self.update_lights_in_magic_mode(area_id)
+
+            if state_changed:
+                self.save_magic_mode_state()
             
             return now
         elif now.date() != last_check.date():
