@@ -219,11 +219,12 @@ class TestMagicLightPrimitives:
         """Test dim_down clamps to minimum brightness."""
         area_id = "test_area"
         self.mock_client.magic_mode_areas.add(area_id)
-        self.mock_client.get_brightness_bounds.return_value = (75, 100)
+        self.mock_client.get_brightness_bounds.return_value = (79, 100)
 
         await self.primitives.dim_down(area_id)
 
-        assert pytest.approx(self.mock_client.magic_mode_brightness_offsets[area_id], rel=1e-3) == -5
+        expected_offset = -100.0 / 21.0  # (79 - 80) / 21 * 100
+        assert pytest.approx(self.mock_client.magic_mode_brightness_offsets[area_id], rel=1e-3) == expected_offset
         assert self.mock_client.turn_on_lights_adaptive.await_count == 1
         _, kwargs = self.mock_client.turn_on_lights_adaptive.call_args
         assert kwargs.get('include_color') is False

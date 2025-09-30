@@ -719,28 +719,31 @@ class HomeAssistantWebSocketClient:
         # Log the calculation
         logger.info(f"Adaptive lighting for area {area_id}: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
 
+        lighting_values = dict(lighting_values)
+
         if apply_brightness_adjustment:
             brightness_offset = self.magic_mode_brightness_offsets.get(area_id, 0.0)
             if brightness_offset:
                 min_bri, max_bri = self.get_brightness_bounds()
-                adjusted = max(min_bri, min(max_bri, lighting_values['brightness'] + brightness_offset))
-                if adjusted != lighting_values['brightness']:
-                    logger.info(
-                        f"Applying brightness curve adjustment for {area_id}: "
-                        f"base {lighting_values['brightness']}% -> {adjusted}% (offset {brightness_offset:+.2f}%)"
-                    )
-                    lighting_values = dict(lighting_values)
+                span = max(0, max_bri - min_bri)
+
+                if span > 0:
+                    adjustment = span * (brightness_offset / 100.0)
+                    adjusted = lighting_values['brightness'] + adjustment
+                    adjusted = max(min_bri, min(max_bri, adjusted))
+
+                    if abs(adjusted - lighting_values['brightness']) > 1e-6:
+                        logger.info(
+                            f"Applying brightness offset for {area_id}: base {lighting_values['brightness']}% -> "
+                            f"{adjusted}% (offset {brightness_offset:+.2f}%)"
+                        )
                     lighting_values['brightness'] = int(round(adjusted))
                 else:
-                    # Even though the clamp didn't change the value, ensure int rounding
-                    lighting_values = dict(lighting_values)
-                    lighting_values['brightness'] = int(round(adjusted))
-            else:
-                # Ensure brightness is an int (brain already sends int, but keep consistency)
-                lighting_values = dict(lighting_values)
-                lighting_values['brightness'] = int(round(lighting_values['brightness']))
-        else:
-            lighting_values = dict(lighting_values)
+                    logger.debug(
+                        f"Brightness span is zero for area {area_id}; skipping offset adjustment"
+                    )
+
+        if 'brightness' in lighting_values:
             lighting_values['brightness'] = int(round(lighting_values['brightness']))
 
         return lighting_values

@@ -1,5 +1,16 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.014-alpha
+**Enhancement - Brightness Offset Handling**
+
+**Improvements:**
+- Reworked `dim_up`/`dim_down` to store brightness offsets as percentages of the active curve span, matching the Light Designer model.
+- Allow offsets to push all the way to configured brightness limits, removing the previous ±50% clamp while still respecting area min/max bounds.
+- Apply the same percentage offset when fetching adaptive lighting so live updates reflect the stored adjustments immediately.
+
+**Testing:**
+- `pytest addon/tests/unit/test_primitives.py`
+
 ## 4.2.013-alpha
 **Enhancement - Designer Color Output Controls**
 

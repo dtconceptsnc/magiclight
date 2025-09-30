@@ -264,27 +264,42 @@ class MagicLightPrimitives:
             )
             base_brightness = base_values.get('brightness', 0)
 
+            span = max(0, max_bri - min_bri)
+            if span <= 0:
+                logger.info(
+                    f"[{source}] Brightness span is zero for area {area_id}; skipping curve adjustment"
+                )
+                return
+
             new_offset = current_offset + (direction * step_pct)
-            target_brightness = base_brightness + new_offset
+
+            offset_adjustment = span * (new_offset / 100.0)
+            target_brightness = base_brightness + offset_adjustment
 
             if target_brightness > max_bri:
                 target_brightness = max_bri
-                new_offset = target_brightness - base_brightness
+                new_offset = ((target_brightness - base_brightness) / span) * 100.0
                 logger.info(
                     f"[{source}] dim_up would exceed max brightness for area {area_id}; clamping to {target_brightness}%"
                 )
             elif target_brightness < min_bri:
                 target_brightness = min_bri
-                new_offset = target_brightness - base_brightness
+                new_offset = ((target_brightness - base_brightness) / span) * 100.0
                 logger.info(
                     f"[{source}] dim_down would exceed min brightness for area {area_id}; clamping to {target_brightness}%"
                 )
 
+            if abs(new_offset - current_offset) < 1e-6:
+                logger.info(
+                    f"[{source}] Brightness offset unchanged for area {area_id} (still {new_offset:+.2f}%)"
+                )
+            else:
+                logger.info(
+                    f"[{source}] Adjusted brightness offset for {area_id}: base {base_brightness}% -> "
+                    f"{target_brightness}% (offset {new_offset:+.2f}%)"
+                )
+
             offsets[area_id] = round(new_offset, 4)
-            logger.info(
-                f"[{source}] Adjusted brightness curve for {area_id}: base {base_brightness}% -> "
-                f"{target_brightness}% (offset {offsets[area_id]:+.2f}%)"
-            )
 
             lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
             await self.client.turn_on_lights_adaptive(
