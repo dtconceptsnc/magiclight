@@ -46,6 +46,12 @@ CONFIG_PATH = Path("/config/configuration.yaml")
 MANAGED_BLOCK_START = "# --- MagicLight managed automations (auto-generated) ---"
 MANAGED_BLOCK_END = "# --- MagicLight managed automations end ---"
 
+INCLUDE_FILE_PATTERN = re.compile(r"^\s*automation:\s*!include\s+(?P<path>[^#\s]+)", re.MULTILINE)
+INCLUDE_DIR_PATTERN = re.compile(
+    r"^\s*automation:\s*!include_dir_merge_list\s+(?P<path>[^#\s]+)",
+    re.MULTILINE,
+)
+
 
 class BlueprintAutomationManager:
     """Orchestrates automatic creation/updating of blueprint automations."""
@@ -90,23 +96,34 @@ class BlueprintAutomationManager:
         """Remove any previously managed automations regardless of enabled state."""
 
         async with self._lock:
-            storage_path, storage_mode = self._determine_automation_storage()
-            existing = self._load_managed_automations(storage_path, storage_mode)
+            candidates = self._discover_storage_candidates()
 
-            if not existing:
+            found_any = False
+            removed_any = False
+
+            for storage_path, storage_mode in candidates:
+                existing = self._load_managed_automations(storage_path, storage_mode)
+                if not existing:
+                    continue
+
+                found_any = True
+
+                if self._persist_managed_automations(storage_path, storage_mode, []):
+                    removed_any = True
+                    self.logger.debug(
+                        "Cleared MagicLight automations from %s (%s).",
+                        storage_path,
+                        storage_mode,
+                    )
+
+            if not found_any and not removed_any:
                 self.logger.info(
                     "No MagicLight blueprint automations to remove (%s).",
                     reason,
                 )
                 return
 
-            removed = self._persist_managed_automations(
-                storage_path,
-                storage_mode,
-                [],
-            )
-
-            if not removed:
+            if not removed_any:
                 self.logger.debug(
                     "MagicLight automation store unchanged when attempting removal (%s).",
                     reason,
@@ -232,49 +249,71 @@ class BlueprintAutomationManager:
     # ---------- Automation storage helpers ----------
 
     def _determine_automation_storage(self) -> Tuple[Path, str]:
-        include_file_pattern = re.compile(r"^\s*automation:\s*!include\s+(?P<path>[^#\s]+)", re.MULTILINE)
-        include_dir_pattern = re.compile(
-            r"^\s*automation:\s*!include_dir_merge_list\s+(?P<path>[^#\s]+)",
-            re.MULTILINE,
-        )
+        candidates = self._discover_storage_candidates()
+        if not candidates:
+            return AUTOMATIONS_FILE, "file"
 
+        for path, mode in candidates:
+            if mode == "file" and path.is_file():
+                return path, mode
+            if mode == "dir" and path.is_file():
+                return path, mode
+
+        return candidates[0]
+
+    def _discover_storage_candidates(self) -> List[Tuple[Path, str]]:
+        candidates: List[Tuple[Path, str]] = []
         config_text: Optional[str] = None
+        include_detected = False
+
         if CONFIG_PATH.is_file():
             try:
                 config_text = CONFIG_PATH.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as err:
                 self.logger.debug("Unable to read %s: %s", CONFIG_PATH, err)
 
-        dir_match = file_match = None
         if config_text:
-            dir_match = include_dir_pattern.search(config_text)
-            if dir_match:
-                include_dir = self._resolve_include_path(dir_match.group("path"))
+            for match in INCLUDE_DIR_PATTERN.finditer(config_text):
+                include_detected = True
+                include_dir = self._resolve_include_path(match.group("path"))
                 if include_dir:
-                    return include_dir / "magiclight_managed.yaml", "dir"
+                    candidates.append((include_dir / "magiclight_managed.yaml", "dir"))
 
-            file_match = include_file_pattern.search(config_text)
-            if file_match:
-                include_file = self._resolve_include_path(file_match.group("path"))
+            for match in INCLUDE_FILE_PATTERN.finditer(config_text):
+                include_detected = True
+                include_file = self._resolve_include_path(match.group("path"))
                 if include_file:
-                    return include_file, "file"
+                    candidates.append((include_file, "file"))
 
-        if (
-            config_text
-            and "automation:" in config_text
-            and not dir_match
-            and not file_match
-            and not self._storage_warning_emitted
-        ):
-            self.logger.warning(
-                "Unable to detect an automation include in configuration.yaml; assuming 'automations.yaml' is loaded. If you use storage mode, please add an include for MagicLight to manage automations."
-            )
-            self._storage_warning_emitted = True
+            if (
+                "automation:" in config_text
+                and not include_detected
+                and not self._storage_warning_emitted
+            ):
+                self.logger.warning(
+                    "Unable to detect an automation include in configuration.yaml; assuming 'automations.yaml' is loaded. If you use storage mode, please add an include for MagicLight to manage automations."
+                )
+                self._storage_warning_emitted = True
 
-        if AUTOMATIONS_FILE.exists() or not AUTOMATIONS_DIR.is_dir():
-            return AUTOMATIONS_FILE, "file"
+        fallback_candidates = [
+            (AUTOMATIONS_FILE, "file"),
+            (AUTOMATIONS_DIR / "magiclight_managed.yaml", "dir"),
+        ]
 
-        return AUTOMATIONS_DIR / "magiclight_managed.yaml", "dir"
+        candidates.extend(fallback_candidates)
+
+        unique: List[Tuple[Path, str]] = []
+        seen: Set[Tuple[str, str]] = set()
+        for path, mode in candidates:
+            if not isinstance(path, Path):
+                continue
+            key = (str(path), mode)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append((path, mode))
+
+        return unique
 
     def _resolve_include_path(self, raw_path: str) -> Optional[Path]:
         if not raw_path:

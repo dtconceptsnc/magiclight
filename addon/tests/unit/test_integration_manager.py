@@ -171,7 +171,7 @@ def test_bootstrap_magiclight_blueprints_removes_when_disabled(tmp_path: Path) -
     env.update(
         {
             "MAGICLIGHT_TEST_CFG_MANAGE_INTEGRATION": "true",
-            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "false",
+            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "False",
             "MAGICLIGHT_TEST_CFG_DOWNLOAD_URL": "",
             "MAGICLIGHT_TEST_ADDON_VERSION": "9.9.9",
             "PATH": os.environ["PATH"],
@@ -197,3 +197,65 @@ def test_bootstrap_magiclight_blueprints_removes_when_disabled(tmp_path: Path) -
     assert result.returncode == 0
     assert not aut_dest.exists()
     assert not scr_dest.exists()
+
+
+def test_bootstrap_magiclight_blueprints_installs_when_enabled(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    aut_source = bundle_root / "automation" / "magiclight"
+    aut_source.mkdir(parents=True)
+    (aut_source / "hue_dimmer_switch.yaml").write_text("{}", encoding="utf-8")
+
+    scr_source = bundle_root / "script" / "magiclight"
+    scr_source.mkdir(parents=True)
+    (scr_source / "scene.yaml").write_text("{}", encoding="utf-8")
+
+    bundle_component = tmp_path / "bundle" / "custom_components" / "magiclight"
+    bundle_component.mkdir(parents=True)
+    (bundle_component / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
+
+    repo_info = tmp_path / "repository.yaml"
+    _create_repo_info(repo_info)
+
+    dest_base = tmp_path / "config" / "custom_components"
+    marker = dest_base / "magiclight" / ".managed_by_magiclight_addon"
+
+    aut_dest = tmp_path / "config" / "blueprints" / "automation" / "magiclight"
+    scr_dest = tmp_path / "config" / "blueprints" / "script" / "magiclight"
+    blueprint_marker = aut_dest / ".managed_by_magiclight_addon"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "MAGICLIGHT_TEST_CFG_MANAGE_INTEGRATION": "true",
+            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "TRUE",
+            "MAGICLIGHT_TEST_CFG_DOWNLOAD_URL": "",
+            "MAGICLIGHT_TEST_ADDON_VERSION": "9.9.9",
+            "PATH": os.environ["PATH"],
+        }
+    )
+
+    script = _make_stubbed_script(
+        bundle_path=bundle_component,
+        dest_base=dest_base,
+        repo_info=repo_info,
+        marker_path=marker,
+        extra_body=textwrap.dedent(
+            f"""
+            MAGICLIGHT_BUNDLED_BLUEPRINT_BASE="{bundle_root}"
+            MAGICLIGHT_BLUEPRINT_AUT_DEST="{aut_dest}"
+            MAGICLIGHT_BLUEPRINT_SCR_DEST="{scr_dest}"
+            MAGICLIGHT_BLUEPRINT_MARKER="{blueprint_marker}"
+            bootstrap_magiclight_blueprints
+            """
+        ),
+    )
+
+    result = _run_shell_script(script, env=env, cwd=tmp_path)
+    assert result.returncode == 0
+
+    assert (aut_dest / "hue_dimmer_switch.yaml").is_file()
+    assert (scr_dest / "scene.yaml").is_file()
+    assert blueprint_marker.is_file()
+
+    marker_content = blueprint_marker.read_text(encoding="utf-8")
+    assert "source=bundled" in marker_content

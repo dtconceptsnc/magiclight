@@ -1,6 +1,6 @@
 # https://developers.home-assistant.io/docs/add-ons/configuration#add-on-config
 name: MagicLight
-version: "4.2.017-alpha"
+version: "4.2.018-alpha"
 slug: magiclight
 description: Connects to Home Assistant WebSocket API and listens for switch events
 url: "https://github.com/dtconceptsnc/magiclight"

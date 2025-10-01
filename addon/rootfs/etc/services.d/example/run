@@ -18,16 +18,31 @@ MAGICLIGHT_BLUEPRINT_MARKER="${MAGICLIGHT_BLUEPRINT_AUT_DEST}/.managed_by_magicl
 MAGICLIGHT_REPOSITORY_INFO="/opt/magiclight/repository.yaml"
 MAGICLIGHT_BUNDLED_BLUEPRINT_BASE="/opt/magiclight/blueprints"
 
-MANAGE_MAGICLIGHT_INTEGRATION="$(bashio::config 'manage_integration')"
-if [ "${MANAGE_MAGICLIGHT_INTEGRATION}" = "null" ] || [ -z "${MANAGE_MAGICLIGHT_INTEGRATION}" ]; then
-    MANAGE_MAGICLIGHT_INTEGRATION="true"
-fi
+normalize_bool() {
+    local raw="$1"
+    if [ -z "${raw}" ] || [ "${raw}" = "null" ]; then
+        raw="true"
+    fi
+
+    raw="$(echo "${raw}" | tr '[:upper:]' '[:lower:]')"
+
+    case "${raw}" in
+        true|1|yes|on)
+            echo "true"
+            ;;
+        false|0|no|off)
+            echo "false"
+            ;;
+        *)
+            echo "true"
+            ;;
+    esac
+}
+
+MANAGE_MAGICLIGHT_INTEGRATION="$(normalize_bool "$(bashio::config 'manage_integration')")"
 export MANAGE_MAGICLIGHT_INTEGRATION
 
-MANAGE_MAGICLIGHT_BLUEPRINTS="$(bashio::config 'manage_blueprints')"
-if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "null" ] || [ -z "${MANAGE_MAGICLIGHT_BLUEPRINTS}" ]; then
-    MANAGE_MAGICLIGHT_BLUEPRINTS="true"
-fi
+MANAGE_MAGICLIGHT_BLUEPRINTS="$(normalize_bool "$(bashio::config 'manage_blueprints')")"
 export MANAGE_MAGICLIGHT_BLUEPRINTS
 
 build_default_download_url() {
