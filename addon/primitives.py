@@ -82,19 +82,22 @@ class MagicLightPrimitives:
                 new_offset = max(-360, min(1080, new_offset))
                 self.client.magic_mode_time_offsets[area_id] = new_offset
                 self.client.save_magic_mode_state()
-                
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
-                
-                # Apply the lighting values
-                lighting_values = {
-                    'kelvin': dimming_result['kelvin'],
-                    'brightness': dimming_result['brightness'],
-                    'rgb': dimming_result.get('rgb'),
-                    'xy': dimming_result.get('xy')
-                }
-                
+
+                # Recalculate adaptive lighting so brightness offsets are respected
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+
+                if 'brightness' in lighting_values:
+                    min_bri, max_bri = self.client.get_brightness_bounds()
+                    lighting_values['brightness'] = int(
+                        max(min_bri, min(max_bri, lighting_values['brightness']))
+                    )
+
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied MagicLight step up: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                logger.info(
+                    f"Applied MagicLight step up: {lighting_values.get('kelvin')}K, "
+                    f"{lighting_values.get('brightness')}%"
+                )
                 
             except Exception as e:
                 logger.error(f"Error calculating step up: {e}")
@@ -190,17 +193,21 @@ class MagicLightPrimitives:
                 self.client.save_magic_mode_state()
 
                 logger.info(f"TimeLocation for area {area_id}: {current_offset:.1f} -> {new_offset:.1f} minutes")
-                
-                # Apply the lighting values
-                lighting_values = {
-                    'kelvin': dimming_result['kelvin'],
-                    'brightness': max(1, dimming_result['brightness']),  # Ensure minimum brightness
-                    'rgb': dimming_result.get('rgb'),
-                    'xy': dimming_result.get('xy')
-                }
-                
+
+                # Recalculate adaptive lighting so brightness offsets are respected
+                lighting_values = await self.client.get_adaptive_lighting_for_area(area_id)
+
+                if 'brightness' in lighting_values:
+                    min_bri, max_bri = self.client.get_brightness_bounds()
+                    lighting_values['brightness'] = int(
+                        max(min_bri, min(max_bri, lighting_values['brightness']))
+                    )
+
                 await self.client.turn_on_lights_adaptive(area_id, lighting_values, transition=0.2)
-                logger.info(f"Applied MagicLight step down: {lighting_values['kelvin']}K, {lighting_values['brightness']}%")
+                logger.info(
+                    f"Applied MagicLight step down: {lighting_values.get('kelvin')}K, "
+                    f"{lighting_values.get('brightness')}%"
+                )
                 
             except Exception as e:
                 logger.error(f"Error calculating step down: {e}")

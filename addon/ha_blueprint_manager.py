@@ -86,6 +86,47 @@ class BlueprintAutomationManager:
         """Compatibility hook; no background work to cancel."""
         return None
 
+    async def purge_managed_automations(self, reason: str) -> None:
+        """Remove any previously managed automations regardless of enabled state."""
+
+        async with self._lock:
+            storage_path, storage_mode = self._determine_automation_storage()
+            existing = self._load_managed_automations(storage_path, storage_mode)
+
+            if not existing:
+                self.logger.info(
+                    "No MagicLight blueprint automations to remove (%s).",
+                    reason,
+                )
+                return
+
+            removed = self._persist_managed_automations(
+                storage_path,
+                storage_mode,
+                [],
+            )
+
+            if not removed:
+                self.logger.debug(
+                    "MagicLight automation store unchanged when attempting removal (%s).",
+                    reason,
+                )
+                return
+
+            try:
+                await self.ws_client.call_service("automation", "reload", {})
+            except Exception as err:  # pragma: no cover - defensive log
+                self.logger.error(
+                    "Failed to reload automations after pruning MagicLight entries (%s): %s",
+                    reason,
+                    err,
+                )
+            else:
+                self.logger.info(
+                    "Removed MagicLight blueprint automations (%s).",
+                    reason,
+                )
+
     async def _reconcile(self, reason: str) -> None:
         async with self._lock:
             if not self.enabled:

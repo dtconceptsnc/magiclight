@@ -80,6 +80,11 @@ trigger:
   - platform: event
     event_type: zha_event
     event_data:
+      command: "off_double_press"
+    id: zha_off_double
+  - platform: event
+    event_type: zha_event
+    event_data:
       command: "off_triple_press"
     id: zha_triple_off
 
@@ -109,6 +114,12 @@ trigger:
       type: short_release
       subtype: 3
     id: hue_down
+  - platform: event
+    event_type: hue_event
+    event_data:
+      type: double_short_release
+      subtype: 4
+    id: hue_off_double
 
   # (Optional) Older/alt Hue payloads some users still see (1002 style).
   # Uncomment if your bridge reports numeric 'event' codes:
@@ -200,6 +211,19 @@ action:
               #   id: hue_down_legacy
         sequence:
           - service: magiclight.step_down
+            data:
+              area_id: "{{ area_targets }}"
+
+      # OFF double -> power down
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: zha_off_double
+              - condition: trigger
+                id: hue_off_double
+        sequence:
+          - service: magiclight.magiclight_off
             data:
               area_id: "{{ area_targets }}"
 

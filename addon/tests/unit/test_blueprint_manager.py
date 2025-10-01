@@ -205,3 +205,45 @@ async def test_reconcile_writes_include_dir_file(tmp_path, monkeypatch):
     assert entry["alias"] == f"{ALIAS_PREFIX}Living Room"
 
     ws_client.call_service.assert_awaited_once_with("automation", "reload", {})
+
+
+@pytest.mark.asyncio
+async def test_purge_managed_automations_removes_block(tmp_path, monkeypatch):
+    helpers = _prepare_blueprint_env(tmp_path, monkeypatch, "file")
+
+    payloads = _build_fixtures()
+    ws_client = DummyWSClient(**payloads)
+
+    manager = BlueprintAutomationManager(ws_client, enabled=False)
+
+    existing = [
+        {
+            "id": "magiclight_area_1",
+            "alias": f"{ALIAS_PREFIX}Living Room",
+            "description": "Managed automatically by the MagicLight add-on.",
+            "use_blueprint": {
+                "path": "magiclight/hue_dimmer_switch.yaml",
+                "input": {
+                    "switch_device": ["device-1"],
+                    "target_areas": ["area-1"],
+                },
+            },
+        }
+    ]
+
+    automations_file = helpers["automations_file"]
+    automations_file.write_text(
+        manager._render_managed_block(existing),
+        encoding="utf-8",
+    )
+
+    await manager.purge_managed_automations("test-disabled")
+
+    contents = automations_file.read_text(encoding="utf-8")
+    assert MANAGED_BLOCK_START not in contents
+    assert contents.strip() == ""
+    ws_client.call_service.assert_awaited_once_with("automation", "reload", {})
+
+    ws_client.call_service.reset_mock()
+    await manager.purge_managed_automations("test-disabled-repeat")
+    ws_client.call_service.assert_not_called()

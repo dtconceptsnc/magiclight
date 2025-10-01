@@ -1463,7 +1463,10 @@ class HomeAssistantWebSocketClient:
                 await self.sync_zha_groups()
 
                 # Ensure managed blueprint automations are in place before event processing
-                await self.blueprint_manager.reconcile_now("startup")
+                if self.manage_blueprints:
+                    await self.blueprint_manager.reconcile_now("startup")
+                else:
+                    await self.blueprint_manager.purge_managed_automations("startup-disabled")
 
                 # Subscribe to all events
                 await self.subscribe_events()

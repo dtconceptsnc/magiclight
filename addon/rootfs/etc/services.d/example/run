@@ -223,17 +223,34 @@ copy_bundled_integration() {
     return 0
 }
 
+remove_magiclight_blueprints() {
+    local removed="false"
+
+    if [ -d "${MAGICLIGHT_BLUEPRINT_AUT_DEST}" ]; then
+        bashio::log.info "Removing MagicLight automation blueprints from ${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
+        rm -rf "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
+        removed="true"
+    fi
+
+    if [ -d "${MAGICLIGHT_BLUEPRINT_SCR_DEST}" ]; then
+        bashio::log.info "Removing MagicLight script blueprints from ${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
+        rm -rf "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
+        removed="true"
+    fi
+
+    if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
+        rm -f "${MAGICLIGHT_BLUEPRINT_MARKER}"
+    fi
+
+    if [ "${removed}" = "false" ]; then
+        bashio::log.info "No MagicLight blueprints found to remove."
+    fi
+}
+
 bootstrap_magiclight_blueprints() {
     if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
-        if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
-            bashio::log.info "Removing MagicLight blueprints installed by the add-on (disabled in options)."
-            rm -rf "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-            if [ -d "${MAGICLIGHT_BLUEPRINT_SCR_DEST}" ]; then
-                rm -rf "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-            fi
-        else
-            bashio::log.info "Skipping MagicLight blueprint management (disabled in options)."
-        fi
+        bashio::log.info "MagicLight blueprint management disabled; ensuring bundled blueprints are removed."
+        remove_magiclight_blueprints
         return
     fi
 

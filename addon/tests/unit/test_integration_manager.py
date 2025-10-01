@@ -146,3 +146,54 @@ def test_manage_integration_removes_managed_copy_when_disabled(tmp_path: Path) -
     result = _run_shell_script(script, env=env, cwd=tmp_path)
     assert result.returncode == 0
     assert not dest_dir.exists()
+
+
+def test_bootstrap_magiclight_blueprints_removes_when_disabled(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle" / "custom_components" / "magiclight"
+    bundle.mkdir(parents=True)
+    (bundle / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
+
+    repo_info = tmp_path / "repository.yaml"
+    _create_repo_info(repo_info)
+
+    dest_base = tmp_path / "config" / "custom_components"
+    marker = dest_base / "magiclight" / ".managed_by_magiclight_addon"
+
+    aut_dest = tmp_path / "config" / "blueprints" / "automation" / "magiclight"
+    aut_dest.mkdir(parents=True)
+    (aut_dest / "hue_dimmer_switch.yaml").write_text("{}", encoding="utf-8")
+
+    scr_dest = tmp_path / "config" / "blueprints" / "script" / "magiclight"
+    scr_dest.mkdir(parents=True)
+    (scr_dest / "dummy.yaml").write_text("{}", encoding="utf-8")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "MAGICLIGHT_TEST_CFG_MANAGE_INTEGRATION": "true",
+            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "false",
+            "MAGICLIGHT_TEST_CFG_DOWNLOAD_URL": "",
+            "MAGICLIGHT_TEST_ADDON_VERSION": "9.9.9",
+            "PATH": os.environ["PATH"],
+        }
+    )
+
+    script = _make_stubbed_script(
+        bundle_path=bundle,
+        dest_base=dest_base,
+        repo_info=repo_info,
+        marker_path=marker,
+        extra_body=textwrap.dedent(
+            f"""
+            MAGICLIGHT_BLUEPRINT_AUT_DEST="{aut_dest}"
+            MAGICLIGHT_BLUEPRINT_SCR_DEST="{scr_dest}"
+            MAGICLIGHT_BLUEPRINT_MARKER="{marker}"
+            bootstrap_magiclight_blueprints
+            """
+        ),
+    )
+
+    result = _run_shell_script(script, env=env, cwd=tmp_path)
+    assert result.returncode == 0
+    assert not aut_dest.exists()
+    assert not scr_dest.exists()

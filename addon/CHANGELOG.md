@@ -1,5 +1,15 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.017-alpha
+**Enhancement - Blueprint Disable Cleanup**
+
+**Improvements:**
+- Added double-press OFF handling to the bundled Hue dimmer blueprint, routing the action to `magiclight.magiclight_off` for a fast shutoff.
+- When `manage_blueprints` is disabled the add-on now removes previously deployed MagicLight blueprints and purges managed automations on startup, keeping Home Assistant free of stale artifacts.
+
+**Testing:**
+- `pytest addon/tests/unit/test_blueprint_manager.py addon/tests/unit/test_integration_manager.py`
+
 ## 4.2.016-alpha
 **Feature - Magic Mode State Persistence**
 
@@ -7,6 +17,7 @@
 - Persist magic mode areas, time offsets, and brightness offsets in `magic_mode_state.json` so active rooms and their positioning survive restarts.
 - Load saved state during startup and resave automatically whenever offsets change, including solar-midnight resets and manual dimming adjustments.
 - Solar-midnight maintenance now clears stored brightness offsets alongside time offsets to avoid stale dimming.
+- Step up/down primitives now re-query adaptive lighting after adjusting the time offset so any stored brightness adjustments are applied consistently.
 
 ## 4.2.014-alpha
 **Enhancement - Brightness Offset Handling**

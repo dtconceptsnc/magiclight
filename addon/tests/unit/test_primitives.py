@@ -62,19 +62,30 @@ class TestMagicLightPrimitives:
             'xy': [0.45, 0.35]
         }
 
+        expected_lighting = {
+            'kelvin': 4100,
+            'brightness': 78,
+            'rgb': [255, 215, 185],
+            'xy': [0.44, 0.34]
+        }
+
+        self.mock_client.get_adaptive_lighting_for_area = AsyncMock(
+            return_value=expected_lighting
+        )
+
         with patch('primitives.calculate_dimming_step', return_value=mock_dimming_result):
             await self.primitives.step_up(area_id, "test_source")
 
         # Verify time offset was updated
         assert self.mock_client.magic_mode_time_offsets[area_id] == 90  # 60 + 30
+        self.mock_client.get_adaptive_lighting_for_area.assert_awaited_once_with(area_id)
 
-        # Verify lights were updated with dimming result
+        # Verify lights were updated with adaptive values (including brightness offset)
         self.mock_client.turn_on_lights_adaptive.assert_called_once()
         call_args = self.mock_client.turn_on_lights_adaptive.call_args
         assert call_args[0][0] == area_id  # area_id
         lighting_values = call_args[0][1]  # lighting_values
-        assert lighting_values['kelvin'] == 4000
-        assert lighting_values['brightness'] == 85
+        assert lighting_values == expected_lighting
         assert call_args[1]['transition'] == 0.2  # transition
 
     @pytest.mark.asyncio
@@ -153,18 +164,29 @@ class TestMagicLightPrimitives:
             'rgb': [255, 180, 120]
         }
 
+        expected_lighting = {
+            'kelvin': 2550,
+            'brightness': 42,
+            'rgb': [255, 185, 130]
+        }
+
+        self.mock_client.get_adaptive_lighting_for_area = AsyncMock(
+            return_value=expected_lighting
+        )
+
         with patch('primitives.calculate_dimming_step', return_value=mock_dimming_result):
             await self.primitives.step_down(area_id)
 
         # Verify time offset was updated
         assert self.mock_client.magic_mode_time_offsets[area_id] == 10  # 30 + (-20)
 
-        # Verify lights were updated
+        self.mock_client.get_adaptive_lighting_for_area.assert_awaited_once_with(area_id)
+
+        # Verify lights were updated with adaptive values (including brightness offset)
         self.mock_client.turn_on_lights_adaptive.assert_called_once()
         call_args = self.mock_client.turn_on_lights_adaptive.call_args
         lighting_values = call_args[0][1]
-        assert lighting_values['kelvin'] == 2500
-        assert lighting_values['brightness'] == 50
+        assert lighting_values == expected_lighting
 
     @pytest.mark.asyncio
     async def test_step_down_magic_mode_minimum_brightness(self):
@@ -177,6 +199,10 @@ class TestMagicLightPrimitives:
             'kelvin': 2000,
             'brightness': 0  # Below minimum
         }
+
+        self.mock_client.get_adaptive_lighting_for_area = AsyncMock(
+            return_value={'kelvin': 2050, 'brightness': 0}
+        )
 
         with patch('primitives.calculate_dimming_step', return_value=mock_dimming_result):
             await self.primitives.step_down(area_id)
