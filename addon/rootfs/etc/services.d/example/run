@@ -238,24 +238,42 @@ copy_bundled_integration() {
     return 0
 }
 
+blueprints_present() {
+    local path
+    for path in "$@"; do
+        if [ -d "${path}" ] && compgen -G "${path}"/*.yaml >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 remove_magiclight_blueprints() {
     local removed="false"
+    local blueprint_paths=(
+        "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
+        "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
+    )
+    local marker_paths=(
+        "${MAGICLIGHT_BLUEPRINT_MARKER}"
+        "${MAGICLIGHT_BLUEPRINT_SCR_DEST}/.managed_by_magiclight_addon"
+    )
 
-    if [ -d "${MAGICLIGHT_BLUEPRINT_AUT_DEST}" ]; then
-        bashio::log.info "Removing MagicLight automation blueprints from ${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-        rm -rf "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-        removed="true"
-    fi
+    for dest in "${blueprint_paths[@]}"; do
+        if [ -d "${dest}" ]; then
+            bashio::log.info "Removing MagicLight blueprints from ${dest}"
+            rm -rf "${dest}"
+            removed="true"
+        fi
+    done
 
-    if [ -d "${MAGICLIGHT_BLUEPRINT_SCR_DEST}" ]; then
-        bashio::log.info "Removing MagicLight script blueprints from ${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-        rm -rf "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-        removed="true"
-    fi
-
-    if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
-        rm -f "${MAGICLIGHT_BLUEPRINT_MARKER}"
-    fi
+    for marker in "${marker_paths[@]}"; do
+        if [ -f "${marker}" ]; then
+            bashio::log.debug "Removing MagicLight blueprint marker ${marker}"
+            rm -f "${marker}"
+            removed="true"
+        fi
+    done
 
     if [ "${removed}" = "false" ]; then
         bashio::log.info "No MagicLight blueprints found to remove."
@@ -274,6 +292,7 @@ bootstrap_magiclight_blueprints() {
 
 ensure_bundled_magiclight_blueprints() {
     local current_source
+    local stale_marker="false"
 
     if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
         return
@@ -281,9 +300,23 @@ ensure_bundled_magiclight_blueprints() {
 
     if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
         current_source=$(sed -n 's/^source=//p' "${MAGICLIGHT_BLUEPRINT_MARKER}")
-        if echo "${current_source}" | grep -q '^download:'; then
+        if ! blueprints_present \
+            "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"; then
+            bashio::log.warning "MagicLight blueprint marker present but no automation blueprints found; re-installing."
+            rm -f "${MAGICLIGHT_BLUEPRINT_MARKER}"
+            stale_marker="true"
+        elif echo "${current_source}" | grep -q '^download:'; then
             bashio::log.debug "MagicLight blueprints already sourced from ${current_source}; skipping bundled refresh."
             return
+        fi
+    fi
+
+    if [ "${stale_marker}" = "false" ]; then
+        if blueprints_present \
+            "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"; then
+            if echo "${current_source}" | grep -q '^download:'; then
+                return
+            fi
         fi
     fi
 

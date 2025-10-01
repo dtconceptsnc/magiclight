@@ -496,7 +496,7 @@ class ZigBeeController(LightController):
                         # If not a ZHA light, add to non-ZHA lights list
                         if not is_zha:
                             areas[area_id]['non_zha_lights'].append(entity_id)
-                            logger.info(f"Found non-ZHA light in area {area_name}: {entity_id}")
+                            logger.debug(f"Found non-ZHA light in area {area_name}: {entity_id}")
             
             return areas
             
