@@ -71,7 +71,7 @@ def _create_repo_info(path: Path) -> None:
 def test_manage_integration_installs_bundled_copy(tmp_path: Path, manage_blueprints: str) -> None:
     bundle = tmp_path / "bundle" / "custom_components" / "magiclight"
     bundle.mkdir(parents=True)
-    (bundle / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
+    (bundle / "manifest.json").write_text('{"name": "MagicLight", "version": "1.2.3"}', encoding="utf-8")
 
     repo_info = tmp_path / "repository.yaml"
     _create_repo_info(repo_info)
@@ -106,13 +106,14 @@ def test_manage_integration_installs_bundled_copy(tmp_path: Path, manage_bluepri
 
     marker_content = marker.read_text(encoding="utf-8")
     assert "addon_version=9.9.9" in marker_content
+    assert "integration_version=1.2.3" in marker_content
     assert "source=bundled" in marker_content
 
 
 def test_manage_integration_removes_managed_copy_when_disabled(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle" / "custom_components" / "magiclight"
     bundle.mkdir(parents=True)
-    (bundle / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
+    (bundle / "manifest.json").write_text('{"name": "MagicLight", "version": "0.1.0"}', encoding="utf-8")
 
     repo_info = tmp_path / "repository.yaml"
     _create_repo_info(repo_info)
@@ -122,7 +123,7 @@ def test_manage_integration_removes_managed_copy_when_disabled(tmp_path: Path) -
     dest_dir.mkdir(parents=True)
     (dest_dir / "manifest.json").write_text("{}", encoding="utf-8")
     marker = dest_dir / ".managed_by_magiclight_addon"
-    marker.write_text("source=bundled\naddon_version=1.0\n", encoding="utf-8")
+    marker.write_text("source=bundled\naddon_version=1.0\nintegration_version=0.0.1\n", encoding="utf-8")
 
     env = os.environ.copy()
     env.update(
@@ -146,116 +147,3 @@ def test_manage_integration_removes_managed_copy_when_disabled(tmp_path: Path) -
     result = _run_shell_script(script, env=env, cwd=tmp_path)
     assert result.returncode == 0
     assert not dest_dir.exists()
-
-
-def test_bootstrap_magiclight_blueprints_removes_when_disabled(tmp_path: Path) -> None:
-    bundle = tmp_path / "bundle" / "custom_components" / "magiclight"
-    bundle.mkdir(parents=True)
-    (bundle / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
-
-    repo_info = tmp_path / "repository.yaml"
-    _create_repo_info(repo_info)
-
-    dest_base = tmp_path / "config" / "custom_components"
-    marker = dest_base / "magiclight" / ".managed_by_magiclight_addon"
-
-    aut_dest = tmp_path / "config" / "blueprints" / "automation" / "magiclight"
-    aut_dest.mkdir(parents=True)
-    (aut_dest / "hue_dimmer_switch.yaml").write_text("{}", encoding="utf-8")
-
-    scr_dest = tmp_path / "config" / "blueprints" / "script" / "magiclight"
-    scr_dest.mkdir(parents=True)
-    (scr_dest / "dummy.yaml").write_text("{}", encoding="utf-8")
-
-    env = os.environ.copy()
-    env.update(
-        {
-            "MAGICLIGHT_TEST_CFG_MANAGE_INTEGRATION": "true",
-            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "False",
-            "MAGICLIGHT_TEST_CFG_DOWNLOAD_URL": "",
-            "MAGICLIGHT_TEST_ADDON_VERSION": "9.9.9",
-            "PATH": os.environ["PATH"],
-        }
-    )
-
-    script = _make_stubbed_script(
-        bundle_path=bundle,
-        dest_base=dest_base,
-        repo_info=repo_info,
-        marker_path=marker,
-        extra_body=textwrap.dedent(
-            f"""
-            MAGICLIGHT_BLUEPRINT_AUT_DEST="{aut_dest}"
-            MAGICLIGHT_BLUEPRINT_SCR_DEST="{scr_dest}"
-            MAGICLIGHT_BLUEPRINT_MARKER="{marker}"
-            bootstrap_magiclight_blueprints
-            """
-        ),
-    )
-
-    result = _run_shell_script(script, env=env, cwd=tmp_path)
-    assert result.returncode == 0
-    assert not aut_dest.exists()
-    assert not scr_dest.exists()
-
-
-def test_bootstrap_magiclight_blueprints_installs_when_enabled(tmp_path: Path) -> None:
-    bundle_root = tmp_path / "bundle"
-    aut_source = bundle_root / "automation" / "magiclight"
-    aut_source.mkdir(parents=True)
-    (aut_source / "hue_dimmer_switch.yaml").write_text("{}", encoding="utf-8")
-
-    scr_source = bundle_root / "script" / "magiclight"
-    scr_source.mkdir(parents=True)
-    (scr_source / "scene.yaml").write_text("{}", encoding="utf-8")
-
-    bundle_component = tmp_path / "bundle" / "custom_components" / "magiclight"
-    bundle_component.mkdir(parents=True)
-    (bundle_component / "manifest.json").write_text('{"name": "MagicLight"}', encoding="utf-8")
-
-    repo_info = tmp_path / "repository.yaml"
-    _create_repo_info(repo_info)
-
-    dest_base = tmp_path / "config" / "custom_components"
-    marker = dest_base / "magiclight" / ".managed_by_magiclight_addon"
-
-    aut_dest = tmp_path / "config" / "blueprints" / "automation" / "magiclight"
-    scr_dest = tmp_path / "config" / "blueprints" / "script" / "magiclight"
-    blueprint_marker = aut_dest / ".managed_by_magiclight_addon"
-
-    env = os.environ.copy()
-    env.update(
-        {
-            "MAGICLIGHT_TEST_CFG_MANAGE_INTEGRATION": "true",
-            "MAGICLIGHT_TEST_CFG_MANAGE_BLUEPRINTS": "TRUE",
-            "MAGICLIGHT_TEST_CFG_DOWNLOAD_URL": "",
-            "MAGICLIGHT_TEST_ADDON_VERSION": "9.9.9",
-            "PATH": os.environ["PATH"],
-        }
-    )
-
-    script = _make_stubbed_script(
-        bundle_path=bundle_component,
-        dest_base=dest_base,
-        repo_info=repo_info,
-        marker_path=marker,
-        extra_body=textwrap.dedent(
-            f"""
-            MAGICLIGHT_BUNDLED_BLUEPRINT_BASE="{bundle_root}"
-            MAGICLIGHT_BLUEPRINT_AUT_DEST="{aut_dest}"
-            MAGICLIGHT_BLUEPRINT_SCR_DEST="{scr_dest}"
-            MAGICLIGHT_BLUEPRINT_MARKER="{blueprint_marker}"
-            bootstrap_magiclight_blueprints
-            """
-        ),
-    )
-
-    result = _run_shell_script(script, env=env, cwd=tmp_path)
-    assert result.returncode == 0
-
-    assert (aut_dest / "hue_dimmer_switch.yaml").is_file()
-    assert (scr_dest / "scene.yaml").is_file()
-    assert blueprint_marker.is_file()
-
-    marker_content = blueprint_marker.read_text(encoding="utf-8")
-    assert "source=bundled" in marker_content

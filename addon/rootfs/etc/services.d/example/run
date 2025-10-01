@@ -12,7 +12,8 @@ MAGICLIGHT_DEST_BASE="/config/custom_components"
 MAGICLIGHT_DEST=""
 MAGICLIGHT_MARKER=""
 MAGICLIGHT_REPOSITORY_INFO="/opt/magiclight/repository.yaml"
-export MAGICLIGHT_BLUEPRINT_SOURCE_BASE="/opt/magiclight/blueprints"
+MAGICLIGHT_BLUEPRINT_SOURCE_BASE="${MAGICLIGHT_BLUEPRINT_SOURCE_BASE:-/opt/magiclight/blueprints}"
+export MAGICLIGHT_BLUEPRINT_SOURCE_BASE
 
 normalize_bool() {
     local raw="$1"
@@ -60,6 +61,31 @@ build_default_download_url() {
     fi
 
     echo "https://codeload.github.com/${repo}/tar.gz/refs/heads/${branch}"
+}
+
+read_manifest_version() {
+    local manifest="$1"
+    if [ ! -f "${manifest}" ]; then
+        return 1
+    fi
+
+    python3 - "$manifest" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, 'r', encoding='utf-8') as handle:
+        data = json.load(handle)
+except Exception:
+    sys.exit(1)
+
+value = data.get('version')
+if isinstance(value, str):
+    value = value.strip()
+    if value:
+        print(value)
+PY
 }
 
 download_integration_source() {
@@ -196,14 +222,40 @@ manage_magiclight_integration() {
     if [ -f "${MAGICLIGHT_MARKER}" ]; then
         current_source=$(sed -n 's/^source=//p' "${MAGICLIGHT_MARKER}")
         current_version=$(sed -n 's/^addon_version=//p' "${MAGICLIGHT_MARKER}")
+        current_integration_version=$(sed -n 's/^integration_version=//p' "${MAGICLIGHT_MARKER}")
     else
         current_source=""
         current_version=""
+        current_integration_version=""
+    fi
+
+    expected_integration_version=""
+    if [ "${expected_source}" = "bundled" ] && [ -f "${MAGICLIGHT_SOURCE}/manifest.json" ]; then
+        expected_integration_version=$(read_manifest_version "${MAGICLIGHT_SOURCE}/manifest.json" || echo "")
+    fi
+
+    dest_manifest_version=""
+    if [ -f "${MAGICLIGHT_DEST}/manifest.json" ]; then
+        dest_manifest_version=$(read_manifest_version "${MAGICLIGHT_DEST}/manifest.json" || echo "")
+    fi
+
+    integration_versions_match="false"
+    if [ -z "${expected_integration_version}" ]; then
+        if [ -n "${dest_manifest_version}" ] && [ "${current_integration_version}" = "${dest_manifest_version}" ]; then
+            integration_versions_match="true"
+        elif [ -z "${dest_manifest_version}" ] && [ -z "${current_integration_version}" ]; then
+            integration_versions_match="true"
+        fi
+    else
+        if [ "${current_integration_version}" = "${expected_integration_version}" ] && \
+           [ "${dest_manifest_version}" = "${expected_integration_version}" ]; then
+            integration_versions_match="true"
+        fi
     fi
 
     if bashio::fs.directory_exists "${MAGICLIGHT_DEST}" && \
-       [ "${current_source}" = "${expected_source}" ] && \
-        [ "${current_version}" = "${addon_version}" ]; then
+        [ "${current_source}" = "${expected_source}" ] && \
+        [ "${integration_versions_match}" = "true" ]; then
         bashio::log.info "MagicLight integration already up to date (source: ${expected_source})."
         if [ -n "${MAGICLIGHT_FALLBACK_BASE:-}" ] && \
            [ -d "${MAGICLIGHT_FALLBACK_BASE}/magiclight" ]; then
@@ -247,6 +299,8 @@ manage_magiclight_integration() {
 
     {
         echo "addon_version=${addon_version}"
+        integration_version=$(read_manifest_version "${MAGICLIGHT_DEST}/manifest.json" || echo "")
+        echo "integration_version=${integration_version}"
         echo "source=${expected_source}"
         echo "updated_at=$(date -Iseconds)"
     } > "${MAGICLIGHT_MARKER}"

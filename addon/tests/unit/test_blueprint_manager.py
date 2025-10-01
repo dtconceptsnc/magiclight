@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock
@@ -80,10 +81,18 @@ def _prepare_blueprint_env(tmp_path: Path, monkeypatch, include_mode: str) -> Di
     automations_file = config_dir / "automations.yaml"
     automations_dir = config_dir / "automations"
 
-    blueprint_base = tmp_path / "blueprints" / "automation"
-    namespace_dir = blueprint_base / "magiclight"
-    namespace_dir.mkdir(parents=True)
-    (namespace_dir / "hue_dimmer_switch.yaml").write_text(MINIMAL_BLUEPRINT, encoding="utf-8")
+    source_base = tmp_path / "blueprint_source"
+    automation_source = source_base / "automation" / "magiclight"
+    automation_source.mkdir(parents=True)
+    (automation_source / "hue_dimmer_switch.yaml").write_text(MINIMAL_BLUEPRINT, encoding="utf-8")
+
+    script_source = source_base / "script" / "magiclight"
+    script_source.mkdir(parents=True)
+    (script_source / "dummy.yaml").write_text("{}\n", encoding="utf-8")
+
+    config_blueprint_root = config_dir / "blueprints"
+    config_blueprint_aut = config_blueprint_root / "automation"
+    config_blueprint_scr = config_blueprint_root / "script"
 
     if include_mode == "file":
         include_line = f'automation: !include "{automations_file}"\n'
@@ -98,13 +107,18 @@ def _prepare_blueprint_env(tmp_path: Path, monkeypatch, include_mode: str) -> Di
     monkeypatch.setattr(hbm, "CONFIG_PATH", config_path)
     monkeypatch.setattr(hbm, "AUTOMATIONS_FILE", automations_file)
     monkeypatch.setattr(hbm, "AUTOMATIONS_DIR", automations_dir)
-    monkeypatch.setattr(hbm, "LOCAL_BLUEPRINT_VARIANTS", (blueprint_base,))
-    monkeypatch.setattr(hbm, "BLUEPRINT_PATH_VARIANTS", (blueprint_base,))
+    monkeypatch.setattr(hbm, "CONFIG_BLUEPRINT_AUT_ROOT", config_blueprint_aut)
+    monkeypatch.setattr(hbm, "CONFIG_BLUEPRINT_SCR_ROOT", config_blueprint_scr)
+    monkeypatch.setattr(hbm, "BLUEPRINT_PATH_VARIANTS", (config_blueprint_aut,))
+    monkeypatch.setenv("MAGICLIGHT_BLUEPRINT_SOURCE_BASE", str(source_base))
 
     return {
         "config_dir": config_dir,
         "automations_file": automations_file,
         "automations_dir": automations_dir,
+        "blueprint_aut_dest": config_blueprint_aut / "magiclight",
+        "blueprint_scr_dest": config_blueprint_scr / "magiclight",
+        "blueprint_marker": (config_blueprint_aut / "magiclight") / hbm.BLUEPRINT_MARKER_FILENAME,
     }
 
 
@@ -162,6 +176,13 @@ async def test_reconcile_writes_block_to_automations_yaml(tmp_path, monkeypatch)
 
     assert MANAGED_BLOCK_START in content
 
+    blueprint_dest = helpers["blueprint_aut_dest"]
+    assert (blueprint_dest / "hue_dimmer_switch.yaml").is_file()
+    marker_path = helpers["blueprint_marker"]
+    assert marker_path.is_file()
+    marker_data = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker_data["automation_files"] == ["hue_dimmer_switch.yaml"]
+
     block = manager._extract_managed_block(content)
     parsed = yaml.safe_load(block)
     assert isinstance(parsed, list) and len(parsed) == 1
@@ -196,6 +217,9 @@ async def test_reconcile_writes_include_dir_file(tmp_path, monkeypatch):
 
     managed_path = helpers["automations_dir"] / "magiclight_managed.yaml"
     assert managed_path.is_file()
+
+    blueprint_dest = helpers["blueprint_aut_dest"]
+    assert (blueprint_dest / "hue_dimmer_switch.yaml").is_file()
 
     data = yaml.safe_load(managed_path.read_text(encoding="utf-8"))
     assert isinstance(data, list) and len(data) == 1
@@ -283,3 +307,26 @@ async def test_purge_managed_automations_removes_include_dir_file(tmp_path, monk
 
     assert not managed_path.exists()
     ws_client.call_service.assert_awaited_once_with("automation", "reload", {})
+
+
+@pytest.mark.asyncio
+async def test_remove_blueprint_files_cleans_destinations(tmp_path, monkeypatch):
+    helpers = _prepare_blueprint_env(tmp_path, monkeypatch, "file")
+    payloads = _build_fixtures()
+    ws_client = DummyWSClient(**payloads)
+
+    manager = BlueprintAutomationManager(ws_client, enabled=True)
+    await manager.reconcile_now("initial")
+
+    aut_dest = helpers["blueprint_aut_dest"]
+    scr_dest = helpers["blueprint_scr_dest"]
+    marker = helpers["blueprint_marker"]
+
+    assert aut_dest.exists()
+    assert marker.exists()
+
+    await manager.remove_blueprint_files("disabled")
+
+    assert not aut_dest.exists()
+    assert not scr_dest.exists()
+    assert not marker.exists()
