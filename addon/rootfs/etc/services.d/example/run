@@ -11,12 +11,8 @@ MAGICLIGHT_SOURCE="/opt/magiclight/custom_components/magiclight"
 MAGICLIGHT_DEST_BASE="/config/custom_components"
 MAGICLIGHT_DEST=""
 MAGICLIGHT_MARKER=""
-MAGICLIGHT_BLUEPRINT_NAMESPACE="magiclight"
-MAGICLIGHT_BLUEPRINT_AUT_DEST="/config/blueprints/automation/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-MAGICLIGHT_BLUEPRINT_SCR_DEST="/config/blueprints/script/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-MAGICLIGHT_BLUEPRINT_MARKER="${MAGICLIGHT_BLUEPRINT_AUT_DEST}/.managed_by_magiclight_addon"
 MAGICLIGHT_REPOSITORY_INFO="/opt/magiclight/repository.yaml"
-MAGICLIGHT_BUNDLED_BLUEPRINT_BASE="/opt/magiclight/blueprints"
+export MAGICLIGHT_BLUEPRINT_SOURCE_BASE="/opt/magiclight/blueprints"
 
 normalize_bool() {
     local raw="$1"
@@ -66,84 +62,8 @@ build_default_download_url() {
     echo "https://codeload.github.com/${repo}/tar.gz/refs/heads/${branch}"
 }
 
-log_blueprint_listing() {
-    local dest label
-
-    dest="$1"
-    label="$2"
-
-    if [ ! -d "${dest}" ]; then
-        return
-    fi
-
-    for blueprint in "${dest}"/*.yaml; do
-        if [ -e "${blueprint}" ]; then
-            bashio::log.info "${label} $(basename "${blueprint}")"
-        fi
-    done
-}
-
-install_blueprints_from_directory() {
-    local base source_label aut_source scr_source installed addon_version
-
-    base="$1"
-    source_label="$2"
-
-    if [ -z "${base}" ] || [ ! -d "${base}" ]; then
-        return 1
-    fi
-
-    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
-        bashio::log.info "Skipping MagicLight blueprint installation (${source_label}) (disabled in options)."
-        return 0
-    fi
-
-    aut_source="${base}/automation/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-    if [ ! -d "${aut_source}" ]; then
-        aut_source="${base}/automations/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-    fi
-    scr_source="${base}/script/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-    if [ ! -d "${scr_source}" ]; then
-        scr_source="${base}/scripts/${MAGICLIGHT_BLUEPRINT_NAMESPACE}"
-    fi
-    installed="false"
-
-    if [ -d "${aut_source}" ]; then
-        mkdir -p "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-        if cp -a "${aut_source}/." "${MAGICLIGHT_BLUEPRINT_AUT_DEST}/"; then
-            installed="true"
-            bashio::log.info "Installed automation blueprints (${source_label}) to ${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-            log_blueprint_listing "${MAGICLIGHT_BLUEPRINT_AUT_DEST}" "[AUT BP]"
-        else
-            bashio::log.warning "Failed to copy automation blueprints from ${aut_source}."
-        fi
-    fi
-
-    if [ -d "${scr_source}" ]; then
-        mkdir -p "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-        if cp -a "${scr_source}/." "${MAGICLIGHT_BLUEPRINT_SCR_DEST}/"; then
-            installed="true"
-            bashio::log.info "Installed script blueprints (${source_label}) to ${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-            log_blueprint_listing "${MAGICLIGHT_BLUEPRINT_SCR_DEST}" "[SCR BP]"
-        else
-            bashio::log.warning "Failed to copy script blueprints from ${scr_source}."
-        fi
-    fi
-
-    if [ "${installed}" = "true" ]; then
-        addon_version="$(bashio::addon.version)"
-        {
-            echo "addon_version=${addon_version}"
-            echo "source=${source_label}"
-            echo "updated_at=$(date -Iseconds)"
-        } > "${MAGICLIGHT_BLUEPRINT_MARKER}"
-    fi
-
-    return 0
-}
-
 download_integration_source() {
-    local target_path download_url tmp_dir archive_path source_path repo_root blueprint_base blueprint_label
+    local target_path download_url tmp_dir archive_path source_path repo_root blueprint_base
 
     target_path="$1"
     download_url="$2"
@@ -192,9 +112,14 @@ download_integration_source() {
     fi
 
     blueprint_base="${repo_root}/blueprints"
-    if [ -n "${blueprint_base}" ] && [ -d "${blueprint_base}" ]; then
-        blueprint_label="download:${download_url}"
-        install_blueprints_from_directory "${blueprint_base}" "${blueprint_label}"
+    if [ -d "${blueprint_base}" ]; then
+        mkdir -p "$(dirname "${MAGICLIGHT_BLUEPRINT_SOURCE_BASE}")"
+        if rm -rf "${MAGICLIGHT_BLUEPRINT_SOURCE_BASE}" && \
+           cp -a "${blueprint_base}" "${MAGICLIGHT_BLUEPRINT_SOURCE_BASE}"; then
+            bashio::log.info "Staged blueprints from downloaded archive to ${MAGICLIGHT_BLUEPRINT_SOURCE_BASE}"
+        else
+            bashio::log.warning "Failed to stage blueprints from downloaded archive."
+        fi
     else
         bashio::log.debug "No blueprints directory found in downloaded archive."
     fi
@@ -236,95 +161,6 @@ copy_bundled_integration() {
     fi
 
     return 0
-}
-
-blueprints_present() {
-    local path
-    for path in "$@"; do
-        if [ -d "${path}" ] && compgen -G "${path}"/*.yaml >/dev/null 2>&1; then
-            return 0
-        fi
-    done
-    return 1
-}
-
-remove_magiclight_blueprints() {
-    local removed="false"
-    local blueprint_paths=(
-        "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"
-        "${MAGICLIGHT_BLUEPRINT_SCR_DEST}"
-    )
-    local marker_paths=(
-        "${MAGICLIGHT_BLUEPRINT_MARKER}"
-        "${MAGICLIGHT_BLUEPRINT_SCR_DEST}/.managed_by_magiclight_addon"
-    )
-
-    for dest in "${blueprint_paths[@]}"; do
-        if [ -d "${dest}" ]; then
-            bashio::log.info "Removing MagicLight blueprints from ${dest}"
-            rm -rf "${dest}"
-            removed="true"
-        fi
-    done
-
-    for marker in "${marker_paths[@]}"; do
-        if [ -f "${marker}" ]; then
-            bashio::log.debug "Removing MagicLight blueprint marker ${marker}"
-            rm -f "${marker}"
-            removed="true"
-        fi
-    done
-
-    if [ "${removed}" = "false" ]; then
-        bashio::log.info "No MagicLight blueprints found to remove."
-    fi
-}
-
-bootstrap_magiclight_blueprints() {
-    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
-        bashio::log.info "MagicLight blueprint management disabled; ensuring bundled blueprints are removed."
-        remove_magiclight_blueprints
-        return
-    fi
-
-    ensure_bundled_magiclight_blueprints
-}
-
-ensure_bundled_magiclight_blueprints() {
-    local current_source
-    local stale_marker="false"
-
-    if [ "${MANAGE_MAGICLIGHT_BLUEPRINTS}" = "false" ]; then
-        return
-    fi
-
-    if [ -f "${MAGICLIGHT_BLUEPRINT_MARKER}" ]; then
-        current_source=$(sed -n 's/^source=//p' "${MAGICLIGHT_BLUEPRINT_MARKER}")
-        if ! blueprints_present \
-            "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"; then
-            bashio::log.warning "MagicLight blueprint marker present but no automation blueprints found; re-installing."
-            rm -f "${MAGICLIGHT_BLUEPRINT_MARKER}"
-            stale_marker="true"
-        elif echo "${current_source}" | grep -q '^download:'; then
-            bashio::log.debug "MagicLight blueprints already sourced from ${current_source}; skipping bundled refresh."
-            return
-        fi
-    fi
-
-    if [ "${stale_marker}" = "false" ]; then
-        if blueprints_present \
-            "${MAGICLIGHT_BLUEPRINT_AUT_DEST}"; then
-            if echo "${current_source}" | grep -q '^download:'; then
-                return
-            fi
-        fi
-    fi
-
-    if [ -d "${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}" ]; then
-        install_blueprints_from_directory "${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}" "bundled"
-    else
-        bashio::log.debug "Bundled MagicLight blueprints not found at ${MAGICLIGHT_BUNDLED_BLUEPRINT_BASE}."
-    fi
 }
 
 manage_magiclight_integration() {
@@ -448,7 +284,6 @@ if [ "${MAGICLIGHT_SKIP_MAIN:-}" = "1" ]; then
 fi
 
 manage_magiclight_integration
-bootstrap_magiclight_blueprints()
 
 # ---------------------------------------------------------------
 # 1. Detect mode

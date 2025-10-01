@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import re
+import shutil
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -35,10 +39,10 @@ BLUEPRINT_PATH_VARIANTS = (
     Path("/config/blueprints/automation"),
     Path("/config/blueprints/automations"),
 )
-LOCAL_BLUEPRINT_VARIANTS = (
-    Path(__file__).resolve().parent.parent / "blueprints" / "automation",
-    Path(__file__).resolve().parent.parent / "blueprints" / "automations",
-)
+CONFIG_BLUEPRINT_AUT_ROOT = Path("/config/blueprints/automation")
+CONFIG_BLUEPRINT_SCR_ROOT = Path("/config/blueprints/script")
+BLUEPRINT_MARKER_FILENAME = ".managed_by_magiclight_addon"
+BLUEPRINT_SOURCE_ENV_VAR = "MAGICLIGHT_BLUEPRINT_SOURCE_BASE"
 
 AUTOMATIONS_FILE = Path("/config/automations.yaml")
 AUTOMATIONS_DIR = Path("/config/automations")
@@ -149,6 +153,13 @@ class BlueprintAutomationManager:
             if not self.enabled:
                 return
 
+            if not self._ensure_blueprint_files():
+                self.logger.warning(
+                    "MagicLight blueprint files are unavailable; skipping automation sync (%s).",
+                    reason,
+                )
+                return
+
             blueprint_path = self._locate_blueprint_file()
             if not blueprint_path:
                 self.logger.warning(
@@ -245,6 +256,259 @@ class BlueprintAutomationManager:
     async def _fetch_entity_registry(self) -> List[Dict[str, Any]]:
         result = await self.ws_client.send_message_wait_response({"type": "config/entity_registry/list"})
         return result if isinstance(result, list) else []
+
+    # ---------- Blueprint file helpers ----------
+
+    def _blueprint_destinations(self) -> Dict[str, Path]:
+        return {
+            "automation": CONFIG_BLUEPRINT_AUT_ROOT / self.namespace,
+            "script": CONFIG_BLUEPRINT_SCR_ROOT / self.namespace,
+        }
+
+    def _blueprint_marker_path(self) -> Path:
+        return (CONFIG_BLUEPRINT_AUT_ROOT / self.namespace) / BLUEPRINT_MARKER_FILENAME
+
+    def _blueprint_source_bases(self) -> List[Path]:
+        candidates: List[Path] = []
+
+        env_base = os.getenv(BLUEPRINT_SOURCE_ENV_VAR)
+        if env_base:
+            candidates.append(Path(env_base))
+
+        module_dir = Path(__file__).resolve().parent
+        candidates.append(module_dir / "blueprints")
+        candidates.append(module_dir.parent / "blueprints")
+
+        candidates.append(Path("/opt/magiclight/blueprints"))
+        candidates.append(Path("/app/blueprints"))
+
+        unique: List[Path] = []
+        seen: Set[str] = set()
+        for base in candidates:
+            if not isinstance(base, Path):
+                continue
+            try:
+                resolved = base.resolve()
+            except OSError:
+                resolved = base
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(resolved)
+
+        return unique
+
+    def _find_variant_dir(self, base: Path, names: Sequence[str]) -> Optional[Path]:
+        for name in names:
+            candidate = base / name / self.namespace
+            if candidate.is_dir():
+                return candidate
+        return None
+
+    def _discover_blueprint_source(self) -> Optional[Dict[str, Optional[Path]]]:
+        candidates: List[Dict[str, Optional[Path]]] = []
+        for base in self._blueprint_source_bases():
+            automation_dir = self._find_variant_dir(base, ("automation", "automations"))
+            script_dir = self._find_variant_dir(base, ("script", "scripts"))
+            if automation_dir or script_dir:
+                candidates.append(
+                    {
+                        "label": str(base),
+                        "automation": automation_dir,
+                        "script": script_dir,
+                    }
+                )
+
+        if not candidates:
+            return None
+
+        # Prefer sources that include automation blueprints with YAML files
+        for candidate in candidates:
+            automation_dir = candidate.get("automation")
+            if automation_dir and any(automation_dir.glob("*.yaml")):
+                return candidate
+
+        # Fallback to first candidate even if empty (will fail later)
+        return candidates[0]
+
+    def _collect_yaml_names(self, directory: Optional[Path]) -> List[str]:
+        if not directory or not directory.is_dir():
+            return []
+        return sorted(
+            [
+                path.name
+                for path in directory.glob("*.yaml")
+                if path.is_file()
+            ]
+        )
+
+    def _directory_contains_yaml(self, directory: Path) -> bool:
+        return any(directory.glob("*.yaml"))
+
+    def _load_marker(self, marker_path: Path) -> Dict[str, Any]:
+        if not marker_path.is_file():
+            return {}
+        try:
+            data = json.loads(marker_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as err:
+            self.logger.debug("Failed to read MagicLight blueprint marker %s: %s", marker_path, err)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _should_refresh_marker(
+        self,
+        marker: Dict[str, Any],
+        source_label: str,
+        automation_files: Sequence[str],
+        script_files: Sequence[str],
+    ) -> bool:
+        if not marker:
+            return True
+        if marker.get("source") != source_label:
+            return True
+        if marker.get("automation_files") != list(automation_files):
+            return True
+        if marker.get("script_files") != list(script_files):
+            return True
+        return False
+
+    def _write_marker(
+        self,
+        marker_path: Path,
+        source_label: str,
+        automation_files: Sequence[str],
+        script_files: Sequence[str],
+    ) -> None:
+        payload = {
+            "source": source_label,
+            "automation_files": list(automation_files),
+            "script_files": list(script_files),
+            "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        }
+        try:
+            marker_path.parent.mkdir(parents=True, exist_ok=True)
+            marker_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        except OSError as err:
+            self.logger.error("Failed to write MagicLight blueprint marker %s: %s", marker_path, err)
+
+    def _sync_blueprint_category(
+        self,
+        source_dir: Optional[Path],
+        destination_dir: Path,
+        *,
+        optional: bool = False,
+    ) -> List[str]:
+        if source_dir and source_dir.is_dir():
+            if destination_dir.exists():
+                shutil.rmtree(destination_dir)
+            destination_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_dir, destination_dir)
+            return self._collect_yaml_names(destination_dir)
+
+        if optional:
+            if destination_dir.exists():
+                shutil.rmtree(destination_dir)
+            return []
+
+        raise FileNotFoundError(f"Blueprint source directory missing: {source_dir}")
+
+    def _install_blueprint_source(
+        self,
+        source: Dict[str, Optional[Path]],
+        destinations: Dict[str, Path],
+    ) -> Optional[Tuple[List[str], List[str]]]:
+        automation_dir = source.get("automation")
+        script_dir = source.get("script")
+
+        try:
+            automation_files = self._sync_blueprint_category(automation_dir, destinations["automation"], optional=False)
+        except (OSError, FileNotFoundError) as err:
+            self.logger.error("Failed to install automation blueprints from %s: %s", automation_dir, err)
+            return None
+
+        try:
+            script_files = self._sync_blueprint_category(script_dir, destinations["script"], optional=True)
+        except OSError as err:
+            self.logger.error("Failed to install script blueprints from %s: %s", script_dir, err)
+            script_files = []
+
+        return automation_files, script_files
+
+    def _ensure_blueprint_files(self) -> bool:
+        destinations = self._blueprint_destinations()
+        marker_path = self._blueprint_marker_path()
+
+        source = self._discover_blueprint_source()
+        if not source:
+            if self._directory_contains_yaml(destinations["automation"]):
+                return True
+            self.logger.warning(
+                "No MagicLight blueprint source discovered; automation blueprints unavailable."
+            )
+            return False
+
+        source_label = source.get("label", "unknown")
+        source_automation_files = self._collect_yaml_names(source.get("automation"))
+        if not source_automation_files:
+            self.logger.warning(
+                "Blueprint source %s does not contain automation files for namespace %s.",
+                source_label,
+                self.namespace,
+            )
+            return False
+
+        source_script_files = self._collect_yaml_names(source.get("script"))
+
+        existing_marker = self._load_marker(marker_path)
+        if self._directory_contains_yaml(destinations["automation"]) and not self._should_refresh_marker(
+            existing_marker,
+            source_label,
+            source_automation_files,
+            source_script_files,
+        ):
+            return True
+
+        installed = self._install_blueprint_source(source, destinations)
+        if not installed:
+            return False
+
+        automation_files, script_files = installed
+        self._write_marker(marker_path, source_label, automation_files, script_files)
+        self.logger.info(
+            "Installed MagicLight blueprints from %s into %s.",
+            source_label,
+            destinations["automation"]
+        )
+        return True
+
+    def _remove_blueprint_files(self, reason: str) -> None:
+        destinations = self._blueprint_destinations()
+        marker_path = self._blueprint_marker_path()
+
+        removed_any = False
+
+        for dest in destinations.values():
+            if dest.exists():
+                shutil.rmtree(dest)
+                removed_any = True
+
+        if marker_path.exists():
+            try:
+                marker_path.unlink()
+            except OSError as err:
+                self.logger.debug("Failed to remove MagicLight blueprint marker %s: %s", marker_path, err)
+            else:
+                removed_any = True
+
+        if removed_any:
+            self.logger.info("Removed MagicLight blueprints (%s).", reason)
+        else:
+            self.logger.debug("No MagicLight blueprints to remove (%s).", reason)
+
+    async def remove_blueprint_files(self, reason: str) -> None:
+        async with self._lock:
+            self._remove_blueprint_files(reason)
 
     # ---------- Automation storage helpers ----------
 
@@ -486,10 +750,15 @@ class BlueprintAutomationManager:
 
     def _locate_blueprint_file(self) -> Optional[Path]:
         candidates: List[Path] = []
+        destinations = self._blueprint_destinations()
+        candidates.append(destinations["automation"] / self.blueprint_filename)
+
         for base in (*BLUEPRINT_PATH_VARIANTS,):
             candidates.append(base / self.namespace / self.blueprint_filename)
-        for base in (*LOCAL_BLUEPRINT_VARIANTS,):
-            candidates.append(base / self.namespace / self.blueprint_filename)
+
+        source = self._discover_blueprint_source()
+        if source and source.get("automation"):
+            candidates.append(source["automation"] / self.blueprint_filename)
 
         for path in candidates:
             if path.is_file():

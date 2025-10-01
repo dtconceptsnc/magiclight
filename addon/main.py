@@ -1466,6 +1466,7 @@ class HomeAssistantWebSocketClient:
                 if self.manage_blueprints:
                     await self.blueprint_manager.reconcile_now("startup")
                 else:
+                    await self.blueprint_manager.remove_blueprint_files("startup-disabled")
                     await self.blueprint_manager.purge_managed_automations("startup-disabled")
 
                 # Subscribe to all events
