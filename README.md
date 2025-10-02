@@ -40,6 +40,19 @@ The blueprint provides smart button mappings:
 - **OFF button**: Reset to current time and enable MagicLight
 - **UP/DOWN buttons**: Step brightness along the adaptive curve
 
+## 🛠️ Service Primitives
+
+MagicLight registers a set of service primitives under the `magiclight` domain. These are the same calls the add-on and blueprints use, so you can trigger them from automations, scripts, dashboards, or the Developer Tools. Every service accepts an `area_id` field that can be a single area or a list for grouped control.
+
+- `magiclight.step_up` – Moves the area forward along the MagicLight curve, brightening and cooling the lights by advancing the stored TimeLocation offset.
+- `magiclight.step_down` – Moves backward along the curve, dimming and warming the lights by reducing the TimeLocation offset.
+- `magiclight.dim_up` – Raises brightness while keeping the current color temperature; in MagicLight mode it adjusts the brightness offset, otherwise it issues a standard Home Assistant brightness step.
+- `magiclight.dim_down` – Lowers brightness without touching color temperature, following the same MagicLight-aware logic as `dim_up`.
+- `magiclight.reset` – Clears any offsets, re-enables MagicLight, and reapplies the lighting that matches the current time.
+- `magiclight.magiclight_on` – Enables MagicLight for the area and turns lights on with the adaptive values for the active curve position.
+- `magiclight.magiclight_off` – Disables MagicLight but leaves the lights exactly as they are, saving the current TimeLocation for later.
+- `magiclight.magiclight_toggle` – Smart toggle: if any lights in the target areas are on it turns everything off and disables MagicLight; otherwise it turns them on with MagicLight active.
+
 ## 🙏 Influences
 
 - [Adaptive Lighting](https://github.com/basnijholt/adaptive-lighting)
