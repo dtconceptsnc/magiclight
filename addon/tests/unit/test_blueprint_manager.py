@@ -31,6 +31,9 @@ blueprint:
             - integration: zha
               manufacturer: Signify Netherlands B.V.
               model: RWL022
+            - integration: hue
+              manufacturer: Signify Netherlands B.V.
+              model: RWL022
     target_areas:
       selector:
         area:
@@ -122,7 +125,7 @@ def _prepare_blueprint_env(tmp_path: Path, monkeypatch, include_mode: str) -> Di
     }
 
 
-def _build_fixtures() -> Dict[str, List[Dict[str, Any]]]:
+def _build_fixtures(*, integration: str = "zha") -> Dict[str, List[Dict[str, Any]]]:
     area_id = "area-1"
     device_id = "device-1"
 
@@ -140,7 +143,7 @@ def _build_fixtures() -> Dict[str, List[Dict[str, Any]]]:
             "entity_id": "sensor.dummy_button",
             "device_id": device_id,
             "area_id": area_id,
-            "platform": "zha",
+            "platform": integration,
         }
     ]
     states = [
@@ -203,6 +206,28 @@ async def test_reconcile_writes_block_to_automations_yaml(tmp_path, monkeypatch)
 
     ws_client.call_service.assert_not_called()
     assert automations_file.read_text(encoding="utf-8") == previous
+
+
+@pytest.mark.asyncio
+async def test_hue_switch_automation_disabled_by_default(tmp_path, monkeypatch):
+    helpers = _prepare_blueprint_env(tmp_path, monkeypatch, "file")
+
+    payloads = _build_fixtures(integration="hue")
+    ws_client = DummyWSClient(**payloads)
+
+    manager = BlueprintAutomationManager(ws_client, enabled=True)
+    await manager.reconcile_now("startup")
+
+    automations_file = helpers["automations_file"]
+    content = automations_file.read_text(encoding="utf-8")
+    block = manager._extract_managed_block(content)
+    parsed = yaml.safe_load(block)
+
+    assert isinstance(parsed, list) and len(parsed) == 1
+    entry = parsed[0]
+    assert entry.get("initial_state") is False
+
+    ws_client.call_service.assert_awaited_once_with("automation", "reload", {})
 
 
 @pytest.mark.asyncio

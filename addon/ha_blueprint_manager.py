@@ -183,7 +183,7 @@ class BlueprintAutomationManager:
             states = await self.ws_client.get_states()
 
             area_light_counts = self._calculate_area_light_counts(states, entities, devices)
-            area_candidates = self._find_matching_devices(filters, devices, entities, area_light_counts)
+            area_candidates, device_integrations = self._find_matching_devices(filters, devices, entities, area_light_counts)
 
             storage_path, storage_mode = self._determine_automation_storage()
             existing_managed = self._load_managed_automations(storage_path, storage_mode)
@@ -202,8 +202,7 @@ class BlueprintAutomationManager:
                 desired_devices = sorted(set(switch_devices))
                 alias = f"{ALIAS_PREFIX}{area_name}"
 
-                desired_automations.append(
-                    {
+                automation_entry: Dict[str, Any] = {
                         "id": self._automation_id_for_area(area_id),
                         "alias": alias,
                         "description": BLUEPRINT_DESCRIPTION,
@@ -212,7 +211,11 @@ class BlueprintAutomationManager:
                             "input": self._build_blueprint_inputs(desired_devices, [area_id]),
                         },
                     }
-                )
+
+                if desired_devices and self._automation_should_default_disabled(desired_devices, device_integrations):
+                    automation_entry["initial_state"] = False
+
+                desired_automations.append(automation_entry)
 
             changes_made = self._persist_managed_automations(
                 storage_path,
@@ -866,15 +869,30 @@ class BlueprintAutomationManager:
                 counts[area_id] += 1
         return counts
 
+    def _automation_should_default_disabled(
+        self,
+        device_ids: Sequence[str],
+        device_integrations: Dict[str, Set[str]],
+    ) -> bool:
+        if not device_ids:
+            return False
+        for device_id in device_ids:
+            integrations = device_integrations.get(device_id, set())
+            if "hue" not in integrations:
+                return False
+            if "zha" in integrations:
+                return False
+        return True
+
     def _find_matching_devices(
         self,
         filters: Sequence[Dict[str, Any]],
         devices: Sequence[Dict[str, Any]],
         entities: Sequence[Dict[str, Any]],
         area_light_counts: Dict[str, int],
-    ) -> Dict[str, Set[str]]:
+    ) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
         if not filters:
-            return {}
+            return {}, {}
 
         filters_normalized = [self._normalize_filter(filt) for filt in filters if isinstance(filt, dict)]
 
@@ -887,6 +905,7 @@ class BlueprintAutomationManager:
                 device_entities[device_id].append(entity)
 
         area_candidates: Dict[str, Set[str]] = defaultdict(set)
+        matched_integrations: Dict[str, Set[str]] = {}
 
         for device in devices:
             if not isinstance(device, dict):
@@ -914,8 +933,9 @@ class BlueprintAutomationManager:
 
             if self._device_matches_filters(manufacturer, model, integrations, filters_normalized):
                 area_candidates[area_id].add(device_id)
+                matched_integrations[device_id] = set(integrations)
 
-        return area_candidates
+        return area_candidates, matched_integrations
 
     # ---------- Utility helpers ----------
 

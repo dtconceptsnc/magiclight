@@ -1,5 +1,17 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.024-alpha
+**Enhancement - Hue Room Group Targeting**
+
+**Improvements:**
+- Detect and register Hue grouped-light resources alongside existing Magic_ ZHA groups, capturing area metadata for each entity.
+- Prefer Hue room entities when issuing `light.turn_on` calls or checking area state, falling back to ZHA groups or area coverage when required.
+- Preserve legacy aliases and logging so previously managed mappings and test hooks continue to function.
+
+**Testing:**
+- `pytest addon/tests/unit/test_main_websocket.py::TestHomeAssistantWebSocketClientAsync::test_determine_light_target_hue_group`
+- `pytest addon/tests/unit/test_main_websocket.py::TestHomeAssistantWebSocketClient::test_update_zha_group_mapping_magic_prefix`
+
 ## 4.2.023-alpha
 **Enhancement - Blueprint Sync Refresh**
 

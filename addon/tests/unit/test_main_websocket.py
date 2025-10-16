@@ -503,6 +503,27 @@ class TestHomeAssistantWebSocketClientAsync:
         assert target_value == area_id
 
     @pytest.mark.asyncio
+    async def test_determine_light_target_hue_group(self):
+        """Ensure Hue grouped lights are preferred even without ZHA parity."""
+        area_id = "guest_bath"
+        hue_entity = "light.guest_bath"
+
+        normalized_key = self.client._normalize_area_key(area_id)
+        self.client.area_group_map[normalized_key] = {"hue_group": hue_entity}
+        self.client.group_entity_info[hue_entity] = {
+            "type": "hue_group",
+            "area": "Guest Bath",
+            "area_id": area_id,
+            "area_name": "Guest Bath",
+        }
+        self.client.area_to_light_entity[area_id] = hue_entity
+
+        target_type, target_value = await self.client.determine_light_target(area_id)
+
+        assert target_type == "entity_id"
+        assert target_value == hue_entity
+
+    @pytest.mark.asyncio
     async def test_determine_light_target_lowercase_fallback(self):
         """Test determine_light_target with lowercase area matching."""
         area_id = "Kitchen"  # Capitalized

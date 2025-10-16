@@ -56,7 +56,9 @@ class HomeAssistantWebSocketClient:
         self.websocket: WebSocketClientProtocol = None
         self.message_id = 1
         self.sun_data = {}  # Store latest sun data
-        self.area_to_light_entity = {}  # Map areas to their ZHA group light entities
+        self.area_to_light_entity = {}  # Map area aliases to their grouped light entity
+        self.area_group_map: Dict[str, Dict[str, str]] = {}  # Normalized area key -> {"zha_group": entity, "hue_group": entity, ...}
+        self.group_entity_info: Dict[str, Dict[str, Any]] = {}  # Metadata for grouped light entities
         self.primitives = MagicLightPrimitives(self)  # Initialize primitives handler
         self.light_controller = None  # Will be initialized after websocket connection
         self.latitude = None  # Home Assistant latitude
@@ -118,59 +120,188 @@ class HomeAssistantWebSocketClient:
         self.message_id += 1
         return current_id
     
-    def _update_zha_group_mapping(self, entity_id: str, friendly_name: str) -> None:
-        """Update the ZHA group mapping for a light entity if it matches the Magic_ pattern.
-        
-        Args:
-            entity_id: The entity ID
-            friendly_name: The friendly name of the entity
-        """
-        # Debug log all light entities during initial load
-        if entity_id.startswith("light."):
-            logger.debug(f"Checking light entity: {entity_id}, friendly_name: '{friendly_name}'")
-        
-        if "magic_" not in entity_id.lower() and "magic_" not in friendly_name.lower():
+    def _normalize_area_key(self, value: Optional[str]) -> Optional[str]:
+        """Normalize area identifiers to a lowercase underscore-delimited key."""
+        if not value or not isinstance(value, str):
+            return None
+        normalized = value.strip().lower().replace("-", "_")
+        normalized = normalized.replace(" ", "_")
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized or None
+
+    def _register_area_group_entity(
+        self,
+        entity_id: str,
+        *,
+        area_name: Optional[str],
+        area_id: Optional[str],
+        group_type: str,
+    ) -> None:
+        """Register a grouped light entity for fast lookup by area aliases."""
+        if not entity_id or not entity_id.startswith("light."):
             return
-        
-        # logger.info(f"Found potential ZHA group: entity_id='{entity_id}', friendly_name='{friendly_name}'")
-            
+
+        # Track metadata about the entity
+        display_name = area_name or area_id or entity_id
+        self.group_entity_info[entity_id] = {
+            "type": group_type,
+            "area": display_name,
+            "area_id": area_id,
+            "area_name": area_name,
+        }
+
+        # Store normalized mapping for selection logic
+        canonical_key = self._normalize_area_key(area_id or area_name)
+        if canonical_key:
+            area_entry = self.area_group_map.setdefault(canonical_key, {})
+            area_entry[group_type] = entity_id
+
+        # Build alias variations to continue supporting legacy lookups
+        alias_candidates = set()
+        for raw in (area_id, area_name):
+            if raw and isinstance(raw, str):
+                trimmed = raw.strip()
+                if not trimmed:
+                    continue
+                alias_candidates.add(trimmed)
+                alias_candidates.add(trimmed.replace("-", " "))
+
+        # Include canonical key so callers who already rely on lowercase ids still work
+        if canonical_key:
+            alias_candidates.add(canonical_key)
+
+        for candidate in alias_candidates:
+            if not candidate:
+                continue
+            variants = {
+                candidate,
+                candidate.lower(),
+                candidate.replace("_", " "),
+                candidate.replace("_", " ").lower(),
+                candidate.replace(" ", "_"),
+                candidate.replace(" ", "_").lower(),
+            }
+            for variant in variants:
+                if variant:
+                    self.area_to_light_entity[variant] = entity_id
+
+    def _update_area_group_mapping(
+        self,
+        entity_id: str,
+        friendly_name: str,
+        attributes: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Update grouped light mappings for ZHA Magic groups and Hue rooms."""
+        if not entity_id or not entity_id.startswith("light."):
+            return
+
+        attributes = attributes or {}
+        friendly_name = friendly_name or ""
+        friendly_lower = friendly_name.lower()
+        entity_lower = entity_id.lower()
+
+        # Detect Hue grouped light entities exposed by the Hue integration
+        is_hue_group = False
+        hue_flags = [
+            attributes.get("is_hue_group"),
+            attributes.get("is_hue_grouped_light"),
+            attributes.get("is_hue_grouped"),
+            attributes.get("is_group"),
+        ]
+        for flag in hue_flags:
+            if isinstance(flag, bool) and flag:
+                is_hue_group = True
+                break
+            if isinstance(flag, str) and flag.strip().lower() in {"true", "1", "yes", "on"}:
+                is_hue_group = True
+                break
+
+        if not is_hue_group:
+            hue_resource = attributes.get("hue_resource_type") or attributes.get("type")
+            if isinstance(hue_resource, str) and hue_resource.lower() in {"grouped_light", "room"}:
+                is_hue_group = True
+
+        if not is_hue_group:
+            icon = attributes.get("icon")
+            if isinstance(icon, str) and "bulb-group" in icon:
+                is_hue_group = True
+
+        if not is_hue_group:
+            hue_group_id = attributes.get("hue_group") or attributes.get("hue_group_id")
+            if hue_group_id:
+                is_hue_group = True
+
+        if is_hue_group:
+            area_id = attributes.get("area_id")
+            area_name = friendly_name or attributes.get("name")
+            self._register_area_group_entity(
+                entity_id,
+                area_name=area_name,
+                area_id=area_id,
+                group_type="hue_group",
+            )
+            logger.debug(f"Registered Hue grouped light '{entity_id}' for area '{area_name or area_id}'")
+            return
+
+        # Detect Magic_ ZHA group entities
+        if "magic_" not in entity_lower and "magic_" not in friendly_lower:
+            return
+
         area_name = None
-        
+
         # Try to extract from friendly_name first (preserving case)
         if "Magic_" in friendly_name:
             parts = friendly_name.split("Magic_")
             if len(parts) >= 2:
                 area_name = parts[-1].strip()
-        elif "magic_" in friendly_name.lower():
-            # Fallback to case-insensitive extraction
-            idx = friendly_name.lower().index("magic_")
+        elif "magic_" in friendly_lower:
+            idx = friendly_lower.index("magic_")
             area_name = friendly_name[idx + 6:].strip()
-        
+
         # If not found in friendly_name, try entity_id
-        if not area_name:
-            if "magic_" in entity_id.lower():
-                idx = entity_id.lower().index("magic_")
-                area_name = entity_id[idx + 6:]
-                # Remove "light." prefix if it leaked in
-                area_name = area_name.replace("light.", "")
-        
+        if not area_name and "magic_" in entity_lower:
+            idx = entity_lower.index("magic_")
+            area_name = entity_id[idx + 6:]
+            area_name = area_name.replace("light.", "")
+
         if area_name:
-            # Store multiple variations for flexible matching:
-            # 1. Exact area name as extracted
-            self.area_to_light_entity[area_name] = entity_id
-            # 2. Lowercase version
-            self.area_to_light_entity[area_name.lower()] = entity_id
-            # 3. With underscores replaced by spaces (common HA pattern)
-            area_with_spaces = area_name.replace("_", " ")
-            self.area_to_light_entity[area_with_spaces] = entity_id
-            self.area_to_light_entity[area_with_spaces.lower()] = entity_id
-            # 4. With spaces replaced by underscores (another common pattern)
-            area_with_underscores = area_name.replace(" ", "_")
-            self.area_to_light_entity[area_with_underscores] = entity_id
-            self.area_to_light_entity[area_with_underscores.lower()] = entity_id
-            
-            # logger.info(f"Mapped ZHA group '{entity_id}' (name: {friendly_name}) to area variations: {area_name}, {area_name.lower()}, {area_with_spaces}, {area_with_underscores}")
-        
+            self._register_area_group_entity(
+                entity_id,
+                area_name=area_name,
+                area_id=None,
+                group_type="zha_group",
+            )
+            logger.debug(f"Registered Magic ZHA group '{entity_id}' for area '{area_name}'")
+
+    # Backwards compatibility for tests and legacy callers
+    def _update_zha_group_mapping(self, entity_id: str, friendly_name: str) -> None:
+        """Legacy wrapper maintained for compatibility with older tests."""
+        self._update_area_group_mapping(entity_id, friendly_name, None)
+
+    def _get_fallback_group_entity(self, area_id: str) -> Optional[str]:
+        """Return the first grouped entity mapped to any alias of the given area."""
+        if not area_id or not isinstance(area_id, str):
+            return None
+
+        candidates = [
+            area_id,
+            area_id.lower(),
+            area_id.replace("_", " "),
+            area_id.replace("_", " ").lower(),
+            area_id.replace(" ", "_"),
+            area_id.replace(" ", "_").lower(),
+        ]
+
+        seen = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            entity = self.area_to_light_entity.get(candidate)
+            if entity:
+                return entity
+        return None
     async def authenticate(self) -> bool:
         """Authenticate with Home Assistant."""
         try:
@@ -287,21 +418,38 @@ class HomeAssistantWebSocketClient:
             - target_type is "entity_id" or "area_id"
             - target_value is the entity/area ID to use
         """
-        # Check if we have a ZHA group entity for this area
-        light_entity = self.area_to_light_entity.get(area_id) or \
-                      self.area_to_light_entity.get(area_id.lower())
-        
-        # Check cached parity status
+        normalized_key = self._normalize_area_key(area_id)
+        group_candidates = self.area_group_map.get(normalized_key, {}) if normalized_key else {}
+
+        hue_entity = group_candidates.get("hue_group")
+        zha_entity = group_candidates.get("zha_group")
+
+        # Fall back to legacy lookup table if we did not find a candidate above
+        fallback_entity = self._get_fallback_group_entity(area_id)
+        if fallback_entity:
+            meta = self.group_entity_info.get(fallback_entity, {})
+            group_type = meta.get("type")
+
+            if not hue_entity and group_type == "hue_group":
+                hue_entity = fallback_entity
+            elif not zha_entity and group_type == "zha_group":
+                zha_entity = fallback_entity
+            elif not group_type and not zha_entity:
+                # Legacy compatibility for tests that set area_to_light_entity manually
+                zha_entity = fallback_entity
+
         has_parity = self.area_parity_cache.get(area_id, False)
-        
-        # If we have a ZHA group entity and parity, use the group
-        if light_entity and has_parity:
-            logger.debug(f"✓ Using ZHA group entity '{light_entity}' for area '{area_id}' (all lights are ZHA)")
-            return "entity_id", light_entity
-        elif light_entity and not has_parity:
+
+        if hue_entity:
+            logger.debug(f"✓ Using Hue grouped light entity '{hue_entity}' for area '{area_id}'")
+            return "entity_id", hue_entity
+
+        if zha_entity:
+            if has_parity:
+                logger.debug(f"✓ Using ZHA group entity '{zha_entity}' for area '{area_id}' (all lights are ZHA)")
+                return "entity_id", zha_entity
             logger.debug(f"⚠ Area '{area_id}' has non-ZHA lights, using area-based control for full coverage")
         
-        # Default to area-based control
         logger.info(f"Using area-based control for area '{area_id}'")
         return "area_id", area_id
     
@@ -574,7 +722,13 @@ class HomeAssistantWebSocketClient:
 
         for area_id in areas:
             # Fast path: known group entity for this key
-            light_entity_id = self.area_to_light_entity.get(area_id)
+            normalized_key = self._normalize_area_key(area_id)
+            light_entity_id = None
+            if normalized_key and normalized_key in self.area_group_map:
+                candidates = self.area_group_map[normalized_key]
+                light_entity_id = candidates.get("hue_group") or candidates.get("zha_group")
+            if not light_entity_id:
+                light_entity_id = self._get_fallback_group_entity(area_id)
             if light_entity_id:
                 state = self.cached_states.get(light_entity_id, {}).get("state")
                 logger.info(f"[group_fastpath] {light_entity_id=} {area_id=} state={state}")
@@ -1217,7 +1371,7 @@ class HomeAssistantWebSocketClient:
                     if entity_id.startswith("light."):
                         attributes = new_state.get("attributes", {})
                         friendly_name = attributes.get("friendly_name", "")
-                        self._update_zha_group_mapping(entity_id, friendly_name)
+                        self._update_area_group_mapping(entity_id, friendly_name, attributes)
                 
                 # Update sun data if it's the sun entity
                 if entity_id == "sun.sun" and isinstance(new_state, dict):
@@ -1262,7 +1416,7 @@ class HomeAssistantWebSocketClient:
                             logger.debug(f"Light entity: {entity_id}, friendly_name: {friendly_name}")
                             
                             # Use the centralized method to update ZHA group mapping
-                            self._update_zha_group_mapping(entity_id, friendly_name)
+                            self._update_area_group_mapping(entity_id, friendly_name, attributes)
                     
                     self.last_states_update = asyncio.get_event_loop().time()
                     logger.info(f"Cached {len(self.cached_states)} entity states")
@@ -1280,25 +1434,17 @@ class HomeAssistantWebSocketClient:
                             logger.info(f"  - {entity_id}: {name}")
                         logger.info("="*40)
                     
-                    # Log discovered ZHA group entities
-                    if self.area_to_light_entity:
-                        logger.info("=== Discovered ZHA Group Light Entities ===")
-                        # Get unique entity mappings (since we store multiple area variations)
-                        unique_entities = {}
-                        for area, entity in self.area_to_light_entity.items():
-                            if entity not in unique_entities:
-                                unique_entities[entity] = []
-                            unique_entities[entity].append(area)
-                        
-                        for entity, areas in unique_entities.items():
-                            # Show primary area name (first non-lowercase one)
-                            primary_area = next((a for a in areas if not a.islower()), areas[0])
-                            logger.info(f"  - ZHA Group: {entity} -> Area: '{primary_area}' (+ {len(areas)-1} variations)")
-                        
-                        logger.info(f"Total: {len(unique_entities)} ZHA groups mapped to areas")
-                        logger.info("="*50)
+                    # Log discovered grouped light entities
+                    if self.group_entity_info:
+                        logger.info("=== Discovered Grouped Light Entities ===")
+                        for entity_id, info in self.group_entity_info.items():
+                            group_type = info.get("type", "unknown")
+                            area_label = info.get("area") or info.get("area_id") or info.get("area_name") or "unknown"
+                            logger.info(f"  - {entity_id} [{group_type}] -> Area: '{area_label}'")
+                        logger.info(f"Total: {len(self.group_entity_info)} grouped entities mapped to areas")
+                        logger.info("=" * 50)
                     else:
-                        logger.warning("No ZHA group light entities found (looking for 'Magic_' pattern)")
+                        logger.warning("No grouped light entities discovered (Magic_ ZHA or Hue rooms)")
             
             # Handle config result
             elif result and isinstance(result, dict):
@@ -1439,19 +1585,19 @@ class HomeAssistantWebSocketClient:
                     light_count = sum(1 for s in states if s.get("entity_id", "").startswith("light."))
                     logger.info(f"Found {light_count} light entities")
                     
-                    # Process states to extract ZHA group mappings
+                    # Process states to extract grouped light mappings
                     for state in states:
                         entity_id = state.get("entity_id", "")
                         if entity_id.startswith("light."):
                             attributes = state.get("attributes", {})
                             friendly_name = attributes.get("friendly_name", "")
-                            self._update_zha_group_mapping(entity_id, friendly_name)
+                            self._update_area_group_mapping(entity_id, friendly_name, attributes)
                     
-                    unique_groups = len(set(self.area_to_light_entity.values()))
-                    if unique_groups > 0:
-                        logger.info(f"✓ Found {unique_groups} ZHA groups")
+                    grouped_count = len(self.group_entity_info)
+                    if grouped_count > 0:
+                        logger.info(f"✓ Found {grouped_count} grouped light entities (Hue rooms or Magic ZHA groups)")
                     else:
-                        logger.warning("⚠ No ZHA groups found (looking for 'Magic_' pattern in light names)")
+                        logger.warning("⚠ No grouped light entities detected (no Hue rooms or Magic_ ZHA groups found)")
                 
                 
                 # Get Home Assistant configuration (lat/lng/tz)
