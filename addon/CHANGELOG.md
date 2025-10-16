@@ -1,5 +1,14 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.023-alpha
+**Enhancement - Blueprint Sync Refresh**
+
+**Improvements:**
+- Track SHA-256 checksums for bundled blueprint YAML files and refresh deployments whenever content changes, ensuring Home Assistant picks up updates even when filenames stay the same.
+
+**Testing:**
+- Not run (not requested).
+
 ## 4.2.022-alpha
 **Fix - Hue Dimmer Blueprint Detection**
 

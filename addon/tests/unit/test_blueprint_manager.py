@@ -330,3 +330,69 @@ async def test_remove_blueprint_files_cleans_destinations(tmp_path, monkeypatch)
     assert not aut_dest.exists()
     assert not scr_dest.exists()
     assert not marker.exists()
+
+
+def test_should_refresh_marker_with_matching_checksums():
+    manager = BlueprintAutomationManager(AsyncMock(), enabled=True)
+    marker = {
+        "source": "bundle-path",
+        "automation_files": ["hue_dimmer_switch.yaml"],
+        "script_files": ["dummy.yaml"],
+        "automation_checksums": {"hue_dimmer_switch.yaml": "abc123"},
+        "script_checksums": {"dummy.yaml": "def456"},
+    }
+
+    should_refresh = manager._should_refresh_marker(
+        marker,
+        "bundle-path",
+        ["hue_dimmer_switch.yaml"],
+        ["dummy.yaml"],
+        {"hue_dimmer_switch.yaml": "abc123"},
+        {"dummy.yaml": "def456"},
+    )
+
+    assert should_refresh is False
+
+
+@pytest.mark.parametrize(
+    "marker_overrides,expected",
+    [
+        ({"automation_checksums": {"hue_dimmer_switch.yaml": "different"}}, True),
+        ({"script_checksums": {"dummy.yaml": "different"}}, True),
+        ({"automation_checksums": None}, True),
+        ({"drop_checksums": True}, True),  # legacy marker without checksum keys
+    ],
+)
+def test_should_refresh_marker_detects_checksum_changes(marker_overrides, expected):
+    manager = BlueprintAutomationManager(AsyncMock(), enabled=True)
+    base_marker = {
+        "source": "bundle-path",
+        "automation_files": ["hue_dimmer_switch.yaml"],
+        "script_files": ["dummy.yaml"],
+        "automation_checksums": {"hue_dimmer_switch.yaml": "abc123"},
+        "script_checksums": {"dummy.yaml": "def456"},
+    }
+    marker = dict(base_marker)
+
+    if marker_overrides.get("drop_checksums"):
+        marker.pop("automation_checksums", None)
+        marker.pop("script_checksums", None)
+    else:
+        marker.update(
+            {
+                key: value
+                for key, value in marker_overrides.items()
+                if key != "drop_checksums"
+            }
+        )
+
+    should_refresh = manager._should_refresh_marker(
+        marker,
+        "bundle-path",
+        ["hue_dimmer_switch.yaml"],
+        ["dummy.yaml"],
+        {"hue_dimmer_switch.yaml": "abc123"},
+        {"dummy.yaml": "def456"},
+    )
+
+    assert should_refresh is expected

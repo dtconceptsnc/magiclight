@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -343,6 +344,21 @@ class BlueprintAutomationManager:
             ]
         )
 
+    def _collect_yaml_checksums(self, directory: Optional[Path]) -> Dict[str, str]:
+        if not directory or not directory.is_dir():
+            return {}
+        checksums: Dict[str, str] = {}
+        for path in sorted(directory.glob("*.yaml")):
+            if not path.is_file():
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError as err:
+                self.logger.debug("Failed to read blueprint %s for checksum: %s", path, err)
+                continue
+            checksums[path.name] = hashlib.sha256(data).hexdigest()
+        return checksums
+
     def _directory_contains_yaml(self, directory: Path) -> bool:
         return any(directory.glob("*.yaml"))
 
@@ -362,6 +378,8 @@ class BlueprintAutomationManager:
         source_label: str,
         automation_files: Sequence[str],
         script_files: Sequence[str],
+        automation_checksums: Dict[str, str],
+        script_checksums: Dict[str, str],
     ) -> bool:
         if not marker:
             return True
@@ -371,6 +389,14 @@ class BlueprintAutomationManager:
             return True
         if marker.get("script_files") != list(script_files):
             return True
+        marker_auto_checksums = marker.get("automation_checksums")
+        marker_script_checksums = marker.get("script_checksums")
+        if marker_auto_checksums is None or marker_script_checksums is None:
+            return True
+        if marker_auto_checksums != dict(automation_checksums):
+            return True
+        if marker_script_checksums != dict(script_checksums):
+            return True
         return False
 
     def _write_marker(
@@ -379,11 +405,15 @@ class BlueprintAutomationManager:
         source_label: str,
         automation_files: Sequence[str],
         script_files: Sequence[str],
+        automation_checksums: Dict[str, str],
+        script_checksums: Dict[str, str],
     ) -> None:
         payload = {
             "source": source_label,
             "automation_files": list(automation_files),
             "script_files": list(script_files),
+            "automation_checksums": dict(sorted(automation_checksums.items())),
+            "script_checksums": dict(sorted(script_checksums.items())),
             "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
         }
         try:
@@ -450,6 +480,7 @@ class BlueprintAutomationManager:
 
         source_label = source.get("label", "unknown")
         source_automation_files = self._collect_yaml_names(source.get("automation"))
+        source_automation_checksums = self._collect_yaml_checksums(source.get("automation"))
         if not source_automation_files:
             self.logger.warning(
                 "Blueprint source %s does not contain automation files for namespace %s.",
@@ -459,6 +490,7 @@ class BlueprintAutomationManager:
             return False
 
         source_script_files = self._collect_yaml_names(source.get("script"))
+        source_script_checksums = self._collect_yaml_checksums(source.get("script"))
 
         existing_marker = self._load_marker(marker_path)
         if self._directory_contains_yaml(destinations["automation"]) and not self._should_refresh_marker(
@@ -466,6 +498,8 @@ class BlueprintAutomationManager:
             source_label,
             source_automation_files,
             source_script_files,
+            source_automation_checksums,
+            source_script_checksums,
         ):
             return True
 
@@ -474,7 +508,16 @@ class BlueprintAutomationManager:
             return False
 
         automation_files, script_files = installed
-        self._write_marker(marker_path, source_label, automation_files, script_files)
+        automation_checksums = self._collect_yaml_checksums(destinations["automation"])
+        script_checksums = self._collect_yaml_checksums(destinations["script"])
+        self._write_marker(
+            marker_path,
+            source_label,
+            automation_files,
+            script_files,
+            automation_checksums,
+            script_checksums,
+        )
         self.logger.info(
             "Installed MagicLight blueprints from %s into %s.",
             source_label,
