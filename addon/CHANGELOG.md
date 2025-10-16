@@ -1,5 +1,11 @@
 <!-- https://developers.home-assistant.io/docs/add-ons/presentation#keeping-a-changelog -->
 
+## 4.2.022-alpha
+**Fix - Hue Dimmer Blueprint Detection**
+
+**Improvements:**
+- Allow the bundled Hue dimmer blueprint to match devices whose model string is reported as plain `Hue dimmer switch`, ensuring switches paired via the official Hue integration are eligible while keeping existing RWL021/RWL022 entries.
+
 ## 4.2.017-alpha
 **Enhancement - Blueprint Disable Cleanup**
 

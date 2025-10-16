@@ -44,6 +44,9 @@ blueprint:
             - integration: hue
               manufacturer: Signify Netherlands B.V.
               model: Hue dimmer switch (RWL021)
+            - integration: hue
+              manufacturer: Signify Netherlands B.V.
+              model: Hue dimmer switch
     target_areas:
       name: Target Areas
       description: The area(s) to control when buttons are pressed
